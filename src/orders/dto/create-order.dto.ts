@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
   IsArray,
+  IsDefined,
   IsEmail,
   IsNotEmpty,
   IsNumber,
@@ -70,11 +72,14 @@ export class OrderItemDto {
 
 /** Body de POST /api/orders. */
 export class CreateOrderDto {
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => OrderCustomerDto)
   customer!: OrderCustomerDto;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items!: OrderItemDto[];

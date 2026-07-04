@@ -1,9 +1,11 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDefined,
   IsEmail,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Min,
@@ -69,10 +71,14 @@ export class QuoteCoinDto {
 
 /** Body de POST /api/quotes. */
 export class CreateQuoteDto {
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => QuoteCustomerDto)
   customer!: QuoteCustomerDto;
 
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => QuoteCoinDto)
   coin!: QuoteCoinDto;
