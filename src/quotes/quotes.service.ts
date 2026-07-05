@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { EmailService, QuoteEmailData } from '../shared/email.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
@@ -38,29 +38,35 @@ export class QuotesService {
       quoteId,
     };
 
-    try {
-      // Envoi a l'equipe (obligatoire) puis accuse client (best-effort).
-      await this.email.sendQuoteEmail(emailData);
-      try {
-        await this.email.sendQuoteAck(dto.customer.email, emailData);
-      } catch (ackError) {
-        this.logger.warn(`Accuse de reception non envoye: ${(ackError as Error).message}`);
-      }
-    } catch (error) {
-      this.logger.error(`Echec envoi devis: ${(error as Error).message}`);
-      throw new HttpException(
-        `Impossible d'envoyer la demande de devis: ${(error as Error).message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
+    // On enregistre TOUJOURS la demande, même si l'email échoue.
     this.quotes.set(quoteId, {
       ...dto,
       quoteId,
       createdAt: new Date().toISOString(),
     });
 
+    // Envoi des emails en best-effort : n'empêche jamais la réponse au client.
+    // (les emails peuvent échouer si le SMTP est indisponible/filtré côté hébergeur)
+    void this.sendEmailsBestEffort(dto.customer.email, emailData);
+
     return { success: true, quoteId };
+  }
+
+  /** Envoie l'email équipe + accusé client sans bloquer la réponse HTTP. */
+  private async sendEmailsBestEffort(
+    clientEmail: string,
+    emailData: QuoteEmailData,
+  ): Promise<void> {
+    try {
+      await this.email.sendQuoteEmail(emailData);
+    } catch (error) {
+      this.logger.warn(`Email équipe non envoyé: ${(error as Error).message}`);
+    }
+    try {
+      await this.email.sendQuoteAck(clientEmail, emailData);
+    } catch (error) {
+      this.logger.warn(`Accusé de réception non envoyé: ${(error as Error).message}`);
+    }
   }
 
   /** Liste des devis stockes en memoire. */

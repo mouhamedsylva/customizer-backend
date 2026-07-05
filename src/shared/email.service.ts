@@ -55,6 +55,11 @@ export class EmailService {
         user: this.config.get<string>('EMAIL_USER'),
         pass: this.config.get<string>('EMAIL_PASSWORD'),
       },
+      // Timeouts pour éviter de bloquer indéfiniment si le SMTP ne répond pas
+      // (utile sur les hébergeurs qui filtrent le port 587 sortant).
+      connectionTimeout: 10000, // 10s pour établir la connexion
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     });
   }
 

@@ -69,24 +69,27 @@ export class OrdersService {
       );
     }
 
-    // L'echec de l'email ne doit pas faire echouer la commande (deja creee).
-    try {
-      await this.email.sendOrderConfirmation(customer.email, {
-        customerName: `${customer.prenom} ${customer.nom}`,
-        orderId: draftOrder.id,
-        items: items.map((it) => ({
-          name: it.name,
-          color: it.color,
-          size: it.size,
-          qty: it.qty,
-          price: it.price,
-          img: it.img,
-        })),
-        total: dto.total,
-      });
-    } catch (error) {
-      this.logger.warn(`Commande creee mais email non envoye: ${(error as Error).message}`);
-    }
+    // Email de confirmation en best-effort (non bloquant) : la réponse HTTP
+    // ne doit pas attendre le SMTP ni échouer si l'email ne part pas.
+    void (async () => {
+      try {
+        await this.email.sendOrderConfirmation(customer.email, {
+          customerName: `${customer.prenom} ${customer.nom}`,
+          orderId: draftOrder.id,
+          items: items.map((it) => ({
+            name: it.name,
+            color: it.color,
+            size: it.size,
+            qty: it.qty,
+            price: it.price,
+            img: it.img,
+          })),
+          total: dto.total,
+        });
+      } catch (error) {
+        this.logger.warn(`Commande creee mais email non envoye: ${(error as Error).message}`);
+      }
+    })();
 
     return { orderId: draftOrder.id, status: draftOrder.status || 'open' };
   }
