@@ -45,9 +45,11 @@ export class QuotesService {
       createdAt: new Date().toISOString(),
     });
 
-    // Envoi des emails en best-effort : n'empêche jamais la réponse au client.
-    // (les emails peuvent échouer si le SMTP est indisponible/filtré côté hébergeur)
-    void this.sendEmailsBestEffort(dto.customer.email, emailData);
+    // Envoi des emails APRÈS avoir répondu au client (setImmediate détache
+    // complètement l'envoi de la requête HTTP courante).
+    setImmediate(() => {
+      void this.sendEmailsBestEffort(dto.customer.email, emailData);
+    });
 
     return { success: true, quoteId };
   }

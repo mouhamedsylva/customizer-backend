@@ -3,7 +3,7 @@ import {
   ShopifyLineItem,
   ShopifyService,
 } from '../shared/shopify.service';
-import { EmailService } from '../shared/email.service';
+import { EmailService, OrderConfirmationData } from '../shared/email.service';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 
 @Injectable()
@@ -69,29 +69,37 @@ export class OrdersService {
       );
     }
 
-    // Email de confirmation en best-effort (non bloquant) : la réponse HTTP
-    // ne doit pas attendre le SMTP ni échouer si l'email ne part pas.
-    void (async () => {
-      try {
-        await this.email.sendOrderConfirmation(customer.email, {
-          customerName: `${customer.prenom} ${customer.nom}`,
-          orderId: draftOrder.id,
-          items: items.map((it) => ({
-            name: it.name,
-            color: it.color,
-            size: it.size,
-            qty: it.qty,
-            price: it.price,
-            img: it.img,
-          })),
-          total: dto.total,
-        });
-      } catch (error) {
-        this.logger.warn(`Commande creee mais email non envoye: ${(error as Error).message}`);
-      }
-    })();
+    // Email de confirmation détaché de la requête : la réponse HTTP part sans
+    // attendre le SMTP ni échouer si l'email ne part pas.
+    setImmediate(() => {
+      void this.sendConfirmationBestEffort(customer.email, {
+        customerName: `${customer.prenom} ${customer.nom}`,
+        orderId: draftOrder.id,
+        items: items.map((it) => ({
+          name: it.name,
+          color: it.color,
+          size: it.size,
+          qty: it.qty,
+          price: it.price,
+          img: it.img,
+        })),
+        total: dto.total,
+      });
+    });
 
     return { orderId: draftOrder.id, status: draftOrder.status || 'open' };
+  }
+
+  /** Envoie l'email de confirmation sans bloquer la réponse HTTP. */
+  private async sendConfirmationBestEffort(
+    email: string,
+    data: OrderConfirmationData,
+  ): Promise<void> {
+    try {
+      await this.email.sendOrderConfirmation(email, data);
+    } catch (error) {
+      this.logger.warn(`Commande creee mais email non envoye: ${(error as Error).message}`);
+    }
   }
 
   /** Liste des commandes (draft orders Shopify). */
