@@ -9,6 +9,7 @@ const CONFIG_PRODUCTS: Record<string, string> = {
   tshirt_polyester: '9167767732387',
   tshirt: '9167767404707',
   sweatshirt: '9167767240867',
+  patches: '9167772254371',
 };
 
 @Controller('health')
