@@ -189,6 +189,52 @@ export class ShopifyService {
   }
 
   /**
+   * Recupere un produit et ses variants (id + titre + prix).
+   * Sert a retrouver le variant_id a partir d'un product_id (pour le panier natif).
+   */
+  async getProductVariants(
+    productId: string | number,
+  ): Promise<{
+    productId: string | number;
+    title: string;
+    variants: Array<{ id: number; title: string; price: string; sku?: string }>;
+  }> {
+    const response = await fetch(
+      `${this.getBaseUrl()}/products/${productId}.json`,
+      { method: 'GET', headers: this.getHeaders() },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Erreur Shopify (${response.status}): ${response.statusText}`,
+      );
+    }
+
+    const result = (await response.json()) as {
+      product: {
+        title: string;
+        variants: Array<{
+          id: number;
+          title: string;
+          price: string;
+          sku?: string;
+        }>;
+      };
+    };
+
+    return {
+      productId,
+      title: result.product.title,
+      variants: (result.product.variants || []).map((v) => ({
+        id: v.id,
+        title: v.title,
+        price: v.price,
+        sku: v.sku,
+      })),
+    };
+  }
+
+  /**
    * Verifie la connexion a la boutique Shopify.
    */
   async verifyConnection(): Promise<{
