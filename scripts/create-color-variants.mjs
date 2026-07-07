@@ -109,15 +109,28 @@ async function processProduct(key) {
   const basePrice = product.variants[0]?.price || '45.00';
 
   // Construit les nouveaux variants (un par couleur).
-  const variants = COLORS.map(([label]) => ({ option1: label, price: basePrice }));
+  // inventory_management=null + inventory_policy=continue : produit personnalisé
+  // à la demande, toujours vendable (jamais "sold out").
+  const variants = COLORS.map(([label]) => ({
+    option1: label,
+    price: basePrice,
+    inventory_management: null,
+    inventory_policy: 'continue',
+  }));
 
-  // Récupère les URLs d'images couleur (face) pour chaque couleur.
+  // Image générique du produit (repli si pas d'image par couleur).
+  const genericUrl = await assetUrl(`${conf.prefix}-face.png`);
+
+  // Récupère les URLs d'images couleur (face). À défaut d'image couleur,
+  // on retombe sur l'image générique (la couleur reste indiquée en texte).
   const imagePlan = [];
   for (const [label, slug] of COLORS) {
     const filename = `${conf.prefix}-${slug}-face.png`;
-    const url = await assetUrl(filename);
+    let url = await assetUrl(filename);
+    let source = 'couleur';
+    if (!url && genericUrl) { url = genericUrl; source = 'générique'; }
     imagePlan.push({ label, filename, url });
-    console.log(`  image ${label.padEnd(14)} -> ${url ? 'OK' : 'MANQUANTE'} (${filename})`);
+    console.log(`  image ${label.padEnd(14)} -> ${url ? source.toUpperCase() : 'AUCUNE'} (${url ? filename : ''})`);
   }
 
   if (!APPLY) {
@@ -140,18 +153,30 @@ async function processProduct(key) {
   const variantByLabel = {};
   for (const v of updated.variants) variantByLabel[v.option1] = v.id;
 
-  // 3) Pour chaque couleur : crée l'image produit et l'associe au variant.
+  // 3) Assigne les images. On crée une image par URL DISTINCTE (évite 15 doublons
+  //    quand tous les variants partagent l'image générique), et on lie tous les
+  //    variants correspondants à cette image en une fois.
+  const byUrl = new Map();
   for (const plan of imagePlan) {
-    if (!plan.url) { console.log(`  ⏭  ${plan.label}: pas d'URL, image ignorée`); continue; }
     const variantId = variantByLabel[plan.label];
-    if (!variantId) { console.log(`  ⏭  ${plan.label}: variant introuvable`); continue; }
+    if (!plan.url || !variantId) {
+      console.log(`  ⏭  ${plan.label}: ${!plan.url ? 'pas d\'URL' : 'variant introuvable'}`);
+      continue;
+    }
+    if (!byUrl.has(plan.url)) byUrl.set(plan.url, { labels: [], variantIds: [] });
+    const g = byUrl.get(plan.url);
+    g.labels.push(plan.label);
+    g.variantIds.push(variantId);
+  }
+
+  for (const [url, g] of byUrl) {
     try {
       const { image } = await shopify(`/products/${conf.productId}/images.json`, 'POST', {
-        image: { src: plan.url, variant_ids: [variantId] },
+        image: { src: url, variant_ids: g.variantIds },
       });
-      console.log(`  🖼  ${plan.label}: image ${image.id} liée au variant ${variantId}`);
+      console.log(`  🖼  image ${image.id} liée à ${g.variantIds.length} variant(s): ${g.labels.join(', ')}`);
     } catch (e) {
-      console.log(`  ❌ ${plan.label}: échec image -> ${e.message}`);
+      console.log(`  ❌ échec image (${g.labels.join(', ')}) -> ${e.message}`);
     }
   }
 

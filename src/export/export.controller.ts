@@ -12,6 +12,7 @@ import {
 import { ExportService } from './export.service';
 import { ShareDesignDto } from './dto/share-design.dto';
 import { PreviewImageDto } from './dto/preview-image.dto';
+import { PreviewMultiDto } from './dto/preview-multi.dto';
 import { CloudinaryService } from '../shared/cloudinary.service';
 
 @Controller('export')
@@ -45,6 +46,24 @@ export class ExportController {
     } catch (error) {
       throw new HttpException(
         `Echec generation image: ${(error as Error).message}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
+  /**
+   * POST /api/export/preview-multi
+   * Compose plusieurs vues (face/dos/côté) en une planche unique et l'upload
+   * sur Cloudinary. Retourne l'URL publique.
+   */
+  @Post('preview-multi')
+  async previewMulti(@Body() dto: PreviewMultiDto): Promise<{ url: string }> {
+    try {
+      const result = await this.cloudinary.composeMultiViewAndUpload(dto.views);
+      return { url: result.url };
+    } catch (error) {
+      throw new HttpException(
+        `Echec generation planche: ${(error as Error).message}`,
         HttpStatus.BAD_GATEWAY,
       );
     }
