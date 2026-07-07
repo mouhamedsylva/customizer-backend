@@ -173,15 +173,19 @@ export class CloudinaryService implements OnModuleInit {
     }
 
     // 3) Composite + upload.
+    // Sortie en PNG (et non JPEG) : les images produit sont des PNG a fond
+    // transparent. Le JPEG ne gere pas la transparence et remplirait le fond
+    // en noir. Le PNG preserve la transparence -> apercu propre dans le panier
+    // et la commande Shopify.
     const composed = await sharp(baseBuffer)
       .composite(overlays)
-      .jpeg({ quality: 88 })
+      .png()
       .toBuffer();
 
     return this.uploadImage(composed, {
       folder: 'customizer/shares',
       public_id: `share_${Date.now()}`,
-      format: 'jpg',
+      format: 'png',
     });
   }
 
