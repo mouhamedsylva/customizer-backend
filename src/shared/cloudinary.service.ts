@@ -119,9 +119,17 @@ export class CloudinaryService implements OnModuleInit {
       const base64 = src.split(',')[1] || '';
       return Buffer.from(base64, 'base64');
     }
-    const res = await fetch(src);
+    // Les asset_url Shopify sont souvent protocole-relatifs (//cdn.shopify...).
+    // fetch() de Node ne sait pas les parser -> on force https://.
+    let url = src;
+    if (url.startsWith('//')) url = 'https:' + url;
+    else if (url.startsWith('/')) {
+      const store = this.config.get<string>('SHOPIFY_STORE_URL');
+      if (store) url = `https://${store}${url}`;
+    }
+    const res = await fetch(url);
     if (!res.ok) {
-      throw new Error(`Impossible de charger l'image (${res.status}): ${src}`);
+      throw new Error(`Impossible de charger l'image (${res.status}): ${url}`);
     }
     const arrayBuffer = await res.arrayBuffer();
     return Buffer.from(arrayBuffer);
