@@ -147,14 +147,18 @@ export class CloudinaryService implements OnModuleInit {
   ): Promise<{ buffer: Buffer; width: number; height: number }> {
     // 1) Fond normalise a une largeur fixe (rendu net et previsible).
     const bgBuffer = await this.loadImageBuffer(backgroundSrc);
-    const base = sharp(bgBuffer).resize(baseWidth, null, {
-      fit: 'inside',
-      withoutEnlargement: false,
-    });
-    const meta = await base.metadata();
+    const baseBuffer = await sharp(bgBuffer)
+      .resize(baseWidth, null, { fit: 'inside', withoutEnlargement: false })
+      .png()
+      .toBuffer();
+    // IMPORTANT : lire les dimensions du buffer REDIMENSIONNÉ (pas de la source).
+    // sharp(x).metadata() lit l'image d'entrée, pas le résultat du resize -> il
+    // faut mesurer baseBuffer, sinon les positions/tailles de logos (en fractions
+    // du canvas) sont calculées sur les mauvaises dimensions (logo minuscule et
+    // décalé en haut-gauche).
+    const meta = await sharp(baseBuffer).metadata();
     const canvasW = meta.width || baseWidth;
     const canvasH = meta.height || baseWidth;
-    const baseBuffer = await base.png().toBuffer();
 
     // 2) Prepare chaque logo redimensionne a sa largeur cible.
     const overlays: sharp.OverlayOptions[] = [];
