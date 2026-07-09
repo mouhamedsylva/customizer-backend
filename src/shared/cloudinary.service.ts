@@ -283,7 +283,7 @@ export class CloudinaryService implements OnModuleInit {
           const cx = colX + CELL / 2;
           const ly = yCursor + cell.h + 28;
           svgLabels.push(
-            `<text x="${cx}" y="${ly}" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#1a1a1a" text-anchor="middle">${this.escapeXml(cell.label)}</text>`,
+            `<text x="${cx}" y="${ly}" font-family="'DejaVu Sans','Liberation Sans',sans-serif" font-size="22" font-weight="bold" fill="#1a1a1a" text-anchor="middle">${this.escapeXml(cell.label)}</text>`,
           );
         }
       }
