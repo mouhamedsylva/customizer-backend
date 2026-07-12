@@ -8,8 +8,10 @@ import { QuotesModule } from './quotes/quotes.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ExportModule } from './export/export.module';
 import { HealthModule } from './health/health.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 import { Design } from './database/entities/design.entity';
 import { Quote } from './database/entities/quote.entity';
+import { Order } from './database/entities/order.entity';
 
 @Module({
   imports: [
@@ -26,7 +28,7 @@ import { Quote } from './database/entities/quote.entity';
         url:
           config.get<string>('MYSQL_URL') ||
           config.get<string>('DATABASE_URL'),
-        entities: [Design, Quote],
+        entities: [Design, Quote, Order],
         // Crée/adapte les tables automatiquement au démarrage (étape 1).
         synchronize: true,
         // Railway MySQL n'exige pas de TLS strict ; on reste tolérant.
@@ -41,6 +43,7 @@ import { Quote } from './database/entities/quote.entity';
     UploadsModule,
     ExportModule,
     HealthModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}

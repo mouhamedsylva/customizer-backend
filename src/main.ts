@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, Request } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
@@ -11,7 +11,18 @@ async function bootstrap(): Promise<void> {
   // Augmente la taille max du body JSON/urlencoded.
   // Les devis "coins" embarquent 3 apercus (recto/verso/cote) en base64,
   // ce qui depasse largement la limite Express par defaut (100 kb) -> erreur 413.
-  app.use(json({ limit: '25mb' }));
+  // `verify` conserve le corps BRUT (req.rawBody) UNIQUEMENT pour les webhooks
+  // Shopify, indispensable à la vérification de la signature HMAC.
+  app.use(
+    json({
+      limit: '25mb',
+      verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
+        if (req.originalUrl && req.originalUrl.includes('/webhooks/')) {
+          req.rawBody = Buffer.from(buf);
+        }
+      },
+    }),
+  );
   app.use(urlencoded({ limit: '25mb', extended: true }));
 
   // Prefixe global de toutes les routes : /api/...
