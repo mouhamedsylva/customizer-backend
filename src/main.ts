@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded, Request } from 'express';
+import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
@@ -24,6 +25,9 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.use(urlencoded({ limit: '25mb', extended: true }));
+
+  // Cookies (session du dashboard admin).
+  app.use(cookieParser());
 
   // Prefixe global de toutes les routes : /api/...
   app.setGlobalPrefix('api');
