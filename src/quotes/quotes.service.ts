@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { EmailService, QuoteEmailData } from '../shared/email.service';
 import {
@@ -6,23 +8,17 @@ import {
   ShopifyService,
 } from '../shared/shopify.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
-
-export interface StoredQuote extends CreateQuoteDto {
-  quoteId: string;
-  createdAt: string;
-  draftOrderId?: string | number;
-}
+import { Quote } from '../database/entities/quote.entity';
 
 @Injectable()
 export class QuotesService {
   private readonly logger = new Logger(QuotesService.name);
 
-  // TODO: brancher une vraie base de donnees. Stockage en memoire pour l'instant.
-  private readonly quotes = new Map<string, StoredQuote>();
-
   constructor(
     private readonly email: EmailService,
     private readonly shopify: ShopifyService,
+    @InjectRepository(Quote)
+    private readonly quotes: Repository<Quote>,
   ) {}
 
   /**
@@ -50,12 +46,13 @@ export class QuotesService {
       quoteId,
     };
 
-    // On enregistre TOUJOURS la demande, même si l'email/Shopify échoue.
-    this.quotes.set(quoteId, {
-      ...dto,
-      quoteId,
-      createdAt: new Date().toISOString(),
-    });
+    // On enregistre TOUJOURS la demande en base, même si l'email/Shopify échoue.
+    await this.quotes.save(
+      this.quotes.create({
+        id: quoteId,
+        quoteData: dto as unknown as Record<string, unknown>,
+      }),
+    );
 
     // Draft order Shopify puis emails, APRÈS avoir répondu au client
     // (setImmediate détache le traitement de la requête HTTP courante).
@@ -77,8 +74,10 @@ export class QuotesService {
       const draftOrder = await this.shopify.createDraftOrder(
         this.buildDraftPayload(dto, quoteId),
       );
-      const stored = this.quotes.get(quoteId);
-      if (stored) stored.draftOrderId = draftOrder.id;
+      // Mémorise l'ID du draft order sur la ligne du devis en base.
+      await this.quotes.update(quoteId, {
+        draftOrderId: String(draftOrder.id),
+      });
       this.logger.log(
         `Devis ${quoteId} -> draft order Shopify #${draftOrder.id}`,
       );
@@ -164,8 +163,8 @@ export class QuotesService {
     }
   }
 
-  /** Liste des devis stockes en memoire. */
-  findAll(): StoredQuote[] {
-    return Array.from(this.quotes.values());
+  /** Liste des devis en base (pour le futur dashboard admin — étape 3). */
+  async findAll(): Promise<Quote[]> {
+    return this.quotes.find({ order: { createdAt: 'DESC' } });
   }
 }

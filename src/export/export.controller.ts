@@ -24,9 +24,9 @@ export class ExportController {
 
   /** POST /api/export/share */
   @Post('share')
-  createShare(
+  async createShare(
     @Body() dto: ShareDesignDto,
-  ): { shareId: string; shareUrl: string } {
+  ): Promise<{ shareId: string; shareUrl: string }> {
     return this.exportService.createShare(dto.designData);
   }
 
@@ -71,7 +71,9 @@ export class ExportController {
 
   /** GET /api/export/share/:shareId */
   @Get('share/:shareId')
-  getShare(@Param('shareId') shareId: string): Record<string, unknown> {
+  async getShare(
+    @Param('shareId') shareId: string,
+  ): Promise<Record<string, unknown>> {
     return this.exportService.getShare(shareId);
   }
 
