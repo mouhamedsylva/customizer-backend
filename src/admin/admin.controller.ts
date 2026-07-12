@@ -33,24 +33,16 @@ export class AdminController {
       res.type('html').send(loginPage(false));
       return;
     }
-    try {
-      const [orders, quotes, designs] = await Promise.all([
-        this.data.getOrders(),
-        this.data.getQuotes(),
-        this.data.getDesigns(),
-      ]);
-      const frontendUrl =
-        this.config.get<string>('FRONTEND_URL') || 'https://example.com';
-      res
-        .type('html')
-        .send(dashboardPage(orders, quotes, designs, frontendUrl));
-    } catch (err) {
-      // Affiche l'erreur réelle pour diagnostiquer (à retirer ensuite).
-      res
-        .type('text')
-        .status(500)
-        .send('ADMIN ERROR:\n' + ((err as Error)?.stack || String(err)));
-    }
+    const [orders, quotes, designs] = await Promise.all([
+      this.data.getOrders(),
+      this.data.getQuotes(),
+      this.data.getDesigns(),
+    ]);
+    const frontendUrl =
+      this.config.get<string>('FRONTEND_URL') || 'https://example.com';
+    res
+      .type('html')
+      .send(dashboardPage(orders, quotes, designs, frontendUrl));
   }
 
   /** POST /api/admin/login — vérifie le mot de passe, pose le cookie. */

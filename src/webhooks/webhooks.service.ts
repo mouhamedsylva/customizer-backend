@@ -1,19 +1,49 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Order } from '../database/entities/order.entity';
+import { ShopifyService } from '../shared/shopify.service';
 
 @Injectable()
-export class WebhooksService {
+export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhooksService.name);
+  private syncTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly config: ConfigService,
+    private readonly shopify: ShopifyService,
     @InjectRepository(Order)
     private readonly orders: Repository<Order>,
   ) {}
+
+  /**
+   * Au démarrage : synchronise l'historique des commandes Shopify, puis
+   * relance une synchro périodique (filet de sécurité si un webhook échoue).
+   * Tout est AUTOMATIQUE : aucune action manuelle requise.
+   */
+  onModuleInit(): void {
+    // Première synchro peu après le démarrage (laisse la BDD s'initialiser).
+    setTimeout(() => {
+      void this.importFromShopify('démarrage');
+    }, 8000);
+
+    // Synchro périodique toutes les 10 minutes.
+    const INTERVAL_MS = 10 * 60 * 1000;
+    this.syncTimer = setInterval(() => {
+      void this.importFromShopify('périodique');
+    }, INTERVAL_MS);
+  }
+
+  onModuleDestroy(): void {
+    if (this.syncTimer) clearInterval(this.syncTimer);
+  }
 
   /**
    * Vérifie la signature HMAC d'un webhook Shopify.
@@ -94,5 +124,39 @@ export class WebhooksService {
   /** Liste des commandes en base (pour le dashboard admin — étape 3). */
   async findAll(): Promise<Order[]> {
     return this.orders.find({ order: { receivedAt: 'DESC' } });
+  }
+
+  /**
+   * Synchronise les commandes Shopify vers la base (rattrape l'historique et
+   * toute commande manquée par un webhook). Robuste : n'interrompt jamais le
+   * backend même si l'API Shopify échoue (ex. scope read_orders manquant).
+   */
+  async importFromShopify(reason = 'manuel'): Promise<{ imported: number }> {
+    let orders: Record<string, any>[] = [];
+    try {
+      orders = await this.shopify.listOrders(250);
+    } catch (e) {
+      this.logger.warn(
+        `Synchro Shopify (${reason}) impossible : ${(e as Error).message}. ` +
+          `Le token a-t-il le scope read_orders ?`,
+      );
+      return { imported: 0 };
+    }
+
+    let imported = 0;
+    for (const o of orders) {
+      try {
+        await this.saveOrder(o);
+        imported++;
+      } catch (e) {
+        this.logger.warn(
+          `Import commande ${o?.id} échoué: ${(e as Error).message}`,
+        );
+      }
+    }
+    this.logger.log(
+      `Synchro Shopify (${reason}) : ${imported}/${orders.length} commande(s).`,
+    );
+    return { imported };
   }
 }

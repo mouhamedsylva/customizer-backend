@@ -125,6 +125,30 @@ export class ShopifyService {
   }
 
   /**
+   * Liste les VRAIES commandes (payées/passées) — pour l'import historique.
+   * Nécessite le scope read_orders sur le token d'accès.
+   * status=any inclut les commandes ouvertes, fermées et annulées.
+   */
+  async listOrders(limit = 250): Promise<Record<string, any>[]> {
+    const response = await fetch(
+      `${this.getBaseUrl()}/orders.json?status=any&limit=${limit}`,
+      { method: 'GET', headers: this.getHeaders() },
+    );
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(
+        `Erreur Shopify (${response.status}) sur /orders : ${response.statusText}. ${text}`,
+      );
+    }
+
+    const result = (await response.json()) as {
+      orders: Record<string, any>[];
+    };
+    return result.orders || [];
+  }
+
+  /**
    * Met a jour les line_items d'un draft order (remplace la liste complete).
    * Utilise pour ajouter/retirer une ligne cote panier.
    */
