@@ -19,6 +19,13 @@ function isUrl(u: unknown): u is string {
   return typeof u === 'string' && /^https?:\/\//i.test(u);
 }
 
+/** Formate un montant avec le symbole € (on affiche toujours en euro). */
+function money(amount: unknown): string {
+  const n = parseFloat(String(amount ?? ''));
+  if (Number.isNaN(n)) return '';
+  return n.toFixed(2).replace('.', ',') + ' €';
+}
+
 const LAYOUT_HEAD = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Admin — Custom Textile</title>
@@ -43,7 +50,13 @@ const LAYOUT_HEAD = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
   .panel{display:none}
   .panel.active{display:block}
   .card{background:#fff;border:1px solid #eceef1;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .card-head.clickable{cursor:pointer;user-select:none}
+  .card-head.clickable:hover .card-title{color:#1e46b8}
+  .card-body{display:none;margin-top:12px;border-top:1px solid #f0f2f4;padding-top:8px}
+  .card.open .card-body{display:block}
+  .caret{display:inline-block;font-size:11px;color:#8a929b;transition:transform .15s}
+  .card.open .caret{transform:rotate(90deg)}
   .card-title{font-size:15px;font-weight:800}
   .card-sub{font-size:12px;color:#8a929b;margin-top:2px}
   .chip{display:inline-block;background:#f2f3f5;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;color:#5b636c;margin-right:6px}
@@ -107,19 +120,23 @@ function orderCard(o: Order): string {
     })
     .join('');
   const paid = (o.financialStatus || '').toLowerCase() === 'paid';
+  const nbItems = items.reduce((s: number, li: any) => s + (li.quantity || 0), 0);
+  // La carte est cliquable : l'en-tête déplie/replie le détail (.card-body).
   return `<div class="card" data-search="${esc([o.orderNumber, o.customerName, o.customerEmail].join(' ').toLowerCase())}">
-    <div class="card-head">
+    <div class="card-head clickable" onclick="toggleCard(this)">
       <div>
-        <div class="card-title">${esc(o.orderNumber || '#' + o.shopifyOrderId)}</div>
-        <div class="card-sub">${esc(o.customerName || '')} ${o.customerEmail ? '· ' + esc(o.customerEmail) : ''}</div>
+        <div class="card-title">${esc(o.orderNumber || '#' + o.shopifyOrderId)} <span class="caret">▸</span></div>
+        <div class="card-sub">${esc(o.customerName || '')} ${o.customerEmail ? '· ' + esc(o.customerEmail) : ''} · ${nbItems} article(s)</div>
       </div>
       <div style="text-align:right">
         <span class="chip ${paid ? 'paid' : ''}">${esc(o.financialStatus || '—')}</span>
-        <div class="card-sub" style="margin-top:6px">${esc(o.totalPrice || '')} ${esc(o.currency || '')}</div>
+        <div class="card-sub" style="margin-top:6px;font-weight:800;color:#14181c">${money(o.totalPrice)}</div>
         <div class="card-sub">${o.shopifyCreatedAt ? new Date(o.shopifyCreatedAt).toLocaleString('fr-FR') : ''}</div>
       </div>
     </div>
-    <div class="items">${itemsHtml || '<div class="card-sub">Aucun article.</div>'}</div>
+    <div class="card-body">
+      <div class="items">${itemsHtml || '<div class="card-sub">Aucun article.</div>'}</div>
+    </div>
   </div>`;
 }
 
@@ -135,9 +152,9 @@ function quoteCard(q: Quote): string {
     .join('');
   const details = Array.isArray(coin.details) ? coin.details : [];
   return `<div class="card" data-search="${esc([c.nom, c.email, coin.name].join(' ').toLowerCase())}">
-    <div class="card-head">
+    <div class="card-head clickable" onclick="toggleCard(this)">
       <div>
-        <div class="card-title">${esc(coin.name || 'Devis')}</div>
+        <div class="card-title">${esc(coin.name || 'Devis')} <span class="caret">▸</span></div>
         <div class="card-sub">${esc(c.nom || '')} ${c.email ? '· ' + esc(c.email) : ''} ${c.telephone ? '· ' + esc(c.telephone) : ''}</div>
       </div>
       <div style="text-align:right">
@@ -146,12 +163,14 @@ function quoteCard(q: Quote): string {
         ${q.draftOrderId ? `<div class="card-sub">Draft #${esc(q.draftOrderId)}</div>` : ''}
       </div>
     </div>
-    <div class="item">
-      <div class="thumbs">${thumbs || '<span style="color:#c0c6cc;font-size:11px">— pas d&#39;aperçu —</span>'}</div>
-      <div class="props">
-        ${details.map((x: string) => `<div class="row">${esc(x)}</div>`).join('')}
-        ${c.entreprise ? `<div class="row"><span class="k">Entreprise</span> ${esc(c.entreprise)}</div>` : ''}
-        ${c.message ? `<div class="row"><span class="k">Message</span> ${esc(c.message)}</div>` : ''}
+    <div class="card-body">
+      <div class="item">
+        <div class="thumbs">${thumbs || '<span style="color:#c0c6cc;font-size:11px">— pas d&#39;aperçu —</span>'}</div>
+        <div class="props">
+          ${details.map((x: string) => `<div class="row">${esc(x)}</div>`).join('')}
+          ${c.entreprise ? `<div class="row"><span class="k">Entreprise</span> ${esc(c.entreprise)}</div>` : ''}
+          ${c.message ? `<div class="row"><span class="k">Message</span> ${esc(c.message)}</div>` : ''}
+        </div>
       </div>
     </div>
   </div>`;
@@ -228,5 +247,6 @@ export function dashboardPage(
       });
     }
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}
+    function toggleCard(head){head.parentElement.classList.toggle('open');}
   </script></body></html>`;
 }

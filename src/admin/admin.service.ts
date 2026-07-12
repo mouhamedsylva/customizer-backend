@@ -25,7 +25,9 @@ export class AdminService {
     const ids = await this.orders
       .createQueryBuilder('o')
       .select('o.shopifyOrderId', 'id')
-      .orderBy('o.receivedAt', 'DESC')
+      // Plus récent -> plus ancien (date réelle de la commande Shopify).
+      .orderBy('o.shopifyCreatedAt', 'DESC')
+      .addOrderBy('o.receivedAt', 'DESC')
       .limit(300)
       .getRawMany<{ id: string }>();
     if (!ids.length) return [];
