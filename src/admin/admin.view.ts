@@ -70,6 +70,9 @@ const LAYOUT_HEAD = `<!doctype html><html lang="fr"><head><meta charset="utf-8">
   .props .row{margin:2px 0}
   .props a{color:#1e46b8;text-decoration:none;word-break:break-all}
   .empty{text-align:center;color:#8a929b;padding:60px 20px;font-size:14px}
+  .client-block{background:#f7f8fa;border-radius:9px;padding:12px 14px;margin-bottom:10px}
+  .client-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#8a929b;margin-bottom:8px}
+  .client-block a{color:#1e46b8;text-decoration:none}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;z-index:100;padding:30px}
   .lightbox.open{display:flex}
   .lightbox img{max-width:92vw;max-height:88vh;border-radius:8px;background:#fff}
@@ -135,9 +138,33 @@ function orderCard(o: Order): string {
       </div>
     </div>
     <div class="card-body">
+      ${customerBlock(o)}
       <div class="items">${itemsHtml || '<div class="card-sub">Aucun article.</div>'}</div>
     </div>
   </div>`;
+}
+
+/** Bloc "Client & livraison" affiché dans le détail d'une commande. */
+function customerBlock(o: Order): string {
+  const info: any = o.customerInfo || {};
+  const s = info.shipping || {};
+  const addrParts = [
+    s.address1,
+    s.address2,
+    [s.zip, s.city].filter(Boolean).join(' '),
+    s.province,
+    s.country,
+  ].filter(Boolean);
+  const addr = addrParts.length ? addrParts.map(esc).join(', ') : '';
+  const rows: string[] = [];
+  rows.push(`<div class="row"><span class="k">Nom</span> ${esc(o.customerName || '—')}</div>`);
+  if (o.customerEmail) rows.push(`<div class="row"><span class="k">Email</span> <a href="mailto:${esc(o.customerEmail)}">${esc(o.customerEmail)}</a></div>`);
+  if (o.customerPhone) rows.push(`<div class="row"><span class="k">Téléphone</span> <a href="tel:${esc(o.customerPhone)}">${esc(o.customerPhone)}</a></div>`);
+  if (s.company) rows.push(`<div class="row"><span class="k">Société</span> ${esc(s.company)}</div>`);
+  if (addr) rows.push(`<div class="row"><span class="k">Livraison</span> ${addr}</div>`);
+  if (info.note) rows.push(`<div class="row"><span class="k">Note client</span> ${esc(info.note)}</div>`);
+  return `<div class="client-block"><div class="client-title">Client & livraison</div>
+    <div class="props">${rows.join('')}</div></div>`;
 }
 
 /** Rendu d'un devis. */

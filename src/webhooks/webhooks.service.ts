@@ -87,6 +87,33 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       [customer.first_name, customer.last_name].filter(Boolean).join(' ') ||
       payload.email ||
       null;
+    const customerPhone =
+      payload.phone || customer.phone ||
+      payload.shipping_address?.phone ||
+      payload.billing_address?.phone || null;
+
+    // Toutes les infos client utiles à la production/expédition.
+    const fmtAddr = (a: Record<string, any> | undefined | null) =>
+      a
+        ? {
+            name: a.name,
+            company: a.company,
+            address1: a.address1,
+            address2: a.address2,
+            zip: a.zip,
+            city: a.city,
+            province: a.province,
+            country: a.country,
+            phone: a.phone,
+          }
+        : null;
+    const customerInfo: Record<string, unknown> = {
+      email: payload.email || customer.email || null,
+      phone: customerPhone,
+      note: payload.note || null,
+      shipping: fmtAddr(payload.shipping_address),
+      billing: fmtAddr(payload.billing_address),
+    };
 
     // Ne garde que les infos utiles de chaque ligne (dont les propriétés
     // = couleur, taille, URLs aperçus/assets Cloudinary).
@@ -106,6 +133,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       orderNumber: payload.name || (payload.order_number ? `#${payload.order_number}` : null),
       customerEmail: payload.email || customer.email || null,
       customerName,
+      customerPhone,
+      customerInfo,
       totalPrice: payload.total_price ?? null,
       currency: payload.currency ?? null,
       lineItems,

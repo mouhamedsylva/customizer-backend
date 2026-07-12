@@ -22,6 +22,13 @@ export class Order {
   @Column({ type: 'varchar', length: 255, nullable: true })
   customerName: string | null;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  customerPhone: string | null;
+
+  /** Adresse de livraison + facturation + note client (JSON). */
+  @Column({ type: 'json', nullable: true })
+  customerInfo: Record<string, unknown> | null;
+
   /** Total de la commande (chaîne, comme fourni par Shopify). */
   @Column({ type: 'varchar', length: 32, nullable: true })
   totalPrice: string | null;
