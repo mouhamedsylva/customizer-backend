@@ -147,7 +147,8 @@ function orderCard(o: Order): string {
 /** Bloc "Client & livraison" affiché dans le détail d'une commande. */
 function customerBlock(o: Order): string {
   const info: any = o.customerInfo || {};
-  const s = info.shipping || {};
+  // Adresse de livraison en priorité, sinon facturation.
+  const s = info.shipping || info.billing || {};
   const addrParts = [
     s.address1,
     s.address2,
@@ -156,15 +157,24 @@ function customerBlock(o: Order): string {
     s.country,
   ].filter(Boolean);
   const addr = addrParts.length ? addrParts.map(esc).join(', ') : '';
+  const name = o.customerName || s.name || null;
+  const email = o.customerEmail || info.email || null;
+  const phone = o.customerPhone || info.phone || s.phone || null;
+
   const rows: string[] = [];
-  rows.push(`<div class="row"><span class="k">Nom</span> ${esc(o.customerName || '—')}</div>`);
-  if (o.customerEmail) rows.push(`<div class="row"><span class="k">Email</span> <a href="mailto:${esc(o.customerEmail)}">${esc(o.customerEmail)}</a></div>`);
-  if (o.customerPhone) rows.push(`<div class="row"><span class="k">Téléphone</span> <a href="tel:${esc(o.customerPhone)}">${esc(o.customerPhone)}</a></div>`);
+  if (name) rows.push(`<div class="row"><span class="k">Nom</span> ${esc(name)}</div>`);
+  if (email) rows.push(`<div class="row"><span class="k">Email</span> <a href="mailto:${esc(email)}">${esc(email)}</a></div>`);
+  if (phone) rows.push(`<div class="row"><span class="k">Téléphone</span> <a href="tel:${esc(phone)}">${esc(phone)}</a></div>`);
   if (s.company) rows.push(`<div class="row"><span class="k">Société</span> ${esc(s.company)}</div>`);
-  if (addr) rows.push(`<div class="row"><span class="k">Livraison</span> ${addr}</div>`);
+  if (addr) rows.push(`<div class="row"><span class="k">Adresse</span> ${addr}</div>`);
   if (info.note) rows.push(`<div class="row"><span class="k">Note client</span> ${esc(info.note)}</div>`);
-  return `<div class="client-block"><div class="client-title">Client & livraison</div>
-    <div class="props">${rows.join('')}</div></div>`;
+
+  const body = rows.length
+    ? `<div class="props">${rows.join('')}</div>`
+    : `<div class="card-sub">Coordonnées client non disponibles.<br>
+       <span style="font-size:10px">Pour récupérer nom/email/téléphone, le token Shopify doit avoir le scope <b>read_customers</b> (données client protégées). Les nouvelles commandes passées via le webhook les remonteront automatiquement.</span></div>`;
+
+  return `<div class="client-block"><div class="client-title">Client & livraison</div>${body}</div>`;
 }
 
 /** Rendu d'un devis. */
