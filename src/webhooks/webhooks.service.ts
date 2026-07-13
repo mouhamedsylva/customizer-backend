@@ -155,6 +155,36 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     return this.orders.find({ order: { receivedAt: 'DESC' } });
   }
 
+  /** Diagnostic : scopes du token + ceux requis pour les données client. */
+  async getScopes(): Promise<{
+    scopes: string[];
+    hasReadOrders: boolean;
+    hasReadCustomers: boolean;
+    hint: string;
+  }> {
+    let scopes: string[] = [];
+    try {
+      scopes = await this.shopify.getAccessScopes();
+    } catch (e) {
+      return {
+        scopes: [],
+        hasReadOrders: false,
+        hasReadCustomers: false,
+        hint: `Lecture des scopes impossible : ${(e as Error).message}`,
+      };
+    }
+    const hasReadOrders = scopes.includes('read_orders');
+    const hasReadCustomers = scopes.includes('read_customers');
+    return {
+      scopes,
+      hasReadOrders,
+      hasReadCustomers,
+      hint: hasReadCustomers
+        ? 'read_customers présent : les coordonnées client devraient remonter.'
+        : "read_customers ABSENT : Shopify masque nom, e-mail, téléphone et l'adresse détaillée. Ajoutez ce scope à l'app (et l'accès aux « Protected customer data »), puis régénérez le token.",
+    };
+  }
+
   /**
    * Synchronise les commandes Shopify vers la base (rattrape l'historique et
    * toute commande manquée par un webhook). Robuste : n'interrompt jamais le

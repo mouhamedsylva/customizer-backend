@@ -49,4 +49,14 @@ export class WebhooksController {
   listOrders() {
     return this.webhooks.findAll();
   }
+
+  /**
+   * GET /api/webhooks/scopes — diagnostic : permissions réelles du token Shopify.
+   * Permet de vérifier la présence de read_orders / read_customers (sans ce
+   * dernier, Shopify masque nom, email, téléphone et adresse détaillée).
+   */
+  @Get('scopes')
+  async scopes() {
+    return this.webhooks.getScopes();
+  }
 }
