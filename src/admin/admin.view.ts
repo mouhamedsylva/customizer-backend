@@ -230,6 +230,18 @@ body{
 .empty-state p{font-size:14px}
 .empty-state small{display:block;margin-top:6px;color:var(--faint);font-size:12px}
 
+/* Sous-filtres (onglet Devis) */
+.subfilters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.chip-filter{
+  border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  border-radius:20px;padding:6px 14px;font:inherit;font-size:12.5px;font-weight:600;
+  cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s;
+}
+.chip-filter:hover{border-color:var(--accent);color:var(--ink)}
+.chip-filter.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip-filter .count{font-size:11px;font-weight:700;opacity:.75}
+.chip-filter.active .count{opacity:.9}
+
 /* Actions sur un devis */
 .quote-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
   margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
@@ -403,6 +415,18 @@ function orderCard(o: Order): string {
   </div>`;
 }
 
+/** Statut lisible d'un devis + pastille. */
+function quoteStatus(q: Quote): { key: string; pill: string } {
+  const s = q.draftStatus || 'open';
+  if (s === 'completed') {
+    return { key: 'paid', pill: `<span class="pill ok">Payé</span>` };
+  }
+  if (s === 'invoice_sent') {
+    return { key: 'sent', pill: `<span class="pill warn">Facture envoyée</span>` };
+  }
+  return { key: 'open', pill: `<span class="pill neutral">À chiffrer</span>` };
+}
+
 function quoteCard(q: Quote, shopDomain: string): string {
   const d: any = q.quoteData || {};
   const c = d.customer || {};
@@ -414,18 +438,27 @@ function quoteCard(q: Quote, shopDomain: string): string {
     : `<div class="no-thumb">Sans aperçu</div>`;
   const details: string[] = Array.isArray(coin.details) ? coin.details : [];
   const search = esc([c.nom, c.email, coin.name].join(' ').toLowerCase());
-  return `<div class="card" data-search="${search}">
+  const st = quoteStatus(q);
+  const isPaid = st.key === 'paid';
+  return `<div class="card" data-search="${search}" data-qstatus="${st.key}">
     <div class="head" onclick="toggleCard(this)">
       <div class="avatar">${esc(initials(c.nom))}</div>
       <div>
         <div class="id">${esc(coin.name || 'Devis')}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
-        <div class="sub">${esc(c.nom || 'Client')}${c.email ? ' · ' + esc(c.email) : ''}</div>
+        <div class="sub">${esc(c.nom || 'Client')}${c.email ? ' · ' + esc(c.email) : ''} · Qté ${esc(coin.qty || '')}</div>
       </div>
       <div class="right">
-        <span class="pill neutral">Qté ${esc(coin.qty || '')}</span>
+        ${st.pill}
+        ${q.totalPrice ? `<div class="amount mono">${money(q.totalPrice)}</div>` : ''}
         <div class="when mono">${fdate(q.createdAt)} · ${ftime(q.createdAt)}</div>
-        ${q.draftOrderId ? `<div class="when mono">Brouillon #${esc(q.draftOrderId)}</div>` : ''}
+        ${
+          isPaid && q.paidOrderId
+            ? `<div class="when mono">Commande #${esc(q.paidOrderId)}</div>`
+            : q.draftOrderId
+              ? `<div class="when mono">Brouillon #${esc(q.draftOrderId)}</div>`
+              : ''
+        }
       </div>
     </div>
     <div class="body">
@@ -444,12 +477,18 @@ function quoteCard(q: Quote, shopDomain: string): string {
       </div>
       <div class="quote-actions">
         ${
-          q.draftOrderId
-            ? `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(coin.name || '')}',${Number(coin.qty) || 1})">
-                 ✉ Chiffrer et envoyer la facture
-               </button>
-               <span class="hint">Vous fixez le prix et envoyez la facture au client, sans quitter cette page.</span>`
-            : `<span class="hint">Aucun brouillon Shopify associé : facture indisponible.</span>`
+          !q.draftOrderId
+            ? `<span class="hint">Aucun brouillon Shopify associé : facture indisponible.</span>`
+            : isPaid
+              ? `<span class="hint ok">✓ Devis réglé par le client${q.totalPrice ? ` — ${money(q.totalPrice)}` : ''}.</span>`
+              : `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(coin.name || '')}',${Number(coin.qty) || 1})">
+                   ✉ ${st.key === 'sent' ? 'Renvoyer la facture' : 'Chiffrer et envoyer la facture'}
+                 </button>
+                 <span class="hint">${
+                   st.key === 'sent'
+                     ? 'Facture déjà envoyée — en attente de paiement. Vous pouvez la renvoyer ou corriger le prix.'
+                     : 'Vous fixez le prix et envoyez la facture au client, sans quitter cette page.'
+                 }</span>`
         }
       </div>
     </div>
@@ -482,6 +521,9 @@ export function dashboardPage(
   shopDomain = '',
 ): string {
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
+  // Devis : « à traiter » (à chiffrer ou facture envoyée) vs « payés ».
+  const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
+  const nbOpen = quotes.length - nbPaid;
   const emptyOrders = `<div class="empty-state"><div class="ico">📦</div><p>Aucune commande pour l'instant.</p><small>Les commandes payées s'afficheront ici automatiquement.</small></div>`;
   const emptyQuotes = `<div class="empty-state"><div class="ico">✉️</div><p>Aucune demande de devis.</p></div>`;
   const emptyDesigns = `<div class="empty-state"><div class="ico">🎨</div><p>Aucun design sauvegardé.</p></div>`;
@@ -524,7 +566,27 @@ export function dashboardPage(
     </div>
 
     <div class="panel active" id="p-orders">${orders.length ? orders.map(orderCard).join('') : emptyOrders}</div>
-    <div class="panel" id="p-quotes">${quotes.length ? quotes.map((q) => quoteCard(q, shopDomain)).join('') : emptyQuotes}</div>
+    <div class="panel" id="p-quotes">
+      ${
+        quotes.length
+          ? `<div class="subfilters" id="quote-filters">
+               <button class="chip-filter active" data-qf="open" onclick="filterQuotes(this)">
+                 À traiter <span class="count mono">${nbOpen}</span>
+               </button>
+               <button class="chip-filter" data-qf="paid" onclick="filterQuotes(this)">
+                 Payés <span class="count mono">${nbPaid}</span>
+               </button>
+               <button class="chip-filter" data-qf="all" onclick="filterQuotes(this)">
+                 Tous <span class="count mono">${quotes.length}</span>
+               </button>
+             </div>
+             ${quotes.map((q) => quoteCard(q, shopDomain)).join('')}
+             <div class="empty-state" id="quotes-none" style="display:none">
+               <div class="ico">✓</div><p>Aucun devis dans cette catégorie.</p>
+             </div>`
+          : emptyQuotes
+      }
+    </div>
     <div class="panel" id="p-designs">${designs.length ? designs.map((d) => designCard(d, frontendUrl)).join('') : emptyDesigns}</div>
   </div>
 
@@ -567,13 +629,41 @@ export function dashboardPage(
       document.getElementById('p-'+t.dataset.tab).classList.add('active');
       var s=document.getElementById('search');s.value='';filterCards();
     });});
+    /* Filtre courant de l'onglet Devis : 'open' (à traiter), 'paid', 'all'. */
+    var quoteFilter='open';
+
+    function filterQuotes(btn){
+      quoteFilter=btn.getAttribute('data-qf');
+      document.querySelectorAll('#quote-filters .chip-filter')
+        .forEach(function(b){b.classList.toggle('active',b===btn);});
+      filterCards();
+    }
+
     function filterCards(){
       var q=document.getElementById('search').value.toLowerCase().trim();
       var panel=document.querySelector('.panel.active');
+      var isQuotes = panel.id==='p-quotes';
+      var visible=0;
+
       panel.querySelectorAll('.card').forEach(function(c){
         var hay=c.getAttribute('data-search')||'';
-        c.style.display=(!q||hay.indexOf(q)!==-1)?'':'none';
+        var matchText = !q || hay.indexOf(q)!==-1;
+
+        // Onglet Devis : on applique aussi le sous-filtre de statut.
+        var matchStatus = true;
+        if(isQuotes && quoteFilter!=='all'){
+          var st=c.getAttribute('data-qstatus')||'open';
+          matchStatus = (quoteFilter==='paid') ? (st==='paid') : (st!=='paid');
+        }
+
+        var show = matchText && matchStatus;
+        c.style.display = show ? '' : 'none';
+        if(show) visible++;
       });
+
+      // Message « aucun devis dans cette catégorie ».
+      var none=document.getElementById('quotes-none');
+      if(none) none.style.display = (isQuotes && visible===0) ? '' : 'none';
     }
     function toggleCard(head){head.parentElement.classList.toggle('open');}
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}

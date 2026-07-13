@@ -58,6 +58,14 @@ export class AdminService {
     return this.quotes.findOne({ where: { id } });
   }
 
+  /** Met à jour le statut / montant d'un devis (après chiffrage & envoi). */
+  async updateQuoteStatus(
+    id: string,
+    patch: Partial<Pick<Quote, 'draftStatus' | 'totalPrice' | 'paidOrderId'>>,
+  ): Promise<void> {
+    await this.quotes.update(id, patch);
+  }
+
   async getDesigns(): Promise<Design[]> {
     const ids = await this.designs
       .createQueryBuilder('d')

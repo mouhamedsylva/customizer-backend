@@ -141,6 +141,12 @@ export class AdminController {
             `Merci de votre confiance.\nL'équipe Custom Textile`,
       });
 
+      // 3) Reflète immédiatement l'état « facture envoyée » dans le dashboard.
+      await this.data.updateQuoteStatus(quoteId, {
+        draftStatus: 'invoice_sent',
+        totalPrice: draft?.total_price ? String(draft.total_price) : null,
+      });
+
       res.json({
         ok: true,
         to: customer.email,

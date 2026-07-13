@@ -18,6 +18,23 @@ export class Quote {
   @Column({ type: 'bigint', nullable: true })
   draftOrderId: string | null;
 
+  /**
+   * Statut du brouillon Shopify, synchronisé périodiquement :
+   *  - open          : devis créé, pas encore chiffré/envoyé
+   *  - invoice_sent  : facture envoyée, en attente de paiement
+   *  - completed     : PAYÉ (Shopify a créé la commande)
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  draftStatus: string | null;
+
+  /** ID de la commande Shopify créée après paiement (null tant que non payé). */
+  @Column({ type: 'bigint', nullable: true })
+  paidOrderId: string | null;
+
+  /** Montant total du brouillon (défini au chiffrage). */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  totalPrice: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

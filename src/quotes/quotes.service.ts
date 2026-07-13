@@ -1,6 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not, IsNull } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { EmailService, QuoteEmailData } from '../shared/email.service';
 import {
@@ -11,8 +16,9 @@ import { CreateQuoteDto } from './dto/create-quote.dto';
 import { Quote } from '../database/entities/quote.entity';
 
 @Injectable()
-export class QuotesService {
+export class QuotesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QuotesService.name);
+  private syncTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly email: EmailService,
@@ -20,6 +26,78 @@ export class QuotesService {
     @InjectRepository(Quote)
     private readonly quotes: Repository<Quote>,
   ) {}
+
+  /**
+   * Synchronise automatiquement le statut des devis avec Shopify :
+   * un devis payé par le client passe le brouillon en « completed ».
+   * Au démarrage puis toutes les 10 minutes.
+   */
+  onModuleInit(): void {
+    setTimeout(() => {
+      void this.syncStatuses('démarrage');
+    }, 12000);
+
+    this.syncTimer = setInterval(() => {
+      void this.syncStatuses('périodique');
+    }, 10 * 60 * 1000);
+  }
+
+  onModuleDestroy(): void {
+    if (this.syncTimer) clearInterval(this.syncTimer);
+  }
+
+  /**
+   * Interroge Shopify pour chaque devis ayant un brouillon, et met à jour son
+   * statut (open / invoice_sent / completed), l'ID de la commande payée et le
+   * montant. Robuste : n'interrompt jamais le backend en cas d'échec.
+   */
+  async syncStatuses(reason = 'manuel'): Promise<{ updated: number }> {
+    let quotes: Quote[] = [];
+    try {
+      quotes = await this.quotes.find({
+        where: { draftOrderId: Not(IsNull()) },
+      });
+    } catch (e) {
+      this.logger.warn(`Lecture des devis impossible : ${(e as Error).message}`);
+      return { updated: 0 };
+    }
+
+    let updated = 0;
+    for (const q of quotes) {
+      // Un devis déjà payé ne change plus : on ne le re-interroge pas.
+      if (q.draftStatus === 'completed') continue;
+      try {
+        const draft = await this.shopify.getDraftOrder(q.draftOrderId as string);
+        const status = (draft?.status as string) ?? null;
+        const orderId = draft?.order_id ? String(draft.order_id) : null;
+        const total = draft?.total_price ? String(draft.total_price) : null;
+
+        if (
+          status !== q.draftStatus ||
+          orderId !== q.paidOrderId ||
+          total !== q.totalPrice
+        ) {
+          await this.quotes.update(q.id, {
+            draftStatus: status,
+            paidOrderId: orderId,
+            totalPrice: total,
+          });
+          updated++;
+        }
+      } catch (e) {
+        this.logger.warn(
+          `Statut du devis ${q.id} non synchronisé : ${(e as Error).message}`,
+        );
+      }
+    }
+
+    if (updated) {
+      this.logger.log(
+        `Synchro devis (${reason}) : ${updated} statut(s) mis à jour.`,
+      );
+    }
+    return { updated };
+  }
 
   /**
    * Cree une demande de devis :
