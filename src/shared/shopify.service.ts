@@ -287,25 +287,4 @@ export class ShopifyService {
     }
   }
 
-  /**
-   * Liste les scopes (permissions) réellement accordés au token.
-   * Sert à diagnostiquer l'absence de données client (read_customers,
-   * read_all_orders…), que Shopify masque si le scope manque.
-   */
-  async getAccessScopes(): Promise<string[]> {
-    const storeUrl = this.config.get<string>('SHOPIFY_STORE_URL');
-    const response = await fetch(
-      `https://${storeUrl}/admin/oauth/access_scopes.json`,
-      { method: 'GET', headers: this.getHeaders() },
-    );
-    if (!response.ok) {
-      throw new Error(
-        `Impossible de lire les scopes (${response.status} ${response.statusText})`,
-      );
-    }
-    const result = (await response.json()) as {
-      access_scopes: Array<{ handle: string }>;
-    };
-    return (result.access_scopes || []).map((s) => s.handle);
-  }
 }

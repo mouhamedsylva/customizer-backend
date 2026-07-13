@@ -155,57 +155,6 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     return this.orders.find({ order: { receivedAt: 'DESC' } });
   }
 
-  /**
-   * Diagnostic : renvoie les champs client BRUTS de la dernière commande, tels
-   * que l'API Shopify les fournit. Si tout est null malgré read_customers,
-   * l'app n'a pas l'accès aux « Protected customer data ».
-   */
-  async debugRawOrder(): Promise<Record<string, unknown>> {
-    const orders = await this.shopify.listOrders(1);
-    const o = orders[0];
-    if (!o) return { message: 'Aucune commande côté Shopify.' };
-    return {
-      order: o.name,
-      // Champs client tels que Shopify les renvoie :
-      email: o.email ?? null,
-      phone: o.phone ?? null,
-      customer: o.customer ?? null,
-      shipping_address: o.shipping_address ?? null,
-      billing_address: o.billing_address ?? null,
-      // Les clés réellement présentes dans la réponse :
-      availableKeys: Object.keys(o),
-    };
-  }
-
-  /** Diagnostic : scopes du token + ceux requis pour les données client. */
-  async getScopes(): Promise<{
-    scopes: string[];
-    hasReadOrders: boolean;
-    hasReadCustomers: boolean;
-    hint: string;
-  }> {
-    let scopes: string[] = [];
-    try {
-      scopes = await this.shopify.getAccessScopes();
-    } catch (e) {
-      return {
-        scopes: [],
-        hasReadOrders: false,
-        hasReadCustomers: false,
-        hint: `Lecture des scopes impossible : ${(e as Error).message}`,
-      };
-    }
-    const hasReadOrders = scopes.includes('read_orders');
-    const hasReadCustomers = scopes.includes('read_customers');
-    return {
-      scopes,
-      hasReadOrders,
-      hasReadCustomers,
-      hint: hasReadCustomers
-        ? 'read_customers présent : les coordonnées client devraient remonter.'
-        : "read_customers ABSENT : Shopify masque nom, e-mail, téléphone et l'adresse détaillée. Ajoutez ce scope à l'app (et l'accès aux « Protected customer data »), puis régénérez le token.",
-    };
-  }
 
   /**
    * Synchronise les commandes Shopify vers la base (rattrape l'historique et

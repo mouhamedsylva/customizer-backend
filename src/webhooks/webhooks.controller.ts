@@ -1,7 +1,6 @@
 import {
   Controller,
   Post,
-  Get,
   Req,
   Headers,
   HttpCode,
@@ -44,29 +43,7 @@ export class WebhooksController {
     return { ok: true };
   }
 
-  /** GET /api/webhooks/orders — liste des commandes captées (dashboard). */
-  @Get('orders')
-  listOrders() {
-    return this.webhooks.findAll();
-  }
-
-  /**
-   * GET /api/webhooks/scopes — diagnostic : permissions réelles du token Shopify.
-   * Permet de vérifier la présence de read_orders / read_customers (sans ce
-   * dernier, Shopify masque nom, email, téléphone et adresse détaillée).
-   */
-  @Get('scopes')
-  async scopes() {
-    return this.webhooks.getScopes();
-  }
-
-  /**
-   * GET /api/webhooks/raw-order — diagnostic : JSON BRUT de la dernière commande
-   * tel que l'API Shopify le renvoie. Permet de voir si les champs client sont
-   * réellement fournis (ou masqués par la protection des données personnelles).
-   */
-  @Get('raw-order')
-  async rawOrder() {
-    return this.webhooks.debugRawOrder();
-  }
+  // NOTE : pas de route publique de listing ici. Les commandes contiennent des
+  // données personnelles (nom, e-mail, adresse) : elles ne sont exposées que par
+  // le dashboard admin, protégé par mot de passe (/api/admin).
 }
