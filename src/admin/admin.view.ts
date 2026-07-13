@@ -260,6 +260,14 @@ body{
 .modal-box textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .modal-actions{display:flex;gap:10px;margin-top:18px}
 .modal-actions .btn{flex:1;justify-content:center}
+/* Ligne prix unitaire + total */
+.price-row{display:flex;gap:14px;align-items:flex-end}
+.price-row>div:first-child{flex:1}
+.price-input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;
+  background:var(--paper);color:var(--ink);font:inherit;font-size:16px;font-weight:700;outline:none}
+.price-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.price-total{background:var(--raise);border-radius:10px;padding:9px 14px;text-align:right;min-width:150px}
+.price-total strong{display:block;font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
 
 @media (max-width:640px){
   .head{grid-template-columns:auto 1fr;gap:12px}
@@ -437,13 +445,10 @@ function quoteCard(q: Quote, shopDomain: string): string {
       <div class="quote-actions">
         ${
           q.draftOrderId
-            ? `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(coin.name || '')}')">
-                 ✉ Envoyer la facture
+            ? `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(coin.name || '')}',${Number(coin.qty) || 1})">
+                 ✉ Chiffrer et envoyer la facture
                </button>
-               <a class="btn" href="https://${esc(shopDomain)}/admin/draft_orders/${esc(q.draftOrderId)}" target="_blank" rel="noopener">
-                 Définir le prix ↗
-               </a>
-               <span class="hint">Renseignez d'abord le montant dans le brouillon Shopify, puis envoyez la facture.</span>`
+               <span class="hint">Vous fixez le prix et envoyez la facture au client, sans quitter cette page.</span>`
             : `<span class="hint">Aucun brouillon Shopify associé : facture indisponible.</span>`
         }
       </div>
@@ -525,16 +530,30 @@ export function dashboardPage(
 
   <div class="lightbox" id="lb" onclick="this.classList.remove('open')"><img id="lb-img" src="" alt="Aperçu agrandi"></div>
 
-  <!-- Modale : envoi de la facture d'un devis -->
+  <!-- Modale : chiffrer le devis et envoyer la facture -->
   <div class="modal" id="inv-modal" onclick="if(event.target===this)closeInvoice()">
     <div class="modal-box">
-      <h3>Envoyer la facture</h3>
+      <h3>Chiffrer et envoyer la facture</h3>
       <p class="sub" id="inv-sub"></p>
-      <label class="lbl">Message au client</label>
+
+      <div class="price-row">
+        <div>
+          <label class="lbl">Prix unitaire (€)</label>
+          <input type="number" id="inv-price" min="0.01" step="0.01" placeholder="0,00"
+                 oninput="updateInvoiceTotal()" class="price-input mono">
+        </div>
+        <div class="price-total">
+          <span class="lbl">Total (<span id="inv-qty" class="mono">1</span> unités)</span>
+          <strong id="inv-total" class="mono">—</strong>
+        </div>
+      </div>
+
+      <label class="lbl" style="margin-top:16px">Message au client</label>
       <textarea id="inv-msg"></textarea>
+
       <div class="modal-actions">
         <button class="btn" onclick="closeInvoice()">Annuler</button>
-        <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer</button>
+        <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer la facture</button>
       </div>
       <p class="hint" id="inv-status" style="margin-top:12px"></p>
     </div>
@@ -559,12 +578,18 @@ export function dashboardPage(
     function toggleCard(head){head.parentElement.classList.toggle('open');}
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}
 
-    /* ── Envoi de la facture d'un devis ── */
-    var invQuoteId=null;
-    function openInvoice(id,email,nom,produit){
+    /* ── Chiffrage du devis + envoi de la facture ── */
+    var invQuoteId=null, invQty=1;
+    function euro(n){return n.toFixed(2).replace('.',',')+' €';}
+
+    function openInvoice(id,email,nom,produit,qty){
       invQuoteId=id;
+      invQty=Math.max(1,parseInt(qty,10)||1);
       document.getElementById('inv-sub').textContent =
         email ? ('Destinataire : '+email) : 'Aucune adresse e-mail renseignée pour ce client.';
+      document.getElementById('inv-qty').textContent = invQty;
+      document.getElementById('inv-price').value='';
+      document.getElementById('inv-total').textContent='—';
       document.getElementById('inv-msg').value =
         'Bonjour '+(nom||'')+',\\n\\n'+
         'Voici votre devis pour '+(produit||'votre commande personnalisée')+'. '+
@@ -573,31 +598,54 @@ export function dashboardPage(
       var st=document.getElementById('inv-status');
       st.textContent=''; st.className='hint';
       var btn=document.getElementById('inv-send');
-      btn.disabled=false; btn.textContent='Envoyer';
+      btn.disabled=false; btn.textContent='Envoyer la facture';
       document.getElementById('inv-modal').classList.add('open');
+      setTimeout(function(){document.getElementById('inv-price').focus();},60);
     }
+
+    function updateInvoiceTotal(){
+      var p=parseFloat(document.getElementById('inv-price').value);
+      document.getElementById('inv-total').textContent =
+        (isFinite(p) && p>0) ? euro(p*invQty) : '—';
+    }
+
     function closeInvoice(){
       document.getElementById('inv-modal').classList.remove('open');
       invQuoteId=null;
     }
+
     function sendInvoice(){
       if(!invQuoteId) return;
       var btn=document.getElementById('inv-send');
       var st=document.getElementById('inv-status');
+      var price=parseFloat(document.getElementById('inv-price').value);
+
+      if(!isFinite(price) || price<=0){
+        st.className='hint err';
+        st.textContent='Indiquez un prix unitaire supérieur à 0.';
+        document.getElementById('inv-price').focus();
+        return;
+      }
+
       btn.disabled=true; btn.textContent='Envoi…';
-      st.className='hint'; st.textContent='';
+      st.className='hint'; st.textContent='Application du prix, puis envoi…';
+
       fetch('/api/admin/quotes/'+encodeURIComponent(invQuoteId)+'/invoice',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({message:document.getElementById('inv-msg').value})
+        body:JSON.stringify({
+          unitPrice:price,
+          message:document.getElementById('inv-msg').value
+        })
       })
       .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j};});})
       .then(function(res){
         if(res.ok && res.body.ok){
           st.className='hint ok';
-          st.textContent='Facture envoyée'+(res.body.to?(' à '+res.body.to):'')+'.';
+          st.textContent='Facture envoyée'+(res.body.to?(' à '+res.body.to):'')+
+            (res.body.total?(' — total '+String(res.body.total).replace('.',',')+' €'):'')+'.';
           btn.textContent='Envoyée';
-          setTimeout(closeInvoice,1600);
+          setTimeout(function(){closeInvoice();location.reload();},1800);
         }else{
           st.className='hint err';
           st.textContent=(res.body && res.body.error) || "L'envoi a échoué.";

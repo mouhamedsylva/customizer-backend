@@ -76,16 +76,18 @@ export class AdminController {
   }
 
   /**
-   * POST /api/admin/quotes/:id/invoice — envoie la facture d'un devis au client.
-   * Utilise le draft order Shopify créé lors de la demande de devis : le client
-   * reçoit un e-mail avec le récapitulatif et un lien de paiement.
-   * Le montant doit avoir été défini au préalable dans le brouillon Shopify.
+   * POST /api/admin/quotes/:id/invoice — définit le prix puis envoie la facture.
+   * Body : { unitPrice: number, message?: string }
+   * Le prix unitaire est appliqué à la ligne du brouillon Shopify (le total est
+   * recalculé par Shopify), puis le client reçoit l'e-mail de facture avec un
+   * lien de paiement. Tout se fait sans quitter le dashboard.
    */
   @Post('quotes/:id/invoice')
   async sendQuoteInvoice(
     @Req() req: Request,
     @Param('id') quoteId: string,
     @Body('message') message: string,
+    @Body('unitPrice') unitPrice: unknown,
     @Res() res: Response,
   ): Promise<void> {
     if (!this.isAuthed(req)) {
@@ -107,11 +109,27 @@ export class AdminController {
       return;
     }
 
+    const price = Number(unitPrice);
+    if (!Number.isFinite(price) || price <= 0) {
+      res.status(400).json({
+        ok: false,
+        error: 'Indiquez un prix unitaire supérieur à 0.',
+      });
+      return;
+    }
+
     const data = (quote.quoteData || {}) as Record<string, any>;
     const customer = data.customer || {};
     const productName = data.coin?.name || 'votre commande personnalisée';
 
     try {
+      // 1) Applique le prix à la ligne du brouillon (total recalculé par Shopify).
+      const draft = await this.shopify.setDraftOrderPrice(
+        quote.draftOrderId,
+        price,
+      );
+
+      // 2) Envoie la facture au client.
       await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
         to: customer.email,
         subject: `Votre devis — ${productName}`,
@@ -122,7 +140,12 @@ export class AdminController {
             `Vous pouvez le régler directement via le lien ci-dessous.\n\n` +
             `Merci de votre confiance.\nL'équipe Custom Textile`,
       });
-      res.json({ ok: true, to: customer.email });
+
+      res.json({
+        ok: true,
+        to: customer.email,
+        total: draft?.total_price ?? null,
+      });
     } catch (err) {
       res.status(502).json({ ok: false, error: (err as Error).message });
     }

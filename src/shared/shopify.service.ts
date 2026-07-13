@@ -215,6 +215,36 @@ export class ShopifyService {
   }
 
   /**
+   * Définit le PRIX UNITAIRE de la ligne d'un draft order (devis).
+   * Un devis n'a qu'une ligne : on la reconstruit avec le nouveau prix, en
+   * conservant titre, quantité et propriétés (détails du design).
+   * Renvoie le draft mis à jour (avec total_price recalculé par Shopify).
+   */
+  async setDraftOrderPrice(
+    draftOrderId: string | number,
+    unitPrice: number,
+  ): Promise<Record<string, any>> {
+    const draft = await this.getDraftOrder(draftOrderId);
+    const items: Array<Record<string, any>> = Array.isArray(draft.line_items)
+      ? draft.line_items
+      : [];
+    if (!items.length) {
+      throw new Error('Ce brouillon ne contient aucune ligne.');
+    }
+
+    // Reconstruit les lignes : seule la 1re (la ligne du devis) change de prix.
+    const rebuilt: ShopifyLineItem[] = items.map((li, i) => ({
+      title: li.title,
+      price: i === 0 ? unitPrice.toFixed(2) : String(li.price),
+      quantity: li.quantity,
+      custom: true,
+      properties: li.properties,
+    }));
+
+    return this.updateDraftOrderLineItems(draftOrderId, rebuilt);
+  }
+
+  /**
    * Retire une ligne d'un draft order.
    * Shopify ne supprime pas une ligne individuellement : on recupere le draft,
    * on filtre la ligne visee, puis on remet a jour la liste des line_items.
