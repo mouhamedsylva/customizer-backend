@@ -104,6 +104,45 @@ export class ShopifyService {
   }
 
   /**
+   * Envoie la facture d'un draft order au client (même action que le bouton
+   * « Envoyer la facture » de l'admin Shopify).
+   * Le client reçoit un e-mail avec un lien de paiement.
+   */
+  async sendDraftOrderInvoice(
+    draftOrderId: string | number,
+    invoice: {
+      to?: string;
+      subject?: string;
+      custom_message?: string;
+      bcc?: string[];
+    } = {},
+  ): Promise<Record<string, any>> {
+    const response = await fetch(
+      `${this.getBaseUrl()}/draft_orders/${draftOrderId}/send_invoice.json`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ draft_order_invoice: invoice }),
+      },
+    );
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      this.logger.error(
+        `Echec envoi facture draft ${draftOrderId}: ${response.status} ${text}`,
+      );
+      throw new Error(
+        `Erreur Shopify (${response.status}) : ${response.statusText}. ${text}`,
+      );
+    }
+
+    const result = (await response.json()) as {
+      draft_order_invoice: Record<string, any>;
+    };
+    return result.draft_order_invoice;
+  }
+
+  /**
    * Liste les draft orders (limite configurable).
    */
   async listDraftOrders(limit = 50): Promise<Record<string, any>[]> {

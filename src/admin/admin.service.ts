@@ -53,6 +53,11 @@ export class AdminService {
     return this.reorder(rows, ids.map((r) => r.id), (q) => q.id);
   }
 
+  /** Un devis par son id (pour l'envoi de facture). */
+  async getQuote(id: string): Promise<Quote | null> {
+    return this.quotes.findOne({ where: { id } });
+  }
+
   async getDesigns(): Promise<Design[]> {
     const ids = await this.designs
       .createQueryBuilder('d')

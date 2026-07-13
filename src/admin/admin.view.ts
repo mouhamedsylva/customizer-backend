@@ -230,10 +230,36 @@ body{
 .empty-state p{font-size:14px}
 .empty-state small{display:block;margin-top:6px;color:var(--faint);font-size:12px}
 
+/* Actions sur un devis */
+.quote-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.primary:hover{background:#a83809;border-color:#a83809;color:#fff}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.hint{font-size:12px;color:var(--muted)}
+.hint.ok{color:var(--ok);font-weight:600}
+.hint.err{color:var(--accent);font-weight:600}
+
 /* Lightbox */
 .lightbox{position:fixed;inset:0;background:rgba(10,10,12,.86);display:none;align-items:center;justify-content:center;z-index:100;padding:30px;cursor:zoom-out}
 .lightbox.open{display:flex}
 .lightbox img{max-width:92vw;max-height:88vh;border-radius:10px;background:var(--surface);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+
+/* Modale : envoi de facture */
+.modal{position:fixed;inset:0;background:rgba(10,10,12,.6);backdrop-filter:blur(3px);
+  display:none;align-items:center;justify-content:center;z-index:110;padding:24px}
+.modal.open{display:flex}
+.modal-box{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  width:min(94vw,480px);padding:24px;box-shadow:0 30px 70px rgba(0,0,0,.3)}
+.modal-box h3{font-size:17px;font-weight:800;letter-spacing:-.01em;margin-bottom:4px}
+.modal-box p.sub{font-size:13px;color:var(--muted);margin-bottom:16px}
+.modal-box label{display:block;margin-bottom:6px}
+.modal-box textarea{width:100%;min-height:120px;padding:11px 13px;border:1px solid var(--line);
+  border-radius:10px;background:var(--paper);color:var(--ink);font:inherit;font-size:13.5px;
+  outline:none;resize:vertical;line-height:1.5}
+.modal-box textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.modal-actions{display:flex;gap:10px;margin-top:18px}
+.modal-actions .btn{flex:1;justify-content:center}
 
 @media (max-width:640px){
   .head{grid-template-columns:auto 1fr;gap:12px}
@@ -369,7 +395,7 @@ function orderCard(o: Order): string {
   </div>`;
 }
 
-function quoteCard(q: Quote): string {
+function quoteCard(q: Quote, shopDomain: string): string {
   const d: any = q.quoteData || {};
   const c = d.customer || {};
   const coin = d.coin || {};
@@ -408,6 +434,19 @@ function quoteCard(q: Quote): string {
           <div class="specs">${details.map((x) => `<span class="spec">${esc(x)}</span>`).join('') || '<span class="empty">—</span>'}</div>
         </div>
       </div>
+      <div class="quote-actions">
+        ${
+          q.draftOrderId
+            ? `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(coin.name || '')}')">
+                 ✉ Envoyer la facture
+               </button>
+               <a class="btn" href="https://${esc(shopDomain)}/admin/draft_orders/${esc(q.draftOrderId)}" target="_blank" rel="noopener">
+                 Définir le prix ↗
+               </a>
+               <span class="hint">Renseignez d'abord le montant dans le brouillon Shopify, puis envoyez la facture.</span>`
+            : `<span class="hint">Aucun brouillon Shopify associé : facture indisponible.</span>`
+        }
+      </div>
     </div>
   </div>`;
 }
@@ -435,6 +474,7 @@ export function dashboardPage(
   quotes: Quote[],
   designs: Design[],
   frontendUrl: string,
+  shopDomain = '',
 ): string {
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
   const emptyOrders = `<div class="empty-state"><div class="ico">📦</div><p>Aucune commande pour l'instant.</p><small>Les commandes payées s'afficheront ici automatiquement.</small></div>`;
@@ -479,11 +519,26 @@ export function dashboardPage(
     </div>
 
     <div class="panel active" id="p-orders">${orders.length ? orders.map(orderCard).join('') : emptyOrders}</div>
-    <div class="panel" id="p-quotes">${quotes.length ? quotes.map(quoteCard).join('') : emptyQuotes}</div>
+    <div class="panel" id="p-quotes">${quotes.length ? quotes.map((q) => quoteCard(q, shopDomain)).join('') : emptyQuotes}</div>
     <div class="panel" id="p-designs">${designs.length ? designs.map((d) => designCard(d, frontendUrl)).join('') : emptyDesigns}</div>
   </div>
 
   <div class="lightbox" id="lb" onclick="this.classList.remove('open')"><img id="lb-img" src="" alt="Aperçu agrandi"></div>
+
+  <!-- Modale : envoi de la facture d'un devis -->
+  <div class="modal" id="inv-modal" onclick="if(event.target===this)closeInvoice()">
+    <div class="modal-box">
+      <h3>Envoyer la facture</h3>
+      <p class="sub" id="inv-sub"></p>
+      <label class="lbl">Message au client</label>
+      <textarea id="inv-msg"></textarea>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeInvoice()">Annuler</button>
+        <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer</button>
+      </div>
+      <p class="hint" id="inv-status" style="margin-top:12px"></p>
+    </div>
+  </div>
 
   <script>
     var tabs=document.querySelectorAll('.tab');
@@ -503,6 +558,64 @@ export function dashboardPage(
     }
     function toggleCard(head){head.parentElement.classList.toggle('open');}
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}
-    document.addEventListener('keydown',function(e){if(e.key==='Escape')document.getElementById('lb').classList.remove('open');});
+
+    /* ── Envoi de la facture d'un devis ── */
+    var invQuoteId=null;
+    function openInvoice(id,email,nom,produit){
+      invQuoteId=id;
+      document.getElementById('inv-sub').textContent =
+        email ? ('Destinataire : '+email) : 'Aucune adresse e-mail renseignée pour ce client.';
+      document.getElementById('inv-msg').value =
+        'Bonjour '+(nom||'')+',\\n\\n'+
+        'Voici votre devis pour '+(produit||'votre commande personnalisée')+'. '+
+        'Vous pouvez le régler directement via le lien ci-dessous.\\n\\n'+
+        'Merci de votre confiance.\\nL\\'équipe Custom Textile';
+      var st=document.getElementById('inv-status');
+      st.textContent=''; st.className='hint';
+      var btn=document.getElementById('inv-send');
+      btn.disabled=false; btn.textContent='Envoyer';
+      document.getElementById('inv-modal').classList.add('open');
+    }
+    function closeInvoice(){
+      document.getElementById('inv-modal').classList.remove('open');
+      invQuoteId=null;
+    }
+    function sendInvoice(){
+      if(!invQuoteId) return;
+      var btn=document.getElementById('inv-send');
+      var st=document.getElementById('inv-status');
+      btn.disabled=true; btn.textContent='Envoi…';
+      st.className='hint'; st.textContent='';
+      fetch('/api/admin/quotes/'+encodeURIComponent(invQuoteId)+'/invoice',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:document.getElementById('inv-msg').value})
+      })
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j};});})
+      .then(function(res){
+        if(res.ok && res.body.ok){
+          st.className='hint ok';
+          st.textContent='Facture envoyée'+(res.body.to?(' à '+res.body.to):'')+'.';
+          btn.textContent='Envoyée';
+          setTimeout(closeInvoice,1600);
+        }else{
+          st.className='hint err';
+          st.textContent=(res.body && res.body.error) || "L'envoi a échoué.";
+          btn.disabled=false; btn.textContent='Réessayer';
+        }
+      })
+      .catch(function(e){
+        st.className='hint err';
+        st.textContent='Erreur réseau : '+e.message;
+        btn.disabled=false; btn.textContent='Réessayer';
+      });
+    }
+
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape'){
+        document.getElementById('lb').classList.remove('open');
+        closeInvoice();
+      }
+    });
   </script>`);
 }
