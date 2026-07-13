@@ -155,6 +155,28 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     return this.orders.find({ order: { receivedAt: 'DESC' } });
   }
 
+  /**
+   * Diagnostic : renvoie les champs client BRUTS de la dernière commande, tels
+   * que l'API Shopify les fournit. Si tout est null malgré read_customers,
+   * l'app n'a pas l'accès aux « Protected customer data ».
+   */
+  async debugRawOrder(): Promise<Record<string, unknown>> {
+    const orders = await this.shopify.listOrders(1);
+    const o = orders[0];
+    if (!o) return { message: 'Aucune commande côté Shopify.' };
+    return {
+      order: o.name,
+      // Champs client tels que Shopify les renvoie :
+      email: o.email ?? null,
+      phone: o.phone ?? null,
+      customer: o.customer ?? null,
+      shipping_address: o.shipping_address ?? null,
+      billing_address: o.billing_address ?? null,
+      // Les clés réellement présentes dans la réponse :
+      availableKeys: Object.keys(o),
+    };
+  }
+
   /** Diagnostic : scopes du token + ceux requis pour les données client. */
   async getScopes(): Promise<{
     scopes: string[];

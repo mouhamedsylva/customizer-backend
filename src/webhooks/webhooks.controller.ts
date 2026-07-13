@@ -59,4 +59,14 @@ export class WebhooksController {
   async scopes() {
     return this.webhooks.getScopes();
   }
+
+  /**
+   * GET /api/webhooks/raw-order — diagnostic : JSON BRUT de la dernière commande
+   * tel que l'API Shopify le renvoie. Permet de voir si les champs client sont
+   * réellement fournis (ou masqués par la protection des données personnelles).
+   */
+  @Get('raw-order')
+  async rawOrder() {
+    return this.webhooks.debugRawOrder();
+  }
 }
