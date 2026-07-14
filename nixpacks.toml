@@ -1,0 +1,11 @@
+# Railway construit ce service avec Nixpacks, dont l'image de base n'embarque
+# AUCUNE police système.
+#
+# Conséquence concrète : sharp compose les libellés de la planche multi-vues
+# (FACE, DOS, MANCHE GAUCHE…) via un SVG, et librsvg a besoin d'une vraie police
+# pour dessiner du texte. Sans police installée, il rend des rectangles vides —
+# les « ▯▯▯▯ » visibles sur les aperçus de commande.
+#
+# fontconfig fournit le mécanisme de résolution, dejavu_fonts la police elle-même.
+[phases.setup]
+nixPkgs = ['...', 'fontconfig', 'dejavu_fonts']

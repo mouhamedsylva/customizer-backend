@@ -28,6 +28,9 @@ export class CloudinaryService implements OnModuleInit {
 
   constructor(private readonly config: ConfigService) {}
 
+  /** Vrai si le serveur sait dessiner du texte (police présente). */
+  private canRenderText = true;
+
   /** Configuration de cloudinary au demarrage du module. */
   onModuleInit(): void {
     cloudinary.config({
@@ -36,6 +39,44 @@ export class CloudinaryService implements OnModuleInit {
       api_secret: this.config.get<string>('CLOUDINARY_API_SECRET'),
       secure: true,
     });
+    void this.checkFonts();
+  }
+
+  /**
+   * Vérifie qu'une police est installée.
+   *
+   * sharp dessine les libellés de la planche via un SVG, et librsvg a besoin
+   * d'une vraie police : sans elle, il rend des rectangles vides (les « ▯▯▯ »
+   * qu'on voyait sur les aperçus). L'échec étant silencieux, on le détecte au
+   * démarrage plutôt que de le découvrir sur une commande client.
+   */
+  private async checkFonts(): Promise<void> {
+    try {
+      const svg =
+        `<svg width="200" height="50" xmlns="http://www.w3.org/2000/svg">` +
+        `<rect width="200" height="50" fill="white"/>` +
+        `<text x="100" y="35" font-family="sans-serif" font-size="26" ` +
+        `font-weight="bold" fill="black" text-anchor="middle">FACE</text></svg>`;
+
+      const { data } = await sharp(Buffer.from(svg))
+        .greyscale()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      let dark = 0;
+      for (let i = 0; i < data.length; i++) if (data[i] < 128) dark++;
+
+      this.canRenderText = dark > 150;
+      if (!this.canRenderText) {
+        this.logger.warn(
+          'Aucune police système : les libellés des planches multi-vues ne ' +
+            'seront pas dessinés (ils apparaîtraient en rectangles vides). ' +
+            'Installez dejavu_fonts + fontconfig (voir nixpacks.toml).',
+        );
+      }
+    } catch {
+      this.canRenderText = false;
+    }
   }
 
   /**
@@ -279,7 +320,9 @@ export class CloudinaryService implements OnModuleInit {
         const colX = PAD + c * (CELL + GAP);
         const left = colX + Math.round((CELL - cell.w) / 2);
         overlays.push({ input: cell.buffer, left, top: yCursor });
-        if (cell.label) {
+        // Sans police, librsvg dessinerait des rectangles vides : mieux vaut
+        // une vue sans légende qu'une légende illisible.
+        if (cell.label && this.canRenderText) {
           const cx = colX + CELL / 2;
           const ly = yCursor + cell.h + 28;
           svgLabels.push(
