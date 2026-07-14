@@ -269,7 +269,10 @@ export class AdminController {
       });
     });
 
-    const label = (order.orderNumber || order.shopifyOrderId).replace('#', '');
+    const label = String(order.orderNumber || order.shopifyOrderId).replace(
+      '#',
+      '',
+    );
 
     if (!files.length) {
       res
@@ -279,28 +282,60 @@ export class AdminController {
       return;
     }
 
+    // 1) Télécharge d'abord TOUS les fichiers (les URLs Cloudinary peuvent être
+    //    lentes). On ignore ceux qui échouent plutôt que de casser l'archive.
+    const fetched: Array<{ name: string; buf: Buffer }> = [];
+    await Promise.all(
+      files.map(async (f) => {
+        try {
+          const r = await fetch(f.url);
+          if (!r.ok) return;
+          fetched.push({ name: f.name, buf: Buffer.from(await r.arrayBuffer()) });
+        } catch {
+          /* fichier inaccessible : ignoré */
+        }
+      }),
+    );
+
+    if (!fetched.length) {
+      res
+        .status(502)
+        .type('text')
+        .send('Aucun fichier n’a pu être téléchargé (liens expirés ?).');
+      return;
+    }
+
+    // 2) Construit l'archive EN MÉMOIRE, puis l'envoie d'un bloc : plus fiable
+    //    qu'un pipe direct vers la réponse (pas de course entre flux et await).
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const chunks: Buffer[] = [];
+
+    const zipBuffer: Buffer = await new Promise((resolve, reject) => {
+      archive.on('data', (c: Buffer) => chunks.push(c));
+      archive.on('end', () => resolve(Buffer.concat(chunks)));
+      archive.on('error', reject);
+
+      // Évite les doublons de nom dans l'archive.
+      const used = new Set<string>();
+      for (const f of fetched) {
+        let name = f.name;
+        let n = 2;
+        while (used.has(name)) {
+          name = f.name.replace(/(\.\w+)$/, `-${n++}$1`);
+        }
+        used.add(name);
+        archive.append(f.buf, { name });
+      }
+      void archive.finalize();
+    });
+
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="commande-${label}.zip"`,
     );
-
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    archive.on('error', () => res.end());
-    archive.pipe(res);
-
-    // Télécharge chaque fichier et l'ajoute à l'archive.
-    for (const f of files) {
-      try {
-        const r = await fetch(f.url);
-        if (!r.ok) continue;
-        const buf = Buffer.from(await r.arrayBuffer());
-        archive.append(buf, { name: f.name });
-      } catch {
-        // Fichier inaccessible : on l'ignore plutôt que d'échouer l'archive.
-      }
-    }
-    await archive.finalize();
+    res.setHeader('Content-Length', String(zipBuffer.length));
+    res.end(zipBuffer);
   }
 
   /**
