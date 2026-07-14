@@ -122,10 +122,23 @@ body{
 .stat{
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
   padding:16px 18px;box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  transition:border-color .15s, transform .15s;
 }
+.stat:hover{border-color:var(--accent);transform:translateY(-1px)}
+.stat-body{min-width:0}
 .stat .num{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1}
 .stat .cap{margin-top:6px;color:var(--muted);font-size:12px}
 .stat.accent .num{color:var(--accent)}
+/* Médaillon de l'icône : discret par défaut, coloré sur la carte accentuée. */
+.stat-ico{
+  flex:none;width:40px;height:40px;border-radius:11px;
+  display:grid;place-items:center;
+  background:var(--raise);color:var(--muted);
+}
+.stat-ico svg{width:20px;height:20px}
+.stat.accent .stat-ico{background:rgba(194,65,12,.12);color:var(--accent)}
+.stat:hover .stat-ico{color:var(--accent)}
 
 /* Tabs */
 .tabs{display:inline-flex;background:var(--raise);border-radius:11px;padding:4px;gap:2px;margin-bottom:16px}
@@ -321,11 +334,64 @@ body{
 .export-menu small{display:block;padding:6px 12px 4px;color:var(--faint);font-size:11.5px}
 
 /* Notifications */
+.bell-wrap{position:relative}
 #bell-btn{position:relative}
 .bell-dot{
   position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;padding:0 4px;
   background:var(--accent);color:#fff;border-radius:9px;
   font-size:10.5px;font-weight:800;line-height:17px;text-align:center;
+}
+
+/* Panneau déroulant, ancré sous la cloche */
+.notif-pop{
+  display:none;position:absolute;right:0;top:calc(100% + 10px);z-index:60;
+  width:360px;max-width:calc(100vw - 32px);
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 18px 44px rgba(0,0,0,.18);overflow:hidden;
+}
+.notif-pop.open{display:block;animation:notifIn .16s ease-out}
+@keyframes notifIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+/* Petite flèche vers la cloche */
+.notif-pop::before{
+  content:'';position:absolute;top:-6px;right:16px;width:11px;height:11px;
+  background:var(--surface);border-left:1px solid var(--line);border-top:1px solid var(--line);
+  transform:rotate(45deg);
+}
+.notif-head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:13px 15px;border-bottom:1px solid var(--line-soft);
+}
+.notif-head b{font-size:13.5px}
+.notif-clear{
+  border:none;background:none;cursor:pointer;font:inherit;
+  color:var(--accent);font-size:12px;font-weight:600;padding:2px 4px;border-radius:6px;
+}
+.notif-clear:hover{text-decoration:underline}
+.notif-list{max-height:340px;overflow-y:auto}
+.notif{
+  display:flex;align-items:center;gap:11px;padding:11px 15px;cursor:pointer;
+  border-bottom:1px solid var(--line-soft);text-decoration:none;color:var(--ink);
+}
+.notif:last-child{border-bottom:none}
+.notif:hover{background:var(--paper)}
+.notif-ico{
+  flex:none;width:32px;height:32px;border-radius:9px;
+  display:grid;place-items:center;font-size:14px;background:var(--raise);
+}
+.notif-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.notif-txt b{font-size:13px;font-weight:700}
+.notif-txt small{color:var(--muted);font-size:11.5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notif-when{flex:none;color:var(--faint);font-size:11px}
+.notif-empty{padding:30px 18px;text-align:center;color:var(--muted)}
+.notif-empty .ico{font-size:26px;margin-bottom:8px;color:var(--accent)}
+.notif-empty p{font-size:13.5px;font-weight:600;margin-bottom:4px}
+.notif-empty small{font-size:11.5px;color:var(--faint)}
+/* Carte mise en avant quand on arrive depuis une notification */
+.card.flash{animation:flash 1.6s ease-out}
+@keyframes flash{
+  0%,100%{box-shadow:var(--shadow)}
+  15%,60%{box-shadow:0 0 0 3px rgba(194,65,12,.35)}
 }
 .badge-new{
   display:inline-block;vertical-align:middle;margin-left:7px;
@@ -488,6 +554,44 @@ function clientBlock(o: Order): string {
     </div>`;
 }
 
+/* Icônes des cartes de statistiques (contour, hérite de la couleur). */
+const svg = (d: string): string =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+     stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+
+/** Atelier / à fabriquer : machine à coudre stylisée (aiguille + fil). */
+const ICO_MAKE = svg(
+  '<path d="M3 20h18"/><path d="M6 20v-5a3 3 0 013-3h7"/><path d="M16 5v7"/><circle cx="16" cy="4" r="1.6"/><path d="M9 12V9a3 3 0 016 0"/>',
+);
+/** Commandes reçues : carton. */
+const ICO_BOX = svg(
+  '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+);
+/** Chiffre d'affaires : euro. */
+const ICO_EURO = svg(
+  '<path d="M17 6.3A6.5 6.5 0 007.5 12a6.5 6.5 0 009.5 5.7"/><path d="M4 10.5h8"/><path d="M4 13.5h8"/>',
+);
+/** Devis : enveloppe. */
+const ICO_QUOTE = svg(
+  '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+);
+
+/** Carte du bandeau de statistiques : valeur, libellé et icône. */
+function statCard(
+  value: string | number,
+  caption: string,
+  icon: string,
+  cls = '',
+): string {
+  return `<div class="stat ${cls}">
+    <div class="stat-body">
+      <div class="num mono">${value}</div>
+      <div class="cap">${caption}</div>
+    </div>
+    <div class="stat-ico" aria-hidden="true">${icon}</div>
+  </div>`;
+}
+
 /** Étapes du suivi de production (interne à l'atelier). */
 const PROD_STEPS: Array<{ key: string; label: string; cls: string }> = [
   { key: 'to_produce', label: 'À produire',    cls: 'todo' },
@@ -589,7 +693,7 @@ function quoteCard(q: Quote, shopDomain: string): string {
   const search = esc([c.nom, c.email, coin.name].join(' ').toLowerCase());
   const st = quoteStatus(q);
   const isPaid = st.key === 'paid';
-  return `<div class="card" data-search="${search}" data-qstatus="${st.key}">
+  return `<div class="card" data-search="${search}" data-qstatus="${st.key}" id="quote-${esc(q.id)}">
     <div class="head" onclick="toggleCard(this)">
       <div class="avatar">${esc(initials(c.nom))}</div>
       <div>
@@ -888,6 +992,46 @@ export function dashboardPage(
     quotes: newQuotes.map((q) => q.id),
   });
 
+  // Contenu du panneau de notifications : les plus récentes d'abord.
+  type Notif = { at: Date | null; html: string };
+  const notifs: Notif[] = [
+    ...newOrders.map((o) => ({
+      at: o.shopifyCreatedAt,
+      html: `<a class="notif" onclick="gotoCard('orders','card-${esc(o.shopifyOrderId)}')">
+        <span class="notif-ico order">📦</span>
+        <span class="notif-txt">
+          <b>Nouvelle commande ${esc(o.orderNumber || '#' + o.shopifyOrderId)}</b>
+          <small>${esc(o.customerName || 'Client')} · ${money(o.totalPrice)}</small>
+        </span>
+        <span class="notif-when mono">${fdate(o.shopifyCreatedAt)}</span>
+      </a>`,
+    })),
+    ...newQuotes.map((q) => {
+      const d: any = q.quoteData || {};
+      const c = d.customer || {};
+      const coin = d.coin || {};
+      return {
+        at: q.createdAt,
+        html: `<a class="notif" onclick="gotoCard('quotes','quote-${esc(q.id)}')">
+          <span class="notif-ico quote">✉️</span>
+          <span class="notif-txt">
+            <b>Nouvelle demande de devis</b>
+            <small>${esc(c.nom || 'Client')} · ${esc(coin.name || 'Devis')}${coin.qty ? ` · Qté ${esc(coin.qty)}` : ''}</small>
+          </span>
+          <span class="notif-when mono">${fdate(q.createdAt)}</span>
+        </a>`,
+      };
+    }),
+  ].sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime());
+
+  const notifList = notifs.length
+    ? notifs.map((n) => n.html).join('')
+    : `<div class="notif-empty">
+         <div class="ico">✓</div>
+         <p>Rien de nouveau.</p>
+         <small>Les commandes et devis arrivés depuis votre dernière visite s'afficheront ici.</small>
+       </div>`;
+
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
   // Devis : « à traiter » (à chiffrer ou facture envoyée) vs « payés ».
   const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
@@ -913,10 +1057,19 @@ export function dashboardPage(
       <div class="brand-txt"><b>Custom Textile</b><span>Production &amp; commandes</span></div>
     </div>
     <div class="topbar-actions">
-      <button class="theme-btn" id="bell-btn" onclick="markSeen()" title="Nouveautés depuis votre dernière visite">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
-        ${nbNew ? `<span class="bell-dot">${nbNew}</span>` : ''}
-      </button>
+      <div class="bell-wrap">
+        <button class="theme-btn" id="bell-btn" onclick="toggleNotifs(event)" title="Nouveautés depuis votre dernière visite">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
+          ${nbNew ? `<span class="bell-dot">${nbNew}</span>` : ''}
+        </button>
+        <div class="notif-pop" id="notif-pop">
+          <div class="notif-head">
+            <b>Notifications</b>
+            ${nbNew ? `<button class="notif-clear" onclick="markSeen()">Tout marquer comme lu</button>` : ''}
+          </div>
+          <div class="notif-list" id="notif-list">${notifList}</div>
+        </div>
+      </div>
       <button class="theme-btn" onclick="openSettings()" title="Réglages">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 8.6a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
         Réglages
@@ -931,10 +1084,10 @@ export function dashboardPage(
 
   <div class="wrap">
     <div class="stats">
-      <div class="stat accent"><div class="num mono">${nbToMake}</div><div class="cap">À fabriquer</div></div>
-      <div class="stat"><div class="num mono">${orders.length}</div><div class="cap">Commandes reçues</div></div>
-      <div class="stat"><div class="num mono">${money(revenue)}</div><div class="cap">Chiffre d'affaires</div></div>
-      <div class="stat"><div class="num mono">${nbOpen}</div><div class="cap">Devis à traiter</div></div>
+      ${statCard(nbToMake, 'À fabriquer', ICO_MAKE, 'accent')}
+      ${statCard(orders.length, 'Commandes reçues', ICO_BOX)}
+      ${statCard(money(revenue), "Chiffre d'affaires", ICO_EURO)}
+      ${statCard(nbOpen, 'Devis à traiter', ICO_QUOTE)}
     </div>
 
     <div class="tabs">
@@ -1225,11 +1378,47 @@ export function dashboardPage(
       return false;
     }
 
-    /* ── Notifications : marquer les nouveautés comme vues ── */
+    /* ── Notifications : panneau déroulant sous la cloche ── */
+    function toggleNotifs(e){
+      e.stopPropagation();                              // sinon le doc referme aussitôt
+      document.getElementById('notif-pop').classList.toggle('open');
+      document.getElementById('export-menu').classList.remove('open');
+    }
+    /* Clic à l'extérieur, ou Échap : on referme. */
+    document.addEventListener('click',function(e){
+      var w=document.querySelector('.bell-wrap');
+      if(w && !w.contains(e.target))
+        document.getElementById('notif-pop').classList.remove('open');
+    });
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape')
+        document.getElementById('notif-pop').classList.remove('open');
+    });
+
+    /* Depuis une notification : ouvrir le bon onglet, dérouler la carte. */
+    function gotoCard(tab,cardId){
+      document.getElementById('notif-pop').classList.remove('open');
+      var t=document.querySelector('.tab[data-tab="'+tab+'"]');
+      if(t) t.click();
+      /* Onglet Devis : le sous-filtre « à traiter » masque les devis payés. */
+      if(tab==='quotes'){
+        var all=document.querySelector('#quote-filters .chip-filter[data-qf="all"]');
+        if(all) filterQuotes(all);
+      }
+      var card=document.getElementById(cardId);
+      if(!card) return;
+      card.classList.add('open');
+      card.scrollIntoView({behavior:'smooth',block:'center'});
+      card.classList.remove('flash');
+      void card.offsetWidth;                            // relance l'animation
+      card.classList.add('flash');
+    }
+
+    /* Marquer toutes les nouveautés comme lues. */
     function markSeen(){
       var bell=document.getElementById('bell-btn');
       var dot=bell.querySelector('.bell-dot');
-      if(!dot) return;                       // rien de neuf
+      if(!dot) return;                                  // rien de neuf
       fetch('/api/admin/seen',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -1237,6 +1426,11 @@ export function dashboardPage(
       }).then(function(){
         dot.remove();
         document.querySelectorAll('.badge-new').forEach(function(b){b.remove();});
+        var clear=document.querySelector('.notif-clear');
+        if(clear) clear.remove();
+        document.getElementById('notif-list').innerHTML=
+          '<div class="notif-empty"><div class="ico">&#10003;</div>'+
+          '<p>Rien de nouveau.</p><small>Vous êtes à jour.</small></div>';
       });
     }
 
