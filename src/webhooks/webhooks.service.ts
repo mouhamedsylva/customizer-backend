@@ -10,6 +10,8 @@ import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Order } from '../database/entities/order.entity';
 import { ShopifyService } from '../shared/shopify.service';
+import { EmailService } from '../shared/email.service';
+import { SettingsService } from '../admin/settings.service';
 
 @Injectable()
 export class WebhooksService implements OnModuleInit, OnModuleDestroy {
@@ -19,6 +21,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService,
     private readonly shopify: ShopifyService,
+    private readonly email: EmailService,
+    private readonly settings: SettingsService,
     @InjectRepository(Order)
     private readonly orders: Repository<Order>,
   ) {}
@@ -78,9 +82,17 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   /**
    * Enregistre (ou met à jour) une commande Shopify reçue par webhook.
    * Extrait les infos utiles pour la production.
+   *
+   * @param notify  envoyer l'alerte e-mail à l'équipe si la commande est
+   *   inconnue. Faux pendant les synchros de rattrapage : sans cela, le premier
+   *   import enverrait un e-mail par commande de l'historique.
    */
-  async saveOrder(payload: Record<string, any>): Promise<void> {
+  async saveOrder(
+    payload: Record<string, any>,
+    notify = true,
+  ): Promise<void> {
     const shopifyOrderId = String(payload.id);
+    const isNew = !(await this.orders.exists({ where: { shopifyOrderId } }));
 
     const customer = payload.customer || {};
     const customerName =
@@ -142,12 +154,49 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       shopifyCreatedAt: payload.created_at ? new Date(payload.created_at) : null,
     });
 
+    // Le marqueur « nouveau » et le suivi de production appartiennent à
+    // l'atelier : une re-synchro Shopify ne doit pas les réinitialiser.
+    if (!isNew) {
+      delete (entity as Partial<Order>).seen;
+      delete (entity as Partial<Order>).productionStatus;
+    }
+
     // save() fait un upsert sur la clé primaire (shopifyOrderId) : rejouer un
     // webhook ne crée pas de doublon.
     await this.orders.save(entity);
     this.logger.log(
       `Commande ${entity.orderNumber || shopifyOrderId} enregistrée (${lineItems.length} article(s)).`,
     );
+
+    if (isNew && notify) {
+      void this.notifyNewOrder(entity, lineItems.length);
+    }
+  }
+
+  /** Alerte l'équipe qu'une commande vient d'arriver (si activé au dashboard). */
+  private async notifyNewOrder(order: Order, itemCount: number): Promise<void> {
+    try {
+      const cfg = await this.settings.get();
+      if (!cfg.notifyEmailEnabled || !cfg.notifyEmail) return;
+
+      const backendUrl =
+        this.config.get<string>('BACKEND_URL') ||
+        this.config.get<string>('PUBLIC_URL') ||
+        '';
+      await this.email.sendInternalAlert(
+        cfg.notifyEmail,
+        `Nouvelle commande ${order.orderNumber || ''}`.trim(),
+        [
+          `<strong>Client :</strong> ${order.customerName || '—'}`,
+          `<strong>E-mail :</strong> ${order.customerEmail || '—'}`,
+          `<strong>Total :</strong> ${order.totalPrice || '—'} ${order.currency || ''}`,
+          `<strong>Articles :</strong> ${itemCount}`,
+        ],
+        backendUrl ? `${backendUrl}/api/admin` : undefined,
+      );
+    } catch (e) {
+      this.logger.warn(`Alerte commande non envoyée : ${(e as Error).message}`);
+    }
   }
 
   /** Liste des commandes en base (pour le dashboard admin — étape 3). */
@@ -176,7 +225,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     let imported = 0;
     for (const o of orders) {
       try {
-        await this.saveOrder(o);
+        // Pas de notification ici : la synchro rejoue tout l'historique.
+        await this.saveOrder(o, false);
         imported++;
       } catch (e) {
         this.logger.warn(

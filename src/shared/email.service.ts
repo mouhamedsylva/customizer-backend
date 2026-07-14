@@ -143,6 +143,52 @@ export class EmailService {
     }
   }
 
+  /**
+   * Alerte interne à l'équipe (nouvelle commande, nouveau devis…).
+   * Ne lève jamais : une notification manquée ne doit pas faire échouer
+   * l'enregistrement de la commande qui vient de tomber.
+   */
+  async sendInternalAlert(
+    to: string,
+    subject: string,
+    lines: string[],
+    linkUrl?: string,
+  ): Promise<boolean> {
+    if (!to) return false;
+    const body = lines.map((l) => `<p style="margin:6px 0;">${l}</p>`).join('');
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to,
+        subject,
+        html: `
+          <!DOCTYPE html>
+          <html><head><meta charset="UTF-8"></head>
+          <body style="font-family:Arial,sans-serif;color:#1b1f24;background:#fbfaf8;padding:24px;">
+            <div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e7e2da;border-radius:12px;padding:24px;">
+              <h2 style="margin:0 0 16px;color:#c2410c;font-size:18px;">${subject}</h2>
+              ${body}
+              ${
+                linkUrl
+                  ? `<p style="margin-top:20px;">
+                       <a href="${linkUrl}" style="background:#c2410c;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block;">
+                         Ouvrir le tableau de bord
+                       </a>
+                     </p>`
+                  : ''
+              }
+            </div>
+          </body></html>`,
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Notification interne non envoyée : ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
+
   /** HTML de confirmation de commande. */
   private generateOrderConfirmationHTML(data: OrderConfirmationData): string {
     const rows = data.items

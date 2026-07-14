@@ -11,6 +11,7 @@ import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
+import { SettingsService } from './settings.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { loginPage, dashboardPage, productionSheetPage } from './admin.view';
 
@@ -23,6 +24,7 @@ export class AdminController {
   constructor(
     private readonly auth: AdminAuthService,
     private readonly data: AdminService,
+    private readonly settings: SettingsService,
     private readonly shopify: ShopifyService,
     private readonly config: ConfigService,
   ) {}
@@ -33,24 +35,40 @@ export class AdminController {
     return this.auth.verifyToken(token);
   }
 
-  /** GET /api/admin — dashboard (ou login si non authentifié). */
+  /**
+   * GET /api/admin — dashboard (ou login si non authentifié).
+   * Filtres/tri passés en query : period, payment, production, sort.
+   */
   @Get()
   async home(@Req() req: Request, @Res() res: Response): Promise<void> {
     if (!this.isAuthed(req)) {
       res.type('html').send(loginPage(false));
       return;
     }
-    const [orders, quotes, designs] = await Promise.all([
-      this.data.getOrders(),
-      this.data.getQuotes(),
+    const filters = {
+      period: String(req.query.period || 'all'),
+      payment: String(req.query.payment || 'all'),
+      production: String(req.query.production || 'all'),
+      sort: String(req.query.sort || 'date_desc'),
+    };
+
+    const [orders, quotes, designs, settings] = await Promise.all([
+      this.data.getOrders(filters),
+      this.data.getQuotes(filters.period),
       this.data.getDesigns(),
+      this.settings.get(),
     ]);
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') || 'https://example.com';
     const shopDomain = this.config.get<string>('SHOPIFY_STORE_URL') || '';
     res
       .type('html')
-      .send(dashboardPage(orders, quotes, designs, frontendUrl, shopDomain));
+      .send(
+        dashboardPage(orders, quotes, designs, frontendUrl, shopDomain, {
+          filters,
+          settings,
+        }),
+      );
   }
 
   /** POST /api/admin/login — vérifie le mot de passe, pose le cookie. */
@@ -146,9 +164,14 @@ export class AdminController {
       });
 
       // 3) Reflète immédiatement l'état « facture envoyée » dans le dashboard.
+      //    invoiceSentAt sert de point de départ aux relances automatiques ;
+      //    le compteur repart à zéro (nouveau cycle de relances).
       await this.data.updateQuoteStatus(quoteId, {
         draftStatus: 'invoice_sent',
         totalPrice: draft?.total_price ? String(draft.total_price) : null,
+        invoiceSentAt: new Date(),
+        remindersSent: 0,
+        lastReminderAt: null,
       });
 
       res.json({
@@ -389,38 +412,163 @@ export class AdminController {
     }
   }
 
-  /** GET /api/admin/export.csv — export CSV des commandes. */
+  /**
+   * GET /api/admin/export.csv — export CSV enrichi.
+   * Query :
+   *   type=orders|quotes|accounting  (défaut : orders)
+   *   period=all|7d|30d|month|quarter|year
+   */
   @Get('export.csv')
   async exportCsv(@Req() req: Request, @Res() res: Response): Promise<void> {
     if (!this.isAuthed(req)) {
       res.redirect('/api/admin');
       return;
     }
-    const orders = await this.data.getOrders();
-    const rows: string[] = [
-      'commande,client,email,total,devise,statut,date,articles',
-    ];
+    const type = String(req.query.type || 'orders');
+    const period = String(req.query.period || 'all');
     const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    for (const o of orders) {
-      const items = Array.isArray(o.lineItems) ? o.lineItems : [];
-      const summary = items
-        .map((li: any) => `${li.title} x${li.quantity}`)
-        .join(' | ');
-      rows.push(
-        [
-          q(o.orderNumber || o.shopifyOrderId),
-          q(o.customerName),
-          q(o.customerEmail),
-          q(o.totalPrice),
-          q(o.currency),
-          q(o.financialStatus),
-          q(o.shopifyCreatedAt ? new Date(o.shopifyCreatedAt).toISOString() : ''),
-          q(summary),
-        ].join(','),
-      );
+
+    let rows: string[] = [];
+    let filename = 'export.csv';
+
+    if (type === 'quotes') {
+      // ── Devis ──
+      filename = `devis-${period}.csv`;
+      rows = [
+        'reference,client,email,telephone,entreprise,produit,quantite,total,statut,relances,date',
+      ];
+      const quotes = await this.data.getQuotes(period);
+      for (const qt of quotes) {
+        const d = (qt.quoteData || {}) as Record<string, any>;
+        const c = d.customer || {};
+        const coin = d.coin || {};
+        rows.push(
+          [
+            q(qt.id),
+            q(c.nom),
+            q(c.email),
+            q(c.telephone),
+            q(c.entreprise),
+            q(coin.name),
+            q(coin.qty),
+            q(qt.totalPrice),
+            q(QUOTE_STATUS_FR[qt.draftStatus || 'open'] || qt.draftStatus),
+            q(qt.remindersSent ?? 0),
+            q(qt.createdAt ? new Date(qt.createdAt).toISOString() : ''),
+          ].join(','),
+        );
+      }
+    } else if (type === 'accounting') {
+      // ── Export comptable : une ligne par commande payée, montants nets ──
+      filename = `comptabilite-${period}.csv`;
+      rows = ['date,commande,client,email,total_ttc,devise,statut_paiement'];
+      const orders = await this.data.getOrders({ period, payment: 'paid' });
+      for (const o of orders) {
+        rows.push(
+          [
+            q(o.shopifyCreatedAt ? new Date(o.shopifyCreatedAt).toISOString().slice(0, 10) : ''),
+            q(o.orderNumber || o.shopifyOrderId),
+            q(o.customerName),
+            q(o.customerEmail),
+            q(o.totalPrice),
+            q(o.currency || 'EUR'),
+            q(o.financialStatus),
+          ].join(','),
+        );
+      }
+    } else {
+      // ── Commandes (défaut) ──
+      filename = `commandes-${period}.csv`;
+      rows = [
+        'commande,client,email,telephone,total,devise,paiement,production,date,articles,note_interne',
+      ];
+      const orders = await this.data.getOrders({
+        period,
+        production: String(req.query.production || 'all'),
+        payment: String(req.query.payment || 'all'),
+        sort: String(req.query.sort || 'date_desc'),
+      });
+      for (const o of orders) {
+        const items = Array.isArray(o.lineItems) ? o.lineItems : [];
+        const summary = items
+          .map((li: any) => `${li.title} x${li.quantity}`)
+          .join(' | ');
+        rows.push(
+          [
+            q(o.orderNumber || o.shopifyOrderId),
+            q(o.customerName),
+            q(o.customerEmail),
+            q(o.customerPhone),
+            q(o.totalPrice),
+            q(o.currency),
+            q(o.financialStatus),
+            q(PROD_STATUS_FR[o.productionStatus || 'to_produce'] || o.productionStatus),
+            q(o.shopifyCreatedAt ? new Date(o.shopifyCreatedAt).toISOString() : ''),
+            q(summary),
+            q(o.internalNote),
+          ].join(','),
+        );
+      }
     }
+
     res.type('text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="commandes.csv"');
-    res.send('﻿' + rows.join('\n')); // BOM pour Excel
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send('﻿' + rows.join('\n')); // BOM : Excel lit correctement l'UTF-8
+  }
+
+  /** POST /api/admin/settings — enregistre les réglages (relances, notifications). */
+  @Post('settings')
+  async saveSettings(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const days = String(body.reminderDays || '')
+      .split(',')
+      .map((d) => parseInt(d.trim(), 10))
+      .filter((d) => Number.isFinite(d) && d > 0);
+
+    const saved = await this.settings.save({
+      reminderEnabled: body.reminderEnabled === true || body.reminderEnabled === '1',
+      reminderDays: days,
+      notifyEmailEnabled:
+        body.notifyEmailEnabled === true || body.notifyEmailEnabled === '1',
+      notifyEmail: String(body.notifyEmail || ''),
+    });
+    res.json({ ok: true, settings: saved });
+  }
+
+  /** POST /api/admin/seen — marque commandes et devis comme vus. */
+  @Post('seen')
+  async markSeen(
+    @Req() req: Request,
+    @Body('orders') orderIds: string[],
+    @Body('quotes') quoteIds: string[],
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    await this.data.markOrdersSeen(Array.isArray(orderIds) ? orderIds : []);
+    await this.data.markQuotesSeen(Array.isArray(quoteIds) ? quoteIds : []);
+    res.json({ ok: true });
   }
 }
+
+/** Libellés français des statuts, pour les exports. */
+const PROD_STATUS_FR: Record<string, string> = {
+  to_produce: 'À produire',
+  producing: 'En production',
+  ready: 'Prête',
+  shipped: 'Expédiée',
+};
+const QUOTE_STATUS_FR: Record<string, string> = {
+  open: 'À chiffrer',
+  invoice_sent: 'Facture envoyée',
+  completed: 'Payé',
+};

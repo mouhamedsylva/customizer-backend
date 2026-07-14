@@ -5,6 +5,7 @@
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
+import { AdminSettings } from './settings.service';
 
 function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -286,6 +287,64 @@ body{
 .chip-filter .count{font-size:11px;font-weight:700;opacity:.75}
 .chip-filter.active .count{opacity:.9}
 
+/* Filtres serveur (période, paiement, tri) */
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-sel{
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;font-weight:600;
+  cursor:pointer;outline:none;transition:.15s;
+}
+.filter-sel:hover{border-color:var(--accent)}
+.chip-clear{
+  color:var(--muted);font-size:12.5px;font-weight:600;text-decoration:none;
+  padding:8px 10px;border-radius:8px;
+}
+.chip-clear:hover{color:var(--accent);background:var(--surface)}
+.filter-note{
+  background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--muted);
+}
+
+/* Menu d'export */
+.export-wrap{position:relative}
+.export-menu{
+  display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:230px;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;
+  box-shadow:0 12px 32px rgba(0,0,0,.14);
+}
+.export-menu.open{display:block}
+.export-menu a{
+  display:block;padding:10px 12px;border-radius:8px;color:var(--ink);
+  text-decoration:none;font-size:13.5px;font-weight:600;
+}
+.export-menu a:hover{background:var(--paper);color:var(--accent)}
+.export-menu small{display:block;padding:6px 12px 4px;color:var(--faint);font-size:11.5px}
+
+/* Notifications */
+#bell-btn{position:relative}
+.bell-dot{
+  position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;padding:0 4px;
+  background:var(--accent);color:#fff;border-radius:9px;
+  font-size:10.5px;font-weight:800;line-height:17px;text-align:center;
+}
+.badge-new{
+  display:inline-block;vertical-align:middle;margin-left:7px;
+  background:var(--accent);color:#fff;border-radius:20px;padding:2px 8px;
+  font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+}
+
+/* Modale de réglages */
+.set-block{
+  border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:16px;
+  background:var(--paper);
+}
+.switch{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:600}
+.switch input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+.set-block code{
+  background:var(--surface);border:1px solid var(--line);border-radius:5px;
+  padding:1px 5px;font-size:12px;
+}
+
 /* Actions sur un devis */
 .quote-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
   margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
@@ -458,6 +517,7 @@ function orderCard(o: Order): string {
       <div class="avatar">${esc(initials(o.customerName))}</div>
       <div>
         <div class="id mono">${esc(o.orderNumber || '#' + o.shopifyOrderId)}
+          ${o.seen ? '' : '<span class="badge-new">nouveau</span>'}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
       </div>
@@ -534,6 +594,7 @@ function quoteCard(q: Quote, shopDomain: string): string {
       <div class="avatar">${esc(initials(c.nom))}</div>
       <div>
         <div class="id">${esc(coin.name || 'Devis')}
+          ${q.seen ? '' : '<span class="badge-new">nouveau</span>'}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
         <div class="sub">${esc(c.nom || 'Client')}${c.email ? ' · ' + esc(c.email) : ''} · Qté ${esc(coin.qty || '')}</div>
       </div>
@@ -580,7 +641,10 @@ function quoteCard(q: Quote, shopDomain: string): string {
                  }
                  <span class="hint">${
                    st.key === 'sent'
-                     ? `Facture envoyée${daysSince(q.createdAt) ? ` il y a ${daysSince(q.createdAt)} j` : ''} — en attente de paiement.`
+                     ? `Facture envoyée${daysSince(q.invoiceSentAt || q.createdAt) ? ` il y a ${daysSince(q.invoiceSentAt || q.createdAt)} j` : ''} — en attente de paiement.` +
+                       (q.remindersSent
+                         ? ` ${q.remindersSent} relance(s) automatique(s) envoyée(s).`
+                         : '')
                      : 'Vous fixez le prix et envoyez la facture au client, sans quitter cette page.'
                  }</span>`
         }
@@ -744,13 +808,86 @@ export function productionSheetPage(o: Order): string {
 </body></html>`;
 }
 
+/** Filtres actifs, tels que reçus en query string. */
+export interface DashboardFilters {
+  period: string;
+  payment: string;
+  production: string;
+  sort: string;
+}
+
+/** Périodes proposées dans la barre de filtres. */
+const PERIODS: Array<[string, string]> = [
+  ['all', 'Toute la période'],
+  ['7d', '7 derniers jours'],
+  ['30d', '30 derniers jours'],
+  ['month', 'Ce mois-ci'],
+  ['quarter', 'Ce trimestre'],
+  ['year', 'Cette année'],
+];
+const PAYMENTS: Array<[string, string]> = [
+  ['all', 'Tout paiement'],
+  ['paid', 'Payées'],
+  ['pending', 'En attente'],
+  ['refunded', 'Remboursées'],
+];
+const SORTS: Array<[string, string]> = [
+  ['date_desc', 'Plus récentes'],
+  ['date_asc', 'Plus anciennes'],
+  ['amount_desc', 'Montant décroissant'],
+  ['amount_asc', 'Montant croissant'],
+];
+
+/** <select> d'une barre de filtres. */
+function selectFilter(
+  name: string,
+  options: Array<[string, string]>,
+  current: string,
+): string {
+  const opts = options
+    .map(
+      ([v, l]) =>
+        `<option value="${v}"${v === current ? ' selected' : ''}>${l}</option>`,
+    )
+    .join('');
+  return `<select class="filter-sel" name="${name}" onchange="applyFilters()">${opts}</select>`;
+}
+
 export function dashboardPage(
   orders: Order[],
   quotes: Quote[],
   designs: Design[],
   frontendUrl: string,
   shopDomain = '',
+  extra: {
+    filters?: DashboardFilters;
+    settings?: AdminSettings;
+  } = {},
 ): string {
+  const f: DashboardFilters = extra.filters || {
+    period: 'all',
+    payment: 'all',
+    production: 'all',
+    sort: 'date_desc',
+  };
+  const cfg: AdminSettings = extra.settings || {
+    reminderEnabled: false,
+    reminderDays: [3, 7, 14],
+    notifyEmailEnabled: false,
+    notifyEmail: '',
+  };
+  const filtered =
+    f.period !== 'all' || f.payment !== 'all' || f.production !== 'all';
+
+  // Notifications : éléments jamais ouverts par l'équipe.
+  const newOrders = orders.filter((o) => !o.seen);
+  const newQuotes = quotes.filter((q) => !q.seen);
+  const nbNew = newOrders.length + newQuotes.length;
+  const seenPayload = JSON.stringify({
+    orders: newOrders.map((o) => String(o.shopifyOrderId)),
+    quotes: newQuotes.map((q) => q.id),
+  });
+
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
   // Devis : « à traiter » (à chiffrer ou facture envoyée) vs « payés ».
   const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
@@ -776,6 +913,14 @@ export function dashboardPage(
       <div class="brand-txt"><b>Custom Textile</b><span>Production &amp; commandes</span></div>
     </div>
     <div class="topbar-actions">
+      <button class="theme-btn" id="bell-btn" onclick="markSeen()" title="Nouveautés depuis votre dernière visite">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
+        ${nbNew ? `<span class="bell-dot">${nbNew}</span>` : ''}
+      </button>
+      <button class="theme-btn" onclick="openSettings()" title="Réglages">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 8.6a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+        Réglages
+      </button>
       <button class="theme-btn" onclick="toggleTheme()" title="Basculer le thème">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
         Thème
@@ -803,8 +948,33 @@ export function dashboardPage(
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input id="search" placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards()">
       </div>
-      <a class="btn" href="/api/admin/export.csv">↓ Exporter (CSV)</a>
+
+      <div class="filters" id="filters">
+        ${selectFilter('period', PERIODS, f.period)}
+        ${selectFilter('payment', PAYMENTS, f.payment)}
+        ${selectFilter('sort', SORTS, f.sort)}
+        ${filtered ? `<a class="chip-clear" href="/api/admin">✕ Réinitialiser</a>` : ''}
+      </div>
+
+      <div class="export-wrap">
+        <button class="btn" onclick="toggleExport()">↓ Exporter</button>
+        <div class="export-menu" id="export-menu">
+          <a href="#" onclick="return exportCsv('orders')">Commandes (détaillé)</a>
+          <a href="#" onclick="return exportCsv('quotes')">Devis</a>
+          <a href="#" onclick="return exportCsv('accounting')">Comptabilité (payées)</a>
+          <small>Respecte les filtres ci-contre.</small>
+        </div>
+      </div>
     </div>
+
+    ${
+      filtered
+        ? `<div class="filter-note">
+             Vue filtrée : <strong>${orders.length}</strong> commande(s) et
+             <strong>${quotes.length}</strong> devis correspondent.
+           </div>`
+        : ''
+    }
 
     <div class="panel active" id="p-orders">
       ${
@@ -881,7 +1051,47 @@ export function dashboardPage(
     </div>
   </div>
 
+  <!-- Modale : réglages (relances automatiques + notifications) -->
+  <div class="modal" id="set-modal" onclick="if(event.target===this)closeSettings()">
+    <div class="modal-box">
+      <h3>Réglages</h3>
+      <p class="sub">Relances des devis impayés et alertes de l'équipe.</p>
+
+      <div class="set-block">
+        <label class="switch">
+          <input type="checkbox" id="set-rem-on" ${cfg.reminderEnabled ? 'checked' : ''}>
+          <span>Relancer automatiquement les devis impayés</span>
+        </label>
+        <p class="hint">
+          Après l'envoi d'une facture, le client est relancé par e-mail aux jours
+          indiqués ci-dessous. Un devis réglé n'est plus jamais relancé.
+        </p>
+        <label class="lbl" style="margin-top:12px">Jours de relance (après l'envoi de la facture)</label>
+        <input type="text" id="set-rem-days" class="price-input mono"
+               value="${esc(cfg.reminderDays.join(', '))}" placeholder="3, 7, 14">
+        <p class="hint">Séparés par des virgules. Exemple : <code>3, 7, 14</code> → relance à J+3, J+7 puis J+14.</p>
+      </div>
+
+      <div class="set-block">
+        <label class="switch">
+          <input type="checkbox" id="set-mail-on" ${cfg.notifyEmailEnabled ? 'checked' : ''}>
+          <span>M'avertir par e-mail à chaque nouvelle commande</span>
+        </label>
+        <label class="lbl" style="margin-top:12px">Adresse de l'équipe</label>
+        <input type="email" id="set-mail" class="price-input"
+               value="${esc(cfg.notifyEmail)}" placeholder="atelier@exemple.com">
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeSettings()">Annuler</button>
+        <button class="btn primary" id="set-save" onclick="saveSettings()">Enregistrer</button>
+      </div>
+      <p class="hint" id="set-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
   <script>
+    var UNSEEN=${seenPayload};
     var tabs=document.querySelectorAll('.tab');
     tabs.forEach(function(t){t.addEventListener('click',function(){
       tabs.forEach(function(x){x.classList.remove('active')});t.classList.add('active');
@@ -984,6 +1194,83 @@ export function dashboardPage(
       .catch(function(e){
         btn.disabled=false; btn.textContent=original;
         alert('Erreur réseau : '+e.message);
+      });
+    }
+
+    /* ── Filtres serveur (période, paiement, tri) ── */
+    function applyFilters(){
+      var box=document.getElementById('filters');
+      var p=new URLSearchParams();
+      box.querySelectorAll('.filter-sel').forEach(function(s){
+        if(s.value && s.value!=='all' && s.value!=='date_desc') p.set(s.name,s.value);
+      });
+      var qs=p.toString();
+      window.location.href='/api/admin'+(qs?('?'+qs):'');
+    }
+
+    /* ── Export CSV : reprend les filtres affichés ── */
+    function toggleExport(){
+      document.getElementById('export-menu').classList.toggle('open');
+    }
+    document.addEventListener('click',function(e){
+      var w=document.querySelector('.export-wrap');
+      if(w && !w.contains(e.target))
+        document.getElementById('export-menu').classList.remove('open');
+    });
+    function exportCsv(type){
+      var p=new URLSearchParams(window.location.search);
+      p.set('type',type);
+      window.location.href='/api/admin/export.csv?'+p.toString();
+      document.getElementById('export-menu').classList.remove('open');
+      return false;
+    }
+
+    /* ── Notifications : marquer les nouveautés comme vues ── */
+    function markSeen(){
+      var bell=document.getElementById('bell-btn');
+      var dot=bell.querySelector('.bell-dot');
+      if(!dot) return;                       // rien de neuf
+      fetch('/api/admin/seen',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(UNSEEN)
+      }).then(function(){
+        dot.remove();
+        document.querySelectorAll('.badge-new').forEach(function(b){b.remove();});
+      });
+    }
+
+    /* ── Réglages (relances + notifications) ── */
+    function openSettings(){document.getElementById('set-modal').classList.add('open');}
+    function closeSettings(){document.getElementById('set-modal').classList.remove('open');}
+    function saveSettings(){
+      var st=document.getElementById('set-status');
+      var btn=document.getElementById('set-save');
+      btn.disabled=true; st.className='hint'; st.textContent='Enregistrement…';
+      fetch('/api/admin/settings',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          reminderEnabled:document.getElementById('set-rem-on').checked,
+          reminderDays:document.getElementById('set-rem-days').value,
+          notifyEmailEnabled:document.getElementById('set-mail-on').checked,
+          notifyEmail:document.getElementById('set-mail').value
+        })
+      })
+      .then(function(r){return r.json();})
+      .then(function(res){
+        btn.disabled=false;
+        if(res.ok){
+          st.className='hint ok'; st.textContent='Réglages enregistrés.';
+          document.getElementById('set-rem-days').value=(res.settings.reminderDays||[]).join(', ');
+          setTimeout(closeSettings,900);
+        }else{
+          st.className='hint err'; st.textContent='Échec : '+(res.error||'');
+        }
+      })
+      .catch(function(e){
+        btn.disabled=false;
+        st.className='hint err'; st.textContent='Erreur réseau : '+e.message;
       });
     }
 

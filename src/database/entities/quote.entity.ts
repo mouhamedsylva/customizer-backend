@@ -35,6 +35,22 @@ export class Quote {
   @Column({ type: 'varchar', length: 32, nullable: true })
   totalPrice: string | null;
 
+  /** Date d'envoi de la facture (point de départ des relances). */
+  @Column({ type: 'datetime', nullable: true })
+  invoiceSentAt: Date | null;
+
+  /** Nombre de relances déjà envoyées (évite les doublons). */
+  @Column({ type: 'int', default: 0 })
+  remindersSent: number;
+
+  /** Date de la dernière relance. */
+  @Column({ type: 'datetime', nullable: true })
+  lastReminderAt: Date | null;
+
+  /** Faux tant que l'équipe n'a pas ouvert le devis (marqueur « nouveau »). */
+  @Column({ type: 'boolean', default: false })
+  seen: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 }

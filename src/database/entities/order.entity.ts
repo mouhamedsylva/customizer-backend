@@ -70,6 +70,10 @@ export class Order {
   @Column({ type: 'text', nullable: true })
   internalNote: string | null;
 
+  /** Faux tant que l'équipe n'a pas ouvert la commande (marqueur « nouveau »). */
+  @Column({ type: 'boolean', default: false })
+  seen: boolean;
+
   /** Date d'enregistrement en base (réception du webhook). */
   @CreateDateColumn()
   receivedAt: Date;
