@@ -14,13 +14,9 @@ import { AdminService } from './admin.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { loginPage, dashboardPage, productionSheetPage } from './admin.view';
 
-/* `archiver` est un module CommonJS qui exporte une FONCTION. Selon la config
-   d'interop, `import * as` peut donner un namespace non appelable : on résout
-   donc l'export réel (`.default` si présent) au moment de l'appel. */
+// JSZip : construction d'archives en mémoire, API stable et sans streams.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const archiverModule = require('archiver');
-const archiver: (format: string, opts?: Record<string, unknown>) => any =
-  archiverModule.default || archiverModule;
+const JSZip = require('jszip');
 
 @Controller('admin')
 export class AdminController {
@@ -322,28 +318,24 @@ export class AdminController {
       return;
     }
 
-    // 2) Construit l'archive EN MÉMOIRE, puis l'envoie d'un bloc : plus fiable
-    //    qu'un pipe direct vers la réponse (pas de course entre flux et await).
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    const chunks: Buffer[] = [];
-
-    const zipBuffer: Buffer = await new Promise((resolve, reject) => {
-      archive.on('data', (c: Buffer) => chunks.push(c));
-      archive.on('end', () => resolve(Buffer.concat(chunks)));
-      archive.on('error', reject);
-
+    // 2) Construit l'archive EN MÉMOIRE, puis l'envoie d'un bloc.
+    const zip = new JSZip();
+    const used = new Set<string>();
+    for (const f of fetched) {
       // Évite les doublons de nom dans l'archive.
-      const used = new Set<string>();
-      for (const f of fetched) {
-        let name = f.name;
-        let n = 2;
-        while (used.has(name)) {
-          name = f.name.replace(/(\.\w+)$/, `-${n++}$1`);
-        }
-        used.add(name);
-        archive.append(f.buf, { name });
+      let name = f.name;
+      let n = 2;
+      while (used.has(name)) {
+        name = f.name.replace(/(\.\w+)$/, `-${n++}$1`);
       }
-      void archive.finalize();
+      used.add(name);
+      zip.file(name, f.buf);
+    }
+
+    const zipBuffer: Buffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
     });
 
     res.setHeader('Content-Type', 'application/zip');
