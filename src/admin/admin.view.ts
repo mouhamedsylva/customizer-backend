@@ -406,6 +406,9 @@ body{
 }
 .switch{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:600}
 .switch input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+.mail-row{display:flex;gap:8px;align-items:stretch}
+.mail-row .price-input{flex:1;min-width:0}
+.mail-row .btn{flex:none;white-space:nowrap}
 .set-block code{
   background:var(--surface);border:1px solid var(--line);border-radius:5px;
   padding:1px 5px;font-size:12px;
@@ -1231,8 +1234,12 @@ export function dashboardPage(
           <span>M'avertir par e-mail à chaque nouvelle commande</span>
         </label>
         <label class="lbl" style="margin-top:12px">Adresse de l'équipe</label>
-        <input type="email" id="set-mail" class="price-input"
-               value="${esc(cfg.notifyEmail)}" placeholder="atelier@exemple.com">
+        <div class="mail-row">
+          <input type="email" id="set-mail" class="price-input"
+                 value="${esc(cfg.notifyEmail)}" placeholder="atelier@exemple.com">
+          <button class="btn" id="set-test" onclick="testEmail()">Tester l'envoi</button>
+        </div>
+        <p class="hint" id="set-test-status"></p>
       </div>
 
       <div class="modal-actions">
@@ -1435,6 +1442,29 @@ export function dashboardPage(
     }
 
     /* ── Réglages (relances + notifications) ── */
+    /* Test SMTP : sans lui, un e-mail qui ne part pas échoue en silence. */
+    function testEmail(){
+      var st=document.getElementById('set-test-status');
+      var btn=document.getElementById('set-test');
+      var to=document.getElementById('set-mail').value.trim();
+      if(!to){ st.className='hint err'; st.textContent="Renseignez d'abord une adresse."; return; }
+      btn.disabled=true; st.className='hint'; st.textContent='Envoi du test…';
+      fetch('/api/admin/settings/test-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email:to})
+      })
+      .then(function(r){return r.json();})
+      .then(function(res){
+        btn.disabled=false;
+        if(res.ok){ st.className='hint ok'; st.textContent='E-mail envoyé à '+res.to+'. Vérifiez votre boîte (et les indésirables).'; }
+        else { st.className='hint err'; st.textContent=res.error||'Échec.'; }
+      })
+      .catch(function(e){
+        btn.disabled=false; st.className='hint err'; st.textContent='Erreur réseau : '+e.message;
+      });
+    }
+
     function openSettings(){document.getElementById('set-modal').classList.add('open');}
     function closeSettings(){document.getElementById('set-modal').classList.remove('open');}
     function saveSettings(){

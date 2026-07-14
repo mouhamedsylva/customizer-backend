@@ -75,9 +75,13 @@ export class AdminService {
     }
 
     // Tri (sur des colonnes légères : évite « Out of sort memory »).
+    // COALESCE : une commande sans date Shopify se rabat sur sa date de
+    // réception, sinon MySQL la reléguerait tout en bas (NULL) alors qu'elle
+    // peut être la plus récente.
+    const dateExpr = 'COALESCE(o.shopifyCreatedAt, o.receivedAt)';
     switch (opts.sort) {
       case 'date_asc':
-        qb.orderBy('o.shopifyCreatedAt', 'ASC');
+        qb.orderBy(dateExpr, 'ASC');
         break;
       case 'amount_desc':
         qb.orderBy('CAST(o.totalPrice AS DECIMAL(10,2))', 'DESC');
@@ -86,9 +90,13 @@ export class AdminService {
         qb.orderBy('CAST(o.totalPrice AS DECIMAL(10,2))', 'ASC');
         break;
       default:
-        qb.orderBy('o.shopifyCreatedAt', 'DESC');
+        qb.orderBy(dateExpr, 'DESC');
     }
-    qb.addOrderBy('o.receivedAt', 'DESC').limit(opts.limit ?? 300);
+    // Départage stable : à date (ou montant) égale, la plus récemment reçue
+    // d'abord, puis le plus grand ID Shopify (les IDs sont croissants).
+    qb.addOrderBy('o.receivedAt', 'DESC')
+      .addOrderBy('o.shopifyOrderId', 'DESC')
+      .limit(opts.limit ?? 300);
 
     const ids = await qb.getRawMany<{ id: string }>();
     if (!ids.length) return [];

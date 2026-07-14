@@ -17,6 +17,8 @@ import { SettingsService } from '../admin/settings.service';
 export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhooksService.name);
   private syncTimer?: NodeJS.Timeout;
+  /** Vrai jusqu'à la première synchro : celle-ci rattrape l'historique en silence. */
+  private firstSync = true;
 
   constructor(
     private readonly config: ConfigService,
@@ -209,6 +211,11 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
    * Synchronise les commandes Shopify vers la base (rattrape l'historique et
    * toute commande manquée par un webhook). Robuste : n'interrompt jamais le
    * backend même si l'API Shopify échoue (ex. scope read_orders manquant).
+   *
+   * La synchro NOTIFIE les commandes réellement nouvelles : c'est le seul
+   * chemin fiable quand le webhook n'est pas configuré. Seul le tout premier
+   * passage se tait — sinon il enverrait un e-mail par commande de
+   * l'historique.
    */
   async importFromShopify(reason = 'manuel'): Promise<{ imported: number }> {
     let orders: Record<string, any>[] = [];
@@ -222,11 +229,15 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       return { imported: 0 };
     }
 
+    // Rattrapage initial : base vide, ou toute première synchro de ce process.
+    const known = await this.orders.count();
+    const backfill = this.firstSync || known === 0;
+    this.firstSync = false;
+
     let imported = 0;
     for (const o of orders) {
       try {
-        // Pas de notification ici : la synchro rejoue tout l'historique.
-        await this.saveOrder(o, false);
+        await this.saveOrder(o, !backfill);
         imported++;
       } catch (e) {
         this.logger.warn(
@@ -235,7 +246,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       }
     }
     this.logger.log(
-      `Synchro Shopify (${reason}) : ${imported}/${orders.length} commande(s).`,
+      `Synchro Shopify (${reason}) : ${imported}/${orders.length} commande(s)` +
+        (backfill ? ' — rattrapage initial, aucune alerte envoyée.' : '.'),
     );
     return { imported };
   }

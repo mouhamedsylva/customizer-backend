@@ -13,6 +13,7 @@ import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
 import { SettingsService } from './settings.service';
 import { ShopifyService } from '../shared/shopify.service';
+import { EmailService } from '../shared/email.service';
 import { loginPage, dashboardPage, productionSheetPage } from './admin.view';
 
 // JSZip : construction d'archives en mémoire, API stable et sans streams.
@@ -26,6 +27,7 @@ export class AdminController {
     private readonly data: AdminService,
     private readonly settings: SettingsService,
     private readonly shopify: ShopifyService,
+    private readonly email: EmailService,
     private readonly config: ConfigService,
   ) {}
 
@@ -540,6 +542,58 @@ export class AdminController {
       notifyEmail: String(body.notifyEmail || ''),
     });
     res.json({ ok: true, settings: saved });
+  }
+
+  /**
+   * POST /api/admin/settings/test-email — envoie un e-mail de test.
+   * Sans cela, on ne sait pas si le SMTP fonctionne avant qu'une vraie
+   * commande n'arrive (et l'échec serait alors silencieux).
+   */
+  @Post('settings/test-email')
+  async testEmail(
+    @Req() req: Request,
+    @Body('email') email: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const to = String(email || '').trim();
+    if (!to) {
+      res.json({ ok: false, error: "Renseignez d'abord une adresse." });
+      return;
+    }
+
+    // 1. Le serveur SMTP est-il seulement joignable ?
+    const conn = await this.email.verifyConnection();
+    if (!conn.success) {
+      res.json({
+        ok: false,
+        error: `SMTP injoignable : ${conn.message}. Vérifiez EMAIL_HOST, EMAIL_PORT, EMAIL_USER et EMAIL_PASSWORD sur Railway.`,
+      });
+      return;
+    }
+
+    // 2. L'envoi passe-t-il vraiment ?
+    const sent = await this.email.sendInternalAlert(
+      to,
+      'Test — alertes Custom Textile',
+      [
+        'Cet e-mail confirme que les alertes de nouvelle commande fonctionnent.',
+        'Vous recevrez désormais un message à chaque nouvelle commande.',
+      ],
+      `${this.config.get<string>('BACKEND_URL') || ''}/api/admin`,
+    );
+    res.json(
+      sent
+        ? { ok: true, to }
+        : {
+            ok: false,
+            error:
+              "Le serveur SMTP répond, mais l'envoi a échoué. Consultez les logs Railway.",
+          },
+    );
   }
 
   /** POST /api/admin/seen — marque commandes et devis comme vus. */
