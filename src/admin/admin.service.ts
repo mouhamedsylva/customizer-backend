@@ -66,6 +66,30 @@ export class AdminService {
     await this.quotes.update(id, patch);
   }
 
+  /** Une commande par son id Shopify. */
+  async getOrder(shopifyOrderId: string): Promise<Order | null> {
+    return this.orders.findOne({ where: { shopifyOrderId } });
+  }
+
+  /** Change le statut de production d'une commande. */
+  async setProductionStatus(
+    shopifyOrderId: string,
+    status: string,
+  ): Promise<void> {
+    await this.orders.update(shopifyOrderId, {
+      productionStatus: status,
+      productionUpdatedAt: new Date(),
+    });
+  }
+
+  /** Enregistre la note interne d'une commande. */
+  async setInternalNote(
+    shopifyOrderId: string,
+    note: string,
+  ): Promise<void> {
+    await this.orders.update(shopifyOrderId, { internalNote: note || null });
+  }
+
   async getDesigns(): Promise<Design[]> {
     const ids = await this.designs
       .createQueryBuilder('d')

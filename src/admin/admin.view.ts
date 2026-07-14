@@ -37,6 +37,12 @@ function ftime(d: Date | string | null | undefined): string {
   const dt = new Date(d);
   return dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
+/** Nombre de jours écoulés depuis une date (0 si aujourd'hui / inconnue). */
+function daysSince(d: Date | string | null | undefined): number {
+  if (!d) return 0;
+  const ms = Date.now() - new Date(d).getTime();
+  return Math.max(0, Math.floor(ms / 86400000));
+}
 
 const STYLE = `
 :root{
@@ -230,6 +236,44 @@ body{
 .empty-state p{font-size:14px}
 .empty-state small{display:block;margin-top:6px;color:var(--faint);font-size:12px}
 
+/* Suivi de production */
+.pills{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.pill.prod::before{width:6px;height:6px}
+.pill.prod.todo{background:var(--raise);color:var(--muted)}
+.pill.prod.doing{background:var(--warn-soft);color:var(--warn)}
+.pill.prod.ready{background:#e6eefc;color:#2b57c4}
+.pill.prod.done{background:var(--ok-soft);color:var(--ok)}
+:root[data-theme="dark"] .pill.prod.ready{background:#1c2740;color:#7fa4f0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.prod.ready{background:#1c2740;color:#7fa4f0}}
+
+.steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.step{
+  border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  border-radius:9px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:600;
+  cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;
+}
+.step::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--line);transition:.15s}
+.step:hover{border-color:var(--accent);color:var(--ink)}
+.step.active{border-color:currentColor;font-weight:700}
+.step.active.todo{color:var(--muted)}
+.step.active.doing{color:var(--warn);background:var(--warn-soft)}
+.step.active.ready{color:#2b57c4;background:#e6eefc}
+.step.active.done{color:var(--ok);background:var(--ok-soft)}
+.step.active::before{background:currentColor}
+.step:disabled{opacity:.6;cursor:wait}
+
+/* Note interne */
+.note-input{
+  width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--paper);color:var(--ink);font:inherit;font-size:13px;
+  outline:none;resize:vertical;line-height:1.5;
+}
+.note-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+/* Actions d'une commande */
+.order-actions{display:flex;gap:10px;flex-wrap:wrap;
+  margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
+
 /* Sous-filtres (onglet Devis) */
 .subfilters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
 .chip-filter{
@@ -385,6 +429,19 @@ function clientBlock(o: Order): string {
     </div>`;
 }
 
+/** Étapes du suivi de production (interne à l'atelier). */
+const PROD_STEPS: Array<{ key: string; label: string; cls: string }> = [
+  { key: 'to_produce', label: 'À produire',    cls: 'todo' },
+  { key: 'producing',  label: 'En production', cls: 'doing' },
+  { key: 'ready',      label: 'Prête',         cls: 'ready' },
+  { key: 'shipped',    label: 'Expédiée',      cls: 'done' },
+];
+
+function prodPill(status: string): string {
+  const st = PROD_STEPS.find((s) => s.key === status) || PROD_STEPS[0];
+  return `<span class="pill prod ${st.cls}">${st.label}</span>`;
+}
+
 function orderCard(o: Order): string {
   const items = Array.isArray(o.lineItems) ? o.lineItems : [];
   const nbItems = items.reduce((s: number, li: any) => s + (li.quantity || 0), 0);
@@ -393,7 +450,10 @@ function orderCard(o: Order): string {
     ? productNames.slice(0, 2).join(', ') + (productNames.length > 2 ? `…` : '')
     : `${nbItems} article(s)`;
   const search = esc([o.orderNumber, o.customerName, o.customerEmail, ...productNames].join(' ').toLowerCase());
-  return `<div class="card" data-search="${search}">
+  const prod = o.productionStatus || 'to_produce';
+  const id = esc(o.shopifyOrderId);
+
+  return `<div class="card" data-search="${search}" data-prod="${esc(prod)}" id="card-${id}">
     <div class="head" onclick="toggleCard(this)">
       <div class="avatar">${esc(initials(o.customerName))}</div>
       <div>
@@ -402,15 +462,44 @@ function orderCard(o: Order): string {
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
       </div>
       <div class="right">
-        ${statusPill(o.financialStatus)}
+        <div class="pills">${prodPill(prod)}${statusPill(o.financialStatus)}</div>
         <div class="amount mono">${money(o.totalPrice)}</div>
         <div class="when mono">${fdate(o.shopifyCreatedAt)} · ${ftime(o.shopifyCreatedAt)}</div>
       </div>
     </div>
+
     <div class="body">
+      <!-- Suivi de production -->
+      <div class="section-lbl lbl">Suivi de production</div>
+      <div class="steps" id="steps-${id}">
+        ${PROD_STEPS.map(
+          (s) => `<button class="step ${s.cls}${s.key === prod ? ' active' : ''}"
+                    data-step="${s.key}"
+                    onclick="setProdStatus('${id}','${s.key}',this)">${s.label}</button>`,
+        ).join('')}
+      </div>
+
       ${clientBlock(o)}
+
       <div class="section-lbl lbl">Articles à produire</div>
       ${items.map(itemRow).join('') || '<div class="kv"><span class="empty">Aucun article.</span></div>'}
+
+      <!-- Note interne -->
+      <div class="section-lbl lbl">Note interne</div>
+      <textarea class="note-input" id="note-${id}" rows="2"
+        placeholder="Visible uniquement par votre équipe…"
+        onblur="saveNote('${id}')">${esc(o.internalNote || '')}</textarea>
+      <span class="hint" id="note-status-${id}"></span>
+
+      <!-- Actions -->
+      <div class="order-actions">
+        <a class="btn primary" href="/api/admin/orders/${id}/sheet" target="_blank" rel="noopener">
+          🖨 Fiche de production
+        </a>
+        <a class="btn" href="/api/admin/orders/${id}/assets.zip">
+          ↓ Tous les fichiers (ZIP)
+        </a>
+      </div>
     </div>
   </div>`;
 }
@@ -482,11 +571,16 @@ function quoteCard(q: Quote, shopDomain: string): string {
             : isPaid
               ? `<span class="hint ok">✓ Devis réglé par le client${q.totalPrice ? ` — ${money(q.totalPrice)}` : ''}.</span>`
               : `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(coin.name || '')}',${Number(coin.qty) || 1})">
-                   ✉ ${st.key === 'sent' ? 'Renvoyer la facture' : 'Chiffrer et envoyer la facture'}
+                   ✉ ${st.key === 'sent' ? 'Corriger le prix et renvoyer' : 'Chiffrer et envoyer la facture'}
                  </button>
+                 ${
+                   st.key === 'sent'
+                     ? `<button class="btn" onclick="remindQuote('${esc(q.id)}',this)">🔔 Relancer le client</button>`
+                     : ''
+                 }
                  <span class="hint">${
                    st.key === 'sent'
-                     ? 'Facture déjà envoyée — en attente de paiement. Vous pouvez la renvoyer ou corriger le prix.'
+                     ? `Facture envoyée${daysSince(q.createdAt) ? ` il y a ${daysSince(q.createdAt)} j` : ''} — en attente de paiement.`
                      : 'Vous fixez le prix et envoyez la facture au client, sans quitter cette page.'
                  }</span>`
         }
@@ -513,6 +607,143 @@ function designCard(d: Design, frontendUrl: string): string {
   </div>`;
 }
 
+/* ════════════ FICHE DE PRODUCTION (imprimable A4) ════════════ */
+export function productionSheetPage(o: Order): string {
+  const items = Array.isArray(o.lineItems) ? o.lineItems : [];
+  const info: any = o.customerInfo || {};
+  const s = info.shipping || info.billing || {};
+  const addr = [s.address1, s.address2, [s.zip, s.city].filter(Boolean).join(' '), s.country]
+    .filter(Boolean)
+    .map(esc)
+    .join(', ');
+
+  const itemsHtml = items
+    .map((li: any, idx: number) => {
+      const props: Array<{ name: string; value: string }> = Array.isArray(li.properties) ? li.properties : [];
+      const imgs = props.filter((p) => isImg(p.value));
+      const texts = props.filter((p) => !isUrl(p.value));
+      return `<section class="ps-item">
+        <div class="ps-item-head">
+          <span class="ps-num">${idx + 1}</span>
+          <h2>${esc(li.title)}${li.variantTitle ? ` · ${esc(li.variantTitle)}` : ''}</h2>
+          <span class="ps-qty">× ${esc(li.quantity)}</span>
+        </div>
+        <div class="ps-specs">
+          ${texts.map((p) => `<div><b>${esc(p.name)}</b><span>${esc(p.value)}</span></div>`).join('') || '<div><span>Aucune spécification.</span></div>'}
+        </div>
+        <div class="ps-visuals">
+          ${
+            imgs.length
+              ? imgs
+                  .map(
+                    (p) => `<figure><img src="${esc(p.value)}" alt="${esc(p.name)}"><figcaption>${esc(p.name.replace(/^_/, ''))}</figcaption></figure>`,
+                  )
+                  .join('')
+              : '<p class="ps-none">Aucun visuel fourni.</p>'
+          }
+        </div>
+      </section>`;
+    })
+    .join('');
+
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fiche de production ${esc(o.orderNumber || o.shopifyOrderId)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;color:#1b1f24;background:#eceae6;padding:24px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .sheet{max-width:820px;margin:0 auto;background:#fff;padding:34px 38px;box-shadow:0 8px 30px rgba(0,0,0,.1)}
+  .toolbar{max-width:820px;margin:0 auto 14px;display:flex;gap:10px;justify-content:flex-end}
+  .toolbar button,.toolbar a{padding:9px 16px;border:1px solid #d6d2cb;background:#fff;color:#1b1f24;
+    border-radius:9px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
+  .toolbar button{background:#c2410c;border-color:#c2410c;color:#fff}
+  header.ps-head{display:flex;justify-content:space-between;align-items:flex-start;
+    border-bottom:2px solid #1b1f24;padding-bottom:14px;margin-bottom:20px}
+  .ps-title{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#8b8478}
+  .ps-order{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+  .ps-meta{text-align:right;font-size:12px;color:#6b665e;line-height:1.7}
+  .ps-block{margin-bottom:20px}
+  .ps-lbl{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#8b8478;margin-bottom:7px}
+  .ps-client{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 18px;font-size:13px;
+    background:#f6f4f0;border-radius:9px;padding:13px 16px}
+  .ps-client b{display:block;font-size:9.5px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;color:#a29a8e;margin-bottom:1px}
+  .ps-client .wide{grid-column:1/-1}
+  .ps-note{background:#fdf6ec;border-left:3px solid #c2410c;padding:11px 14px;font-size:13px;border-radius:0 8px 8px 0}
+  .ps-item{border:1px solid #e4e0d9;border-radius:11px;padding:16px 18px;margin-bottom:14px;page-break-inside:avoid}
+  .ps-item-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .ps-num{width:24px;height:24px;border-radius:6px;background:#1b1f24;color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+  .ps-item-head h2{font-size:16px;font-weight:800;flex:1}
+  .ps-qty{font-size:15px;font-weight:800;font-family:ui-monospace,monospace}
+  .ps-specs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+  .ps-specs>div{background:#f6f4f0;border-radius:7px;padding:5px 11px;font-size:12.5px}
+  .ps-specs b{color:#8b8478;font-weight:700;margin-right:5px}
+  .ps-visuals{display:flex;gap:14px;flex-wrap:wrap}
+  .ps-visuals figure{width:190px}
+  .ps-visuals img{width:100%;height:190px;object-fit:contain;border:1px solid #e4e0d9;
+    border-radius:8px;background:#faf9f7}
+  .ps-visuals figcaption{font-size:10.5px;color:#8b8478;text-align:center;margin-top:5px;font-weight:600}
+  .ps-none{font-size:12.5px;color:#a29a8e}
+  footer.ps-foot{margin-top:22px;padding-top:12px;border-top:1px solid #e4e0d9;
+    font-size:11px;color:#a29a8e;display:flex;justify-content:space-between}
+  @media print{
+    body{background:#fff;padding:0}
+    .toolbar{display:none}
+    .sheet{box-shadow:none;max-width:none;padding:0}
+    .ps-visuals img{height:150px}
+  }
+</style></head><body>
+  <div class="toolbar">
+    <a href="/api/admin">← Retour</a>
+    <a href="/api/admin/orders/${esc(o.shopifyOrderId)}/assets.zip">↓ Fichiers (ZIP)</a>
+    <button onclick="window.print()">Imprimer</button>
+  </div>
+
+  <div class="sheet">
+    <header class="ps-head">
+      <div>
+        <div class="ps-title">Fiche de production</div>
+        <div class="ps-order mono">${esc(o.orderNumber || '#' + o.shopifyOrderId)}</div>
+      </div>
+      <div class="ps-meta">
+        <div>Commandé le ${fdate(o.shopifyCreatedAt)}</div>
+        <div class="mono">${money(o.totalPrice)}</div>
+        <div>${items.reduce((n: number, li: any) => n + (li.quantity || 0), 0)} article(s)</div>
+      </div>
+    </header>
+
+    <div class="ps-block">
+      <div class="ps-lbl">Client &amp; livraison</div>
+      <div class="ps-client">
+        <div><b>Nom</b>${esc(o.customerName || '—')}</div>
+        <div><b>Email</b>${esc(o.customerEmail || '—')}</div>
+        <div><b>Téléphone</b>${esc(o.customerPhone || info.phone || '—')}</div>
+        ${addr ? `<div class="wide"><b>Adresse</b>${addr}</div>` : ''}
+      </div>
+    </div>
+
+    ${
+      o.internalNote
+        ? `<div class="ps-block"><div class="ps-lbl">Note interne</div>
+           <div class="ps-note">${esc(o.internalNote)}</div></div>`
+        : ''
+    }
+
+    <div class="ps-block">
+      <div class="ps-lbl">À produire</div>
+      ${itemsHtml || '<p class="ps-none">Aucun article.</p>'}
+    </div>
+
+    <footer class="ps-foot">
+      <span>Custom Textile — fiche de production</span>
+      <span class="mono">${esc(o.orderNumber || o.shopifyOrderId)}</span>
+    </footer>
+  </div>
+</body></html>`;
+}
+
 export function dashboardPage(
   orders: Order[],
   quotes: Quote[],
@@ -524,6 +755,16 @@ export function dashboardPage(
   // Devis : « à traiter » (à chiffrer ou facture envoyée) vs « payés ».
   const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
   const nbOpen = quotes.length - nbPaid;
+  // Commandes : comptage par étape de production (pour les filtres).
+  const prodCounts: Record<string, number> = {};
+  orders.forEach((o) => {
+    const k = o.productionStatus || 'to_produce';
+    prodCounts[k] = (prodCounts[k] || 0) + 1;
+  });
+  // Commandes encore à fabriquer (indicateur du bandeau de stats).
+  const nbToMake = orders.filter(
+    (o) => (o.productionStatus || 'to_produce') !== 'shipped',
+  ).length;
   const emptyOrders = `<div class="empty-state"><div class="ico">📦</div><p>Aucune commande pour l'instant.</p><small>Les commandes payées s'afficheront ici automatiquement.</small></div>`;
   const emptyQuotes = `<div class="empty-state"><div class="ico">✉️</div><p>Aucune demande de devis.</p></div>`;
   const emptyDesigns = `<div class="empty-state"><div class="ico">🎨</div><p>Aucun design sauvegardé.</p></div>`;
@@ -545,10 +786,10 @@ export function dashboardPage(
 
   <div class="wrap">
     <div class="stats">
+      <div class="stat accent"><div class="num mono">${nbToMake}</div><div class="cap">À fabriquer</div></div>
       <div class="stat"><div class="num mono">${orders.length}</div><div class="cap">Commandes reçues</div></div>
-      <div class="stat accent"><div class="num mono">${money(revenue)}</div><div class="cap">Chiffre d'affaires</div></div>
-      <div class="stat"><div class="num mono">${quotes.length}</div><div class="cap">Demandes de devis</div></div>
-      <div class="stat"><div class="num mono">${designs.length}</div><div class="cap">Designs sauvegardés</div></div>
+      <div class="stat"><div class="num mono">${money(revenue)}</div><div class="cap">Chiffre d'affaires</div></div>
+      <div class="stat"><div class="num mono">${nbOpen}</div><div class="cap">Devis à traiter</div></div>
     </div>
 
     <div class="tabs">
@@ -565,7 +806,26 @@ export function dashboardPage(
       <a class="btn" href="/api/admin/export.csv">↓ Exporter (CSV)</a>
     </div>
 
-    <div class="panel active" id="p-orders">${orders.length ? orders.map(orderCard).join('') : emptyOrders}</div>
+    <div class="panel active" id="p-orders">
+      ${
+        orders.length
+          ? `<div class="subfilters" id="order-filters">
+               <button class="chip-filter active" data-of="all" onclick="filterOrders(this)">
+                 Toutes <span class="count mono">${orders.length}</span>
+               </button>
+               ${PROD_STEPS.map(
+                 (s) => `<button class="chip-filter" data-of="${s.key}" onclick="filterOrders(this)">
+                           ${s.label} <span class="count mono">${prodCounts[s.key] || 0}</span>
+                         </button>`,
+               ).join('')}
+             </div>
+             ${orders.map(orderCard).join('')}
+             <div class="empty-state" id="orders-none" style="display:none">
+               <div class="ico">✓</div><p>Aucune commande dans cette catégorie.</p>
+             </div>`
+          : emptyOrders
+      }
+    </div>
     <div class="panel" id="p-quotes">
       ${
         quotes.length
@@ -631,6 +891,8 @@ export function dashboardPage(
     });});
     /* Filtre courant de l'onglet Devis : 'open' (à traiter), 'paid', 'all'. */
     var quoteFilter='open';
+    /* Filtre courant de l'onglet Commandes (étape de production). */
+    var orderFilter='all';
 
     function filterQuotes(btn){
       quoteFilter=btn.getAttribute('data-qf');
@@ -639,21 +901,112 @@ export function dashboardPage(
       filterCards();
     }
 
+    function filterOrders(btn){
+      orderFilter=btn.getAttribute('data-of');
+      document.querySelectorAll('#order-filters .chip-filter')
+        .forEach(function(b){b.classList.toggle('active',b===btn);});
+      filterCards();
+    }
+
+    /* ── Suivi de production ── */
+    var PROD_CLS={to_produce:'todo',producing:'doing',ready:'ready',shipped:'done'};
+    var PROD_LBL={to_produce:'À produire',producing:'En production',ready:'Prête',shipped:'Expédiée'};
+
+    function setProdStatus(orderId,status,btn){
+      var steps=document.getElementById('steps-'+orderId);
+      if(steps) steps.querySelectorAll('.step').forEach(function(b){b.disabled=true;});
+
+      fetch('/api/admin/orders/'+encodeURIComponent(orderId)+'/status',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({status:status})
+      })
+      .then(function(r){return r.json();})
+      .then(function(res){
+        if(!res.ok) throw new Error(res.error||'Échec');
+        // Étape active
+        if(steps) steps.querySelectorAll('.step').forEach(function(b){
+          b.classList.toggle('active', b===btn);
+        });
+        // Pastille de l'en-tête
+        var card=document.getElementById('card-'+orderId);
+        if(card){
+          card.setAttribute('data-prod',status);
+          var pill=card.querySelector('.pill.prod');
+          if(pill){
+            pill.className='pill prod '+(PROD_CLS[status]||'todo');
+            pill.textContent=PROD_LBL[status]||status;
+          }
+        }
+        filterCards();
+      })
+      .catch(function(e){ alert('Impossible de changer le statut : '+e.message); })
+      .finally(function(){
+        if(steps) steps.querySelectorAll('.step').forEach(function(b){b.disabled=false;});
+      });
+    }
+
+    /* ── Note interne ── */
+    function saveNote(orderId){
+      var input=document.getElementById('note-'+orderId);
+      var st=document.getElementById('note-status-'+orderId);
+      if(!input) return;
+      st.className='hint'; st.textContent='Enregistrement…';
+      fetch('/api/admin/orders/'+encodeURIComponent(orderId)+'/note',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({note:input.value})
+      })
+      .then(function(r){return r.json();})
+      .then(function(res){
+        if(res.ok){ st.className='hint ok'; st.textContent='Note enregistrée.'; }
+        else { st.className='hint err'; st.textContent="Échec de l'enregistrement."; }
+        setTimeout(function(){st.textContent='';},2200);
+      })
+      .catch(function(){ st.className='hint err'; st.textContent='Erreur réseau.'; });
+    }
+
+    /* ── Relance d'un devis impayé ── */
+    function remindQuote(quoteId,btn){
+      var original=btn.textContent;
+      btn.disabled=true; btn.textContent='Envoi…';
+      fetch('/api/admin/quotes/'+encodeURIComponent(quoteId)+'/remind',{method:'POST'})
+      .then(function(r){return r.json();})
+      .then(function(res){
+        if(res.ok){
+          btn.textContent='Relance envoyée';
+          setTimeout(function(){btn.disabled=false;btn.textContent=original;},2500);
+        }else{
+          btn.disabled=false; btn.textContent=original;
+          alert('Relance impossible : '+(res.error||''));
+        }
+      })
+      .catch(function(e){
+        btn.disabled=false; btn.textContent=original;
+        alert('Erreur réseau : '+e.message);
+      });
+    }
+
     function filterCards(){
       var q=document.getElementById('search').value.toLowerCase().trim();
       var panel=document.querySelector('.panel.active');
       var isQuotes = panel.id==='p-quotes';
+      var isOrders = panel.id==='p-orders';
       var visible=0;
 
       panel.querySelectorAll('.card').forEach(function(c){
         var hay=c.getAttribute('data-search')||'';
         var matchText = !q || hay.indexOf(q)!==-1;
 
-        // Onglet Devis : on applique aussi le sous-filtre de statut.
         var matchStatus = true;
+        // Onglet Devis : sous-filtre « à traiter / payés / tous ».
         if(isQuotes && quoteFilter!=='all'){
           var st=c.getAttribute('data-qstatus')||'open';
           matchStatus = (quoteFilter==='paid') ? (st==='paid') : (st!=='paid');
+        }
+        // Onglet Commandes : sous-filtre par étape de production.
+        if(isOrders && orderFilter!=='all'){
+          matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;
         }
 
         var show = matchText && matchStatus;
@@ -661,9 +1014,11 @@ export function dashboardPage(
         if(show) visible++;
       });
 
-      // Message « aucun devis dans cette catégorie ».
-      var none=document.getElementById('quotes-none');
-      if(none) none.style.display = (isQuotes && visible===0) ? '' : 'none';
+      // Messages « aucun élément dans cette catégorie ».
+      var noneQ=document.getElementById('quotes-none');
+      if(noneQ) noneQ.style.display = (isQuotes && visible===0) ? '' : 'none';
+      var noneO=document.getElementById('orders-none');
+      if(noneO) noneO.style.display = (isOrders && visible===0) ? '' : 'none';
     }
     function toggleCard(head){head.parentElement.classList.toggle('open');}
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}

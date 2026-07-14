@@ -51,6 +51,25 @@ export class Order {
   @Column({ type: 'datetime', nullable: true })
   shopifyCreatedAt: Date | null;
 
+  /**
+   * SUIVI DE PRODUCTION (interne, propre à l'atelier) :
+   *  to_produce  → à produire (par défaut)
+   *  producing   → en production
+   *  ready       → prête
+   *  shipped     → expédiée
+   */
+  @Index()
+  @Column({ type: 'varchar', length: 16, default: 'to_produce' })
+  productionStatus: string;
+
+  /** Date du dernier changement de statut de production. */
+  @Column({ type: 'datetime', nullable: true })
+  productionUpdatedAt: Date | null;
+
+  /** Note interne de l'équipe (invisible du client). */
+  @Column({ type: 'text', nullable: true })
+  internalNote: string | null;
+
   /** Date d'enregistrement en base (réception du webhook). */
   @CreateDateColumn()
   receivedAt: Date;

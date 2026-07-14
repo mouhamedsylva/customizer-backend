@@ -9,10 +9,17 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import * as archiverLib from 'archiver';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
 import { ShopifyService } from '../shared/shopify.service';
-import { loginPage, dashboardPage } from './admin.view';
+import { loginPage, dashboardPage, productionSheetPage } from './admin.view';
+
+// `archiver` s'utilise comme une fonction ; le typage CJS l'expose en namespace.
+const archiver = archiverLib as unknown as (
+  format: string,
+  opts?: Record<string, unknown>,
+) => any;
 
 @Controller('admin')
 export class AdminController {
@@ -152,6 +159,187 @@ export class AdminController {
         to: customer.email,
         total: draft?.total_price ?? null,
       });
+    } catch (err) {
+      res.status(502).json({ ok: false, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * POST /api/admin/orders/:id/status — change le statut de production.
+   * Body : { status: 'to_produce' | 'producing' | 'ready' | 'shipped' }
+   */
+  @Post('orders/:id/status')
+  async setOrderStatus(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Body('status') status: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const allowed = ['to_produce', 'producing', 'ready', 'shipped'];
+    if (!allowed.includes(status)) {
+      res.status(400).json({ ok: false, error: 'Statut inconnu.' });
+      return;
+    }
+    await this.data.setProductionStatus(orderId, status);
+    res.json({ ok: true, status });
+  }
+
+  /** POST /api/admin/orders/:id/note — enregistre la note interne. */
+  @Post('orders/:id/note')
+  async setOrderNote(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Body('note') note: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    await this.data.setInternalNote(orderId, (note || '').slice(0, 2000));
+    res.json({ ok: true });
+  }
+
+  /**
+   * GET /api/admin/orders/:id/sheet — fiche de production imprimable (A4).
+   * Page autonome, pensée pour l'atelier : design en grand + specs + client.
+   */
+  @Get('orders/:id/sheet')
+  async productionSheet(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.redirect('/api/admin');
+      return;
+    }
+    const order = await this.data.getOrder(orderId);
+    if (!order) {
+      res.status(404).type('text').send('Commande introuvable.');
+      return;
+    }
+    res.type('html').send(productionSheetPage(order));
+  }
+
+  /**
+   * GET /api/admin/orders/:id/assets.zip — tous les fichiers de la commande,
+   * regroupés dans une archive (logos + aperçus), prêts pour la production.
+   */
+  @Get('orders/:id/assets.zip')
+  async downloadAssets(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.redirect('/api/admin');
+      return;
+    }
+    const order = await this.data.getOrder(orderId);
+    if (!order) {
+      res.status(404).type('text').send('Commande introuvable.');
+      return;
+    }
+
+    // Collecte toutes les URLs de fichiers portées par les lignes de commande.
+    const files: Array<{ name: string; url: string }> = [];
+    const items = Array.isArray(order.lineItems) ? order.lineItems : [];
+    items.forEach((li: any, i: number) => {
+      const props: Array<{ name: string; value: string }> = Array.isArray(
+        li.properties,
+      )
+        ? li.properties
+        : [];
+      props.forEach((p) => {
+        if (typeof p.value !== 'string' || !/^https?:\/\//i.test(p.value)) return;
+        const label = String(p.name || 'fichier').replace(/^_/, '');
+        const ext = (p.value.split('?')[0].match(/\.(\w{3,4})$/) || [
+          '',
+          'png',
+        ])[1];
+        const safe = `${i + 1}-${label}`
+          .replace(/[^\w\-. ]+/g, '_')
+          .slice(0, 60);
+        files.push({ name: `${safe}.${ext}`, url: p.value });
+      });
+    });
+
+    const label = (order.orderNumber || order.shopifyOrderId).replace('#', '');
+
+    if (!files.length) {
+      res
+        .status(404)
+        .type('text')
+        .send('Aucun fichier à télécharger pour cette commande.');
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="commande-${label}.zip"`,
+    );
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', () => res.end());
+    archive.pipe(res);
+
+    // Télécharge chaque fichier et l'ajoute à l'archive.
+    for (const f of files) {
+      try {
+        const r = await fetch(f.url);
+        if (!r.ok) continue;
+        const buf = Buffer.from(await r.arrayBuffer());
+        archive.append(buf, { name: f.name });
+      } catch {
+        // Fichier inaccessible : on l'ignore plutôt que d'échouer l'archive.
+      }
+    }
+    await archive.finalize();
+  }
+
+  /**
+   * POST /api/admin/quotes/:id/remind — relance un devis facturé mais impayé.
+   * Renvoie la facture Shopify avec un message de relance.
+   */
+  @Post('quotes/:id/remind')
+  async remindQuote(
+    @Req() req: Request,
+    @Param('id') quoteId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const quote = await this.data.getQuote(quoteId);
+    if (!quote?.draftOrderId) {
+      res.status(404).json({ ok: false, error: 'Devis introuvable.' });
+      return;
+    }
+
+    const data = (quote.quoteData || {}) as Record<string, any>;
+    const customer = data.customer || {};
+    const productName = data.coin?.name || 'votre commande personnalisée';
+
+    try {
+      await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
+        to: customer.email,
+        subject: `Relance — votre devis ${productName}`,
+        custom_message:
+          `Bonjour ${customer.nom || ''},\n\n` +
+          `Nous revenons vers vous au sujet de votre devis pour ${productName}, ` +
+          `qui reste en attente de règlement.\n\n` +
+          `Vous pouvez le régler directement via le lien ci-dessous. ` +
+          `N'hésitez pas à nous écrire si vous avez la moindre question.\n\n` +
+          `Bien cordialement,\nL'équipe Custom Textile`,
+      });
+      res.json({ ok: true, to: customer.email });
     } catch (err) {
       res.status(502).json({ ok: false, error: (err as Error).message });
     }
