@@ -185,13 +185,21 @@ export class CloudinaryService implements OnModuleInit {
     backgroundSrc: string,
     logos: Array<{ src: string; x: number; y: number; w: number }>,
     baseWidth = 1500,
+    mirror = false,
   ): Promise<{ buffer: Buffer; width: number; height: number }> {
     // 1) Fond normalise a une largeur fixe (rendu net et previsible).
+    //
+    // mirror : vue « manche droite ». Il n'existe qu'UNE image de profil (le
+    // côté gauche) ; le côté droit est cette image retournée. Seul le FOND est
+    // retourné : les logos arrivent déjà positionnés dans le repère retourné et
+    // sont posés à l'endroit, sinon le design du client sortirait inversé.
     const bgBuffer = await this.loadImageBuffer(backgroundSrc);
-    const baseBuffer = await sharp(bgBuffer)
-      .resize(baseWidth, null, { fit: 'inside', withoutEnlargement: false })
-      .png()
-      .toBuffer();
+    let bgPipeline = sharp(bgBuffer).resize(baseWidth, null, {
+      fit: 'inside',
+      withoutEnlargement: false,
+    });
+    if (mirror) bgPipeline = bgPipeline.flop(); // miroir horizontal
+    const baseBuffer = await bgPipeline.png().toBuffer();
     // IMPORTANT : lire les dimensions du buffer REDIMENSIONNÉ (pas de la source).
     // sharp(x).metadata() lit l'image d'entrée, pas le résultat du resize -> il
     // faut mesurer baseBuffer, sinon les positions/tailles de logos (en fractions
@@ -256,6 +264,7 @@ export class CloudinaryService implements OnModuleInit {
       label?: string;
       background: string;
       logos?: Array<{ src: string; x: number; y: number; w: number }>;
+      mirror?: boolean;
     }>,
   ): Promise<UploadResult> {
     const CELL = 700; // largeur de rendu de chaque vue dans la planche
@@ -268,7 +277,12 @@ export class CloudinaryService implements OnModuleInit {
     for (const v of views || []) {
       if (!v || !v.background) continue;
       try {
-        const composed = await this.composeViewBuffer(v.background, v.logos || [], CELL);
+        const composed = await this.composeViewBuffer(
+          v.background,
+          v.logos || [],
+          CELL,
+          !!v.mirror,
+        );
         // Redimensionne à CELL de large (composeViewBuffer rend déjà à CELL, mais
         // on garantit la largeur exacte pour l'alignement de la grille).
         const resized = await sharp(composed.buffer)
