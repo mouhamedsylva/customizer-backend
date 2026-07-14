@@ -515,20 +515,22 @@ export function loginPage(error?: boolean): string {
 }
 
 /**
- * Pastille du statut d'exécution Shopify (source de vérité, pas notre suivi).
- * Rien n'est affiché tant que la commande n'est pas traitée : la pastille de
- * production dit déjà où elle en est.
+ * Pastille du statut Shopify, en français.
+ * Déduite du suivi de production, qui est tenu aligné sur Shopify dans les
+ * deux sens (voir shipping-status.ts). « Prête » n'existe pas chez Shopify :
+ * la commande y est « en préparation ».
  */
 function shipPill(o: Order): string {
-  const s = (o.fulfillmentStatus || '').toLowerCase();
-  if (s === 'fulfilled') {
-    const t = o.trackingNumber
-      ? ` title="Suivi : ${esc(o.trackingNumber)}"`
-      : '';
-    return `<span class="pill ok"${t}>Expédiée (Shopify)</span>`;
-  }
-  if (s === 'partial') return `<span class="pill warn">Partiellement traitée</span>`;
-  return '';
+  const prod = o.productionStatus || 'to_produce';
+  const map: Record<string, [string, string]> = {
+    to_produce: ['Non traitée', 'neutral'],
+    producing: ['En préparation', 'warn'],
+    ready: ['En préparation', 'warn'],
+    shipped: ['Traitée', 'ok'],
+  };
+  const [label, cls] = map[prod] || map.to_produce;
+  const t = o.trackingNumber ? ` title="Suivi : ${esc(o.trackingNumber)}"` : '';
+  return `<span class="pill ${cls}"${t}>Shopify : ${label}</span>`;
 }
 
 function statusPill(status: string | null): string {

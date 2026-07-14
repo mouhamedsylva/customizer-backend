@@ -6,6 +6,7 @@ import {
   Res,
   Body,
   Param,
+  Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -22,6 +23,8 @@ const JSZip = require('jszip');
 
 @Controller('admin')
 export class AdminController {
+  private readonly logger = new Logger(AdminController.name);
+
   constructor(
     private readonly auth: AdminAuthService,
     private readonly data: AdminService,
@@ -246,6 +249,19 @@ export class AdminController {
         });
       }
       return;
+    }
+
+    // « En production » se répercute aussi dans Shopify (« En préparation »),
+    // mais SANS e-mail au client : c'est un statut de préparation interne.
+    // Un échec ici n'est pas bloquant — le suivi atelier reste la priorité.
+    if (status === 'producing') {
+      try {
+        await this.shopify.markInProgress(orderId);
+      } catch (err) {
+        this.logger.warn(
+          `Mise en préparation Shopify échouée (${orderId}) : ${(err as Error).message}`,
+        );
+      }
     }
 
     await this.data.setProductionStatus(orderId, status);

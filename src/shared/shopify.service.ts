@@ -216,6 +216,61 @@ export class ShopifyService {
   }
 
   /**
+   * Bascule les fulfillment orders d'une commande en « in_progress »
+   * (« En préparation » côté Shopify). Sans effet si tout est déjà traité.
+   *
+   * Contrairement à l'expédition, ce changement N'ENVOIE PAS d'e-mail au
+   * client : c'est un statut de préparation interne à la boutique.
+   */
+  async markInProgress(
+    orderId: string | number,
+  ): Promise<{ moved: number }> {
+    const fos = await this.getFulfillmentOrders(orderId);
+    const open = fos.filter((fo) => fo.status === 'open');
+    let moved = 0;
+
+    for (const fo of open) {
+      const response = await fetch(
+        `${this.getBaseUrl()}/fulfillment_orders/${fo.id}/move.json`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify({
+            fulfillment_order: { new_location_id: fo.assigned_location_id },
+          }),
+        },
+      );
+      // Le déplacement échoue si le lieu est identique : ce n'est pas grave,
+      // Shopify passe de toute façon le FO « in_progress » dès qu'un
+      // fulfillment partiel existe. On ne bloque pas là-dessus.
+      if (response.ok) moved++;
+    }
+    return { moved };
+  }
+
+  /**
+   * Statut d'exécution réel d'une commande, tel que Shopify le voit.
+   * `fulfillment_status` de la commande ne connaît que null | partial |
+   * fulfilled — il ignore « en préparation ». Ce dernier vit sur les
+   * fulfillment orders, d'où cette lecture combinée.
+   */
+  async getShippingState(
+    orderId: string | number,
+  ): Promise<'unfulfilled' | 'in_progress' | 'fulfilled' | 'partial'> {
+    const fos = await this.getFulfillmentOrders(orderId);
+    if (!fos.length) return 'unfulfilled';
+
+    const statuses = fos.map((fo) => String(fo.status));
+    const allClosed = statuses.every(
+      (s) => s === 'closed' || s === 'cancelled' || s === 'incomplete',
+    );
+    if (allClosed) return 'fulfilled';
+    if (statuses.some((s) => s === 'closed')) return 'partial';
+    if (statuses.some((s) => s === 'in_progress')) return 'in_progress';
+    return 'unfulfilled';
+  }
+
+  /**
    * Marque une commande comme expédiée dans Shopify.
    *
    * Effet côté client : Shopify lui envoie SON e-mail d'expédition (avec le

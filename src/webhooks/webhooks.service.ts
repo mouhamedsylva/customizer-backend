@@ -12,6 +12,11 @@ import { Order } from '../database/entities/order.entity';
 import { ShopifyService } from '../shared/shopify.service';
 import { EmailService } from '../shared/email.service';
 import { SettingsService } from '../admin/settings.service';
+import {
+  fromShopify,
+  ProductionStatus,
+  ShippingState,
+} from '../shared/shipping-status';
 
 @Injectable()
 export class WebhooksService implements OnModuleInit, OnModuleDestroy {
@@ -158,13 +163,32 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       shopifyCreatedAt: payload.created_at ? new Date(payload.created_at) : null,
     });
 
-    // Le marqueur « nouveau », le suivi de production et le n° de suivi
-    // appartiennent à l'atelier : une re-synchro Shopify ne doit pas les
-    // réinitialiser. (fulfillmentStatus, lui, VIENT de Shopify : on le garde.)
+    // Le marqueur « nouveau » et le n° de suivi appartiennent à l'atelier :
+    // une re-synchro Shopify ne doit pas les réinitialiser.
+    // (fulfillmentStatus, lui, VIENT de Shopify : on le garde.)
     if (!isNew) {
       delete (entity as Partial<Order>).seen;
-      delete (entity as Partial<Order>).productionStatus;
       delete (entity as Partial<Order>).trackingNumber;
+
+      // Le suivi de production suit Shopify quand Shopify a bougé, mais sans
+      // rétrograder une étape que Shopify ne sait pas exprimer (« Prête »).
+      const existing = await this.orders.findOne({
+        where: { shopifyOrderId },
+        select: { productionStatus: true },
+      });
+      const current = (existing?.productionStatus ||
+        'to_produce') as ProductionStatus;
+      const next = fromShopify(this.shippingStateOf(payload), current);
+
+      if (next) {
+        entity.productionStatus = next;
+        entity.productionUpdatedAt = new Date();
+        this.logger.log(
+          `Commande ${shopifyOrderId} : suivi aligné sur Shopify (${current} -> ${next}).`,
+        );
+      } else {
+        delete (entity as Partial<Order>).productionStatus;
+      }
     }
 
     // save() fait un upsert sur la clé primaire (shopifyOrderId) : rejouer un
@@ -177,6 +201,32 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     if (isNew && notify) {
       void this.notifyNewOrder(entity, lineItems.length);
     }
+  }
+
+  /**
+   * État d'exécution d'une commande, déduit de son payload Shopify.
+   *
+   * `fulfillment_status` ne connaît que null | partial | fulfilled : il ignore
+   * « en préparation ». Ce statut vit sur les fulfillment orders, que le
+   * payload n'inclut pas toujours — on se rabat alors sur les `fulfillments`
+   * déjà créés, ce qui évite un appel API par commande à chaque synchro.
+   */
+  private shippingStateOf(payload: Record<string, any>): ShippingState {
+    const fs = String(payload.fulfillment_status || '').toLowerCase();
+    if (fs === 'fulfilled') return 'fulfilled';
+    if (fs === 'partial') return 'partial';
+
+    // Un fulfillment ouvert (non « success ») = préparation en cours.
+    const fulfillments = Array.isArray(payload.fulfillments)
+      ? payload.fulfillments
+      : [];
+    const inProgress = fulfillments.some(
+      (f: Record<string, any>) =>
+        f && String(f.status || '').toLowerCase() === 'pending',
+    );
+    if (inProgress) return 'in_progress';
+
+    return 'unfulfilled';
   }
 
   /** Alerte l'équipe qu'une commande vient d'arriver (si activé au dashboard). */
@@ -253,6 +303,73 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       `Synchro Shopify (${reason}) : ${imported}/${orders.length} commande(s)` +
         (backfill ? ' — rattrapage initial, aucune alerte envoyée.' : '.'),
     );
+
+    await this.syncShippingStates(orders);
     return { imported };
+  }
+
+  /**
+   * Aligne le suivi de production sur l'état d'exécution réel de Shopify.
+   *
+   * Pourquoi une passe à part : « En préparation » ne figure PAS dans le
+   * payload d'une commande — il vit sur ses fulfillment orders, qu'il faut
+   * demander une par une. Pour que ça reste tenable, on n'interroge que les
+   * commandes encore ouvertes (ni expédiées, ni annulées) : en régime normal,
+   * ça se compte sur les doigts d'une main.
+   */
+  private async syncShippingStates(
+    orders: Record<string, any>[],
+  ): Promise<void> {
+    const open = orders.filter(
+      (o) =>
+        String(o.fulfillment_status || '').toLowerCase() !== 'fulfilled' &&
+        !o.cancelled_at,
+    );
+    if (!open.length) return;
+
+    let aligned = 0;
+    for (const o of open.slice(0, 60)) {
+      // borne de sécurité : 60 appels max par passage
+      try {
+        if (await this.alignOne(String(o.id))) aligned++;
+      } catch (e) {
+        // Scope manquant, ou API indisponible : on n'interrompt pas la synchro.
+        this.logger.warn(
+          `État d'expédition ${o?.id} illisible : ${(e as Error).message}`,
+        );
+        return; // inutile d'insister sur les suivantes si le scope manque
+      }
+    }
+    if (aligned) {
+      this.logger.log(`${aligned} commande(s) réalignée(s) sur Shopify.`);
+    }
+  }
+
+  /**
+   * Aligne UNE commande sur l'état d'exécution que Shopify lui connaît.
+   * Utilisé par le webhook orders/updated (immédiat) et par la synchro
+   * périodique (rattrapage). Retourne true si le suivi a changé.
+   */
+  async alignOne(shopifyOrderId: string): Promise<boolean> {
+    const row = await this.orders.findOne({
+      where: { shopifyOrderId },
+      select: { shopifyOrderId: true, productionStatus: true },
+    });
+    if (!row) return false;
+
+    const state = await this.shopify.getShippingState(shopifyOrderId);
+    const current = (row.productionStatus || 'to_produce') as ProductionStatus;
+    const next = fromShopify(state, current);
+    if (!next) return false;
+
+    await this.orders.update(shopifyOrderId, {
+      productionStatus: next,
+      productionUpdatedAt: new Date(),
+      fulfillmentStatus: state === 'fulfilled' ? 'fulfilled' : null,
+    });
+    this.logger.log(
+      `Commande ${shopifyOrderId} : suivi aligné sur Shopify (${current} -> ${next}).`,
+    );
+    return true;
   }
 }

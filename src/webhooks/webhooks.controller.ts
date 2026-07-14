@@ -43,6 +43,32 @@ export class WebhooksController {
     return { ok: true };
   }
 
+  /**
+   * POST /api/webhooks/orders-updated
+   * Reçoit l'événement orders/updated : c'est lui qui permet à un changement
+   * fait DANS Shopify (mise en préparation, expédition) de se refléter
+   * immédiatement dans le dashboard.
+   */
+  @Post('orders-updated')
+  @HttpCode(HttpStatus.OK)
+  async ordersUpdated(
+    @Req() req: Request & { rawBody?: Buffer },
+    @Headers('x-shopify-hmac-sha256') hmac?: string,
+  ): Promise<{ ok: true }> {
+    if (!this.webhooks.verifyHmac(req.rawBody as Buffer, hmac)) {
+      throw new UnauthorizedException('Signature webhook invalide.');
+    }
+
+    const payload = (req.body || {}) as Record<string, any>;
+    // Pas de notification : ce n'est pas une nouvelle commande.
+    await this.webhooks.saveOrder(payload, false);
+    // Puis on aligne le suivi sur l'état réel (« en préparation » n'est pas
+    // dans le payload : il faut le lire sur les fulfillment orders).
+    await this.webhooks.alignOne(String(payload.id));
+
+    return { ok: true };
+  }
+
   // NOTE : pas de route publique de listing ici. Les commandes contiennent des
   // données personnelles (nom, e-mail, adresse) : elles ne sont exposées que par
   // le dashboard admin, protégé par mot de passe (/api/admin).
