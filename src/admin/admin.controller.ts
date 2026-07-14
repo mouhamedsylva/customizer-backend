@@ -9,17 +9,18 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import * as archiverLib from 'archiver';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { loginPage, dashboardPage, productionSheetPage } from './admin.view';
 
-// `archiver` s'utilise comme une fonction ; le typage CJS l'expose en namespace.
-const archiver = archiverLib as unknown as (
-  format: string,
-  opts?: Record<string, unknown>,
-) => any;
+/* `archiver` est un module CommonJS qui exporte une FONCTION. Selon la config
+   d'interop, `import * as` peut donner un namespace non appelable : on résout
+   donc l'export réel (`.default` si présent) au moment de l'appel. */
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const archiverModule = require('archiver');
+const archiver: (format: string, opts?: Record<string, unknown>) => any =
+  archiverModule.default || archiverModule;
 
 @Controller('admin')
 export class AdminController {
@@ -240,6 +241,22 @@ export class AdminController {
       res.redirect('/api/admin');
       return;
     }
+    try {
+      await this.buildAndSendZip(orderId, res);
+    } catch (err) {
+      // Remonte l'erreur réelle plutôt qu'un 500 opaque.
+      res
+        .status(500)
+        .type('text')
+        .send('ZIP ERROR:\n' + ((err as Error)?.stack || String(err)));
+    }
+  }
+
+  /** Construit et envoie l'archive des fichiers d'une commande. */
+  private async buildAndSendZip(
+    orderId: string,
+    res: Response,
+  ): Promise<void> {
     const order = await this.data.getOrder(orderId);
     if (!order) {
       res.status(404).type('text').send('Commande introuvable.');
