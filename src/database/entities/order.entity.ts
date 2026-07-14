@@ -47,6 +47,17 @@ export class Order {
   @Column({ type: 'varchar', length: 32, nullable: true })
   financialStatus: string | null;
 
+  /**
+   * Statut d'exécution Shopify (fulfilled, partial, ou null si non traitée).
+   * Vient de Shopify — c'est LA source de vérité, pas notre suivi interne.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  fulfillmentStatus: string | null;
+
+  /** Numéro de suivi transmis à Shopify lors de l'expédition. */
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  trackingNumber: string | null;
+
   /** Date de création de la commande côté Shopify. */
   @Column({ type: 'datetime', nullable: true })
   shopifyCreatedAt: Date | null;

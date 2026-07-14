@@ -409,6 +409,17 @@ body{
 .mail-row{display:flex;gap:8px;align-items:stretch}
 .mail-row .price-input{flex:1;min-width:0}
 .mail-row .btn{flex:none;white-space:nowrap}
+.opt{font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0}
+
+/* Message éphémère (confirmation d'expédition) */
+.toast{
+  position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);z-index:90;
+  background:var(--ink);color:var(--paper);border-radius:10px;
+  padding:12px 20px;font-size:13.5px;font-weight:600;max-width:90vw;
+  box-shadow:0 12px 30px rgba(0,0,0,.25);
+  opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 .set-block code{
   background:var(--surface);border:1px solid var(--line);border-radius:5px;
   padding:1px 5px;font-size:12px;
@@ -501,6 +512,23 @@ export function loginPage(error?: boolean): string {
       </form>
     </div>
   </div>`);
+}
+
+/**
+ * Pastille du statut d'exécution Shopify (source de vérité, pas notre suivi).
+ * Rien n'est affiché tant que la commande n'est pas traitée : la pastille de
+ * production dit déjà où elle en est.
+ */
+function shipPill(o: Order): string {
+  const s = (o.fulfillmentStatus || '').toLowerCase();
+  if (s === 'fulfilled') {
+    const t = o.trackingNumber
+      ? ` title="Suivi : ${esc(o.trackingNumber)}"`
+      : '';
+    return `<span class="pill ok"${t}>Expédiée (Shopify)</span>`;
+  }
+  if (s === 'partial') return `<span class="pill warn">Partiellement traitée</span>`;
+  return '';
 }
 
 function statusPill(status: string | null): string {
@@ -629,7 +657,7 @@ function orderCard(o: Order): string {
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
       </div>
       <div class="right">
-        <div class="pills">${prodPill(prod)}${statusPill(o.financialStatus)}</div>
+        <div class="pills">${prodPill(prod)}${shipPill(o)}${statusPill(o.financialStatus)}</div>
         <div class="amount mono">${money(o.totalPrice)}</div>
         <div class="when mono">${fdate(o.shopifyCreatedAt)} · ${ftime(o.shopifyCreatedAt)}</div>
       </div>
@@ -1250,6 +1278,33 @@ export function dashboardPage(
     </div>
   </div>
 
+  <!-- Modale : expédier (répercuté dans Shopify, e-mail envoyé au client) -->
+  <div class="modal" id="ship-modal" onclick="if(event.target===this)closeShip()">
+    <div class="modal-box">
+      <h3>Marquer comme expédiée</h3>
+      <p class="sub">
+        La commande sera marquée comme traitée dans Shopify, et
+        <strong>le client recevra son e-mail d'expédition</strong>. Cette action
+        n'est pas réversible depuis ce tableau de bord.
+      </p>
+
+      <label class="lbl" style="margin-top:16px">Numéro de suivi <span class="opt">(facultatif)</span></label>
+      <input type="text" id="ship-num" class="price-input mono" placeholder="Ex. 6A123456789">
+
+      <label class="lbl" style="margin-top:12px">Transporteur <span class="opt">(facultatif)</span></label>
+      <input type="text" id="ship-carrier" class="price-input" placeholder="Ex. Colissimo, DHL, Chronopost">
+      <p class="hint">S'ils sont renseignés, Shopify les inclut dans l'e-mail au client.</p>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeShip()">Annuler</button>
+        <button class="btn primary" id="ship-go" onclick="confirmShip()">Expédier et prévenir le client</button>
+      </div>
+      <p class="hint" id="ship-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
   <script>
     var UNSEEN=${seenPayload};
     var tabs=document.querySelectorAll('.tab');
@@ -1282,18 +1337,60 @@ export function dashboardPage(
     var PROD_CLS={to_produce:'todo',producing:'doing',ready:'ready',shipped:'done'};
     var PROD_LBL={to_produce:'À produire',producing:'En production',ready:'Prête',shipped:'Expédiée'};
 
+    /* « Expédiée » n'est pas un simple clic : Shopify enverra un e-mail au
+       client. On demande confirmation et on propose un n° de suivi. */
+    var shipCtx=null;
     function setProdStatus(orderId,status,btn){
+      if(status==='shipped'){
+        shipCtx={orderId:orderId,btn:btn};
+        document.getElementById('ship-num').value='';
+        document.getElementById('ship-carrier').value='';
+        document.getElementById('ship-status').textContent='';
+        document.getElementById('ship-modal').classList.add('open');
+        return;
+      }
+      doProdStatus(orderId,status,btn,null);
+    }
+
+    function closeShip(){
+      document.getElementById('ship-modal').classList.remove('open');
+      shipCtx=null;
+    }
+    function confirmShip(){
+      if(!shipCtx) return;
+      var st=document.getElementById('ship-status');
+      var go=document.getElementById('ship-go');
+      go.disabled=true; st.className='hint'; st.textContent='Expédition dans Shopify…';
+      doProdStatus(shipCtx.orderId,'shipped',shipCtx.btn,{
+        tracking:document.getElementById('ship-num').value.trim(),
+        carrier:document.getElementById('ship-carrier').value.trim()
+      },function(res){
+        go.disabled=false;
+        if(res && res.ok){ closeShip(); }
+        else { st.className='hint err'; st.textContent=(res&&res.error)||'Échec.'; }
+      });
+    }
+
+    function doProdStatus(orderId,status,btn,extra,done){
       var steps=document.getElementById('steps-'+orderId);
       if(steps) steps.querySelectorAll('.step').forEach(function(b){b.disabled=true;});
+
+      var payload={status:status};
+      if(extra){ payload.tracking=extra.tracking; payload.carrier=extra.carrier; }
 
       fetch('/api/admin/orders/'+encodeURIComponent(orderId)+'/status',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({status:status})
+        body:JSON.stringify(payload)
       })
       .then(function(r){return r.json();})
       .then(function(res){
-        if(!res.ok) throw new Error(res.error||'Échec');
+        if(!res.ok){
+          /* Shopify a refusé : on NE marque PAS la commande expédiée, sinon le
+             dashboard mentirait (le client n'a rien reçu). */
+          if(done){ done(res); return; }
+          throw new Error(res.error||'Échec');
+        }
         // Étape active
         if(steps) steps.querySelectorAll('.step').forEach(function(b){
           b.classList.toggle('active', b===btn);
@@ -1309,11 +1406,23 @@ export function dashboardPage(
           }
         }
         filterCards();
+        if(res.shopify) toast(res.shopify);
+        if(done) done(res);
       })
-      .catch(function(e){ alert('Impossible de changer le statut : '+e.message); })
+      .catch(function(e){
+        if(done) done({ok:false,error:e.message});
+        else alert('Impossible de changer le statut : '+e.message);
+      })
       .finally(function(){
         if(steps) steps.querySelectorAll('.step').forEach(function(b){b.disabled=false;});
       });
+    }
+
+    /* Message éphémère (confirmation d'expédition). */
+    function toast(msg){
+      var t=document.getElementById('toast');
+      t.textContent=msg; t.classList.add('show');
+      setTimeout(function(){t.classList.remove('show');},4500);
     }
 
     /* ── Note interne ── */

@@ -153,14 +153,18 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       currency: payload.currency ?? null,
       lineItems,
       financialStatus: payload.financial_status ?? null,
+      // Statut d'exécution : Shopify est la source de vérité. null = non traitée.
+      fulfillmentStatus: payload.fulfillment_status ?? null,
       shopifyCreatedAt: payload.created_at ? new Date(payload.created_at) : null,
     });
 
-    // Le marqueur « nouveau » et le suivi de production appartiennent à
-    // l'atelier : une re-synchro Shopify ne doit pas les réinitialiser.
+    // Le marqueur « nouveau », le suivi de production et le n° de suivi
+    // appartiennent à l'atelier : une re-synchro Shopify ne doit pas les
+    // réinitialiser. (fulfillmentStatus, lui, VIENT de Shopify : on le garde.)
     if (!isNew) {
       delete (entity as Partial<Order>).seen;
       delete (entity as Partial<Order>).productionStatus;
+      delete (entity as Partial<Order>).trackingNumber;
     }
 
     // save() fait un upsert sur la clé primaire (shopifyOrderId) : rejouer un

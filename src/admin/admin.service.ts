@@ -177,6 +177,14 @@ export class AdminService {
     });
   }
 
+  /** Enregistre le résultat d'une expédition Shopify. */
+  async setFulfillment(
+    shopifyOrderId: string,
+    patch: { fulfillmentStatus: string | null; trackingNumber: string | null },
+  ): Promise<void> {
+    await this.orders.update(shopifyOrderId, patch);
+  }
+
   /** Enregistre la note interne d'une commande. */
   async setInternalNote(
     shopifyOrderId: string,

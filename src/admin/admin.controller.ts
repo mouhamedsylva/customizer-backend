@@ -206,6 +206,48 @@ export class AdminController {
       res.status(400).json({ ok: false, error: 'Statut inconnu.' });
       return;
     }
+
+    // « Expédiée » n'est pas un statut interne comme les autres : on le
+    // répercute dans Shopify, qui envoie alors SON e-mail d'expédition au
+    // client. Si Shopify refuse, on n'enregistre PAS le statut — sinon le
+    // dashboard afficherait « Expédiée » alors que le client n'a rien reçu.
+    if (status === 'shipped') {
+      const tracking = String((req.body as any)?.tracking || '').trim();
+      const carrier = String((req.body as any)?.carrier || '').trim();
+      try {
+        const r = await this.shopify.fulfillOrder(orderId, {
+          trackingNumber: tracking || undefined,
+          trackingCompany: carrier || undefined,
+          notifyCustomer: true,
+        });
+        await this.data.setProductionStatus(orderId, status);
+        await this.data.setFulfillment(orderId, {
+          fulfillmentStatus: 'fulfilled',
+          trackingNumber: tracking || null,
+        });
+        res.json({
+          ok: true,
+          status,
+          shopify: r.alreadyFulfilled
+            ? 'Cette commande était déjà expédiée dans Shopify.'
+            : `Expédiée dans Shopify — le client a reçu son e-mail${tracking ? ' avec le suivi' : ''}.`,
+        });
+      } catch (err) {
+        const msg = (err as Error).message;
+        // Le scope manquant est l'erreur la plus probable : on l'explicite.
+        const hint = /403|scope|permission/i.test(msg)
+          ? " Le token Shopify n'a pas le droit d'expédier : ajoutez le scope " +
+            'write_merchant_managed_fulfillment_orders (et read_...) dans votre app, ' +
+            'puis régénérez SHOPIFY_ACCESS_TOKEN.'
+          : '';
+        res.status(502).json({
+          ok: false,
+          error: `Expédition Shopify refusée : ${msg}${hint}`,
+        });
+      }
+      return;
+    }
+
     await this.data.setProductionStatus(orderId, status);
     res.json({ ok: true, status });
   }

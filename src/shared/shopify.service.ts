@@ -188,6 +188,108 @@ export class ShopifyService {
   }
 
   /**
+   * Fulfillment orders d'une commande.
+   * Shopify n'accepte plus la création d'un fulfillment directement sur la
+   * commande : il faut passer par ses « fulfillment orders » (un par lieu de
+   * stock). On ne garde que ceux qui restent à traiter.
+   * Nécessite le scope read_merchant_managed_fulfillment_orders.
+   */
+  async getFulfillmentOrders(
+    orderId: string | number,
+  ): Promise<Record<string, any>[]> {
+    const response = await fetch(
+      `${this.getBaseUrl()}/orders/${orderId}/fulfillment_orders.json`,
+      { method: 'GET', headers: this.getHeaders() },
+    );
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(
+        `Erreur Shopify (${response.status}) sur /fulfillment_orders : ${response.statusText}. ${text}`,
+      );
+    }
+
+    const result = (await response.json()) as {
+      fulfillment_orders: Record<string, any>[];
+    };
+    return result.fulfillment_orders || [];
+  }
+
+  /**
+   * Marque une commande comme expédiée dans Shopify.
+   *
+   * Effet côté client : Shopify lui envoie SON e-mail d'expédition (avec le
+   * suivi s'il est fourni). L'action est donc visible du client et n'est pas
+   * silencieuse — d'où la confirmation demandée côté dashboard.
+   *
+   * @param notifyCustomer  false pour expédier sans prévenir le client.
+   * @returns le nombre de fulfillments créés (0 si tout était déjà traité).
+   * Nécessite le scope write_merchant_managed_fulfillment_orders.
+   */
+  async fulfillOrder(
+    orderId: string | number,
+    opts: {
+      trackingNumber?: string;
+      trackingCompany?: string;
+      trackingUrl?: string;
+      notifyCustomer?: boolean;
+    } = {},
+  ): Promise<{ created: number; alreadyFulfilled: boolean }> {
+    const fos = await this.getFulfillmentOrders(orderId);
+
+    // Seuls les fulfillment orders encore ouverts peuvent être traités.
+    const open = fos.filter(
+      (fo) => fo.status === 'open' || fo.status === 'in_progress',
+    );
+    if (!open.length) {
+      // Rien à faire : commande déjà expédiée, ou sans article à expédier.
+      return { created: 0, alreadyFulfilled: fos.length > 0 };
+    }
+
+    const tracking =
+      opts.trackingNumber || opts.trackingUrl
+        ? {
+            number: opts.trackingNumber || undefined,
+            company: opts.trackingCompany || undefined,
+            url: opts.trackingUrl || undefined,
+          }
+        : undefined;
+
+    let created = 0;
+    for (const fo of open) {
+      const body: Record<string, any> = {
+        fulfillment: {
+          line_items_by_fulfillment_order: [{ fulfillment_order_id: fo.id }],
+          notify_customer: opts.notifyCustomer !== false,
+        },
+      };
+      if (tracking) body.fulfillment.tracking_info = tracking;
+
+      const response = await fetch(`${this.getBaseUrl()}/fulfillments.json`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        this.logger.error(
+          `Echec fulfillment commande ${orderId} (FO ${fo.id}): ${response.status} ${text}`,
+        );
+        throw new Error(
+          `Erreur Shopify (${response.status}) : ${response.statusText}. ${text}`,
+        );
+      }
+      created++;
+    }
+
+    this.logger.log(
+      `Commande ${orderId} marquée expédiée dans Shopify (${created} fulfillment(s)).`,
+    );
+    return { created, alreadyFulfilled: false };
+  }
+
+  /**
    * Met a jour les line_items d'un draft order (remplace la liste complete).
    * Utilise pour ajouter/retirer une ligne cote panier.
    */
