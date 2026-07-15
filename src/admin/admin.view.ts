@@ -54,6 +54,7 @@ const STYLE = `
   --ok:#3f7d4e; --ok-soft:#e7f0e9;
   --warn:#b45309; --warn-soft:#fbefd9;
   --shadow:0 1px 2px rgba(27,31,36,.04),0 8px 24px rgba(27,31,36,.05);
+  --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
   --radius:14px;
 }
 @media (prefers-color-scheme:dark){
@@ -65,6 +66,7 @@ const STYLE = `
     --ok:#6fbf83; --ok-soft:#1f2f24;
     --warn:#e0a95c; --warn-soft:#332a19;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
+    --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 18px 40px rgba(0,0,0,.5);
   }
 }
 :root[data-theme="light"]{
@@ -74,6 +76,7 @@ const STYLE = `
   --accent:#c2410c; --accent-soft:#fbeae1;
   --ok:#3f7d4e; --ok-soft:#e7f0e9; --warn:#b45309; --warn-soft:#fbefd9;
   --shadow:0 1px 2px rgba(27,31,36,.04),0 8px 24px rgba(27,31,36,.05);
+  --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
 }
 :root[data-theme="dark"]{
   --paper:#16181c; --surface:#1d2025; --raise:#23272e;
@@ -82,6 +85,7 @@ const STYLE = `
   --accent:#f4763e; --accent-soft:#3a251c;
   --ok:#6fbf83; --ok-soft:#1f2f24; --warn:#e0a95c; --warn-soft:#332a19;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
+  --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 18px 40px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -176,14 +180,40 @@ body{
 /* Row card */
 .card{
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
-  box-shadow:var(--shadow);overflow:hidden;transition:border-color .15s;
+  box-shadow:var(--shadow);overflow:hidden;
+  /* Survol fluide : soulèvement + ombre + bordure teintée. */
+  transition:border-color .2s ease, box-shadow .25s ease, transform .2s ease;
+  will-change:transform;
 }
-.card:hover{border-color:var(--line)}
-.card.open{border-color:var(--accent)}
+.card:hover{
+  border-color:var(--accent);
+  transform:translateY(-2px);
+  box-shadow:var(--shadow-hover);
+}
+/* La carte dépliée ne « saute » pas au survol : elle reste posée. */
+.card.open{border-color:var(--accent);transform:none}
+.card.open:hover{transform:none}
 .head{
   display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;
   padding:15px 18px;cursor:pointer;user-select:none;
 }
+/* La flèche pivote doucement à l'ouverture. */
+.caret{transition:transform .2s ease}
+.card.open .head .caret{transform:rotate(90deg)}
+
+/* Pagination */
+.pager{
+  display:flex;align-items:center;justify-content:center;gap:14px;
+  margin:18px 0 6px;
+}
+.pg-btn{
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  border-radius:9px;padding:8px 14px;font:inherit;font-size:13px;font-weight:600;
+  cursor:pointer;transition:border-color .15s, color .15s, background .15s;
+}
+.pg-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.pg-btn:disabled{opacity:.4;cursor:default}
+.pg-info{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .avatar{
   width:38px;height:38px;border-radius:10px;flex-shrink:0;
   background:var(--accent-soft);color:var(--accent);
@@ -1132,7 +1162,7 @@ export function dashboardPage(
     <div class="toolbar">
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input id="search" placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards()">
+        <input id="search" placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
       </div>
 
       <div class="filters" id="filters">
@@ -1314,7 +1344,7 @@ export function dashboardPage(
       tabs.forEach(function(x){x.classList.remove('active')});t.classList.add('active');
       document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active')});
       document.getElementById('p-'+t.dataset.tab).classList.add('active');
-      var s=document.getElementById('search');s.value='';filterCards();
+      var s=document.getElementById('search');s.value='';filterCards(true);
     });});
     /* Filtre courant de l'onglet Devis : 'open' (à traiter), 'paid', 'all'. */
     var quoteFilter='open';
@@ -1325,14 +1355,14 @@ export function dashboardPage(
       quoteFilter=btn.getAttribute('data-qf');
       document.querySelectorAll('#quote-filters .chip-filter')
         .forEach(function(b){b.classList.toggle('active',b===btn);});
-      filterCards();
+      filterCards(true);
     }
 
     function filterOrders(btn){
       orderFilter=btn.getAttribute('data-of');
       document.querySelectorAll('#order-filters .chip-filter')
         .forEach(function(b){b.classList.toggle('active',b===btn);});
-      filterCards();
+      filterCards(true);
     }
 
     /* ── Suivi de production ── */
@@ -1609,38 +1639,77 @@ export function dashboardPage(
       });
     }
 
-    function filterCards(){
+    /* Pagination : nb d'éléments par page, et page courante par panel. */
+    var PAGE_SIZE=10;
+    var pageByPanel={ 'p-orders':1, 'p-quotes':1, 'p-designs':1 };
+
+    function filterCards(resetPage){
       var q=document.getElementById('search').value.toLowerCase().trim();
       var panel=document.querySelector('.panel.active');
       var isQuotes = panel.id==='p-quotes';
       var isOrders = panel.id==='p-orders';
-      var visible=0;
 
+      // Un changement de filtre/recherche renvoie à la page 1.
+      if(resetPage) pageByPanel[panel.id]=1;
+
+      // 1) Détermine les cartes qui PASSENT les filtres (avant pagination).
+      var matched=[];
       panel.querySelectorAll('.card').forEach(function(c){
         var hay=c.getAttribute('data-search')||'';
         var matchText = !q || hay.indexOf(q)!==-1;
 
         var matchStatus = true;
-        // Onglet Devis : sous-filtre « à traiter / payés / tous ».
         if(isQuotes && quoteFilter!=='all'){
           var st=c.getAttribute('data-qstatus')||'open';
           matchStatus = (quoteFilter==='paid') ? (st==='paid') : (st!=='paid');
         }
-        // Onglet Commandes : sous-filtre par étape de production.
         if(isOrders && orderFilter!=='all'){
           matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;
         }
-
-        var show = matchText && matchStatus;
-        c.style.display = show ? '' : 'none';
-        if(show) visible++;
+        if(matchText && matchStatus) matched.push(c); else c.style.display='none';
       });
+
+      // 2) Pagination sur les cartes filtrées.
+      var total=matched.length;
+      var pages=Math.max(1, Math.ceil(total/PAGE_SIZE));
+      var page=Math.min(pageByPanel[panel.id]||1, pages);
+      pageByPanel[panel.id]=page;
+      var start=(page-1)*PAGE_SIZE, end=start+PAGE_SIZE;
+      matched.forEach(function(c,i){ c.style.display=(i>=start && i<end)?'':'none'; });
+
+      // 3) Barre de pagination.
+      renderPager(panel.id, page, pages, total);
 
       // Messages « aucun élément dans cette catégorie ».
       var noneQ=document.getElementById('quotes-none');
-      if(noneQ) noneQ.style.display = (isQuotes && visible===0) ? '' : 'none';
+      if(noneQ) noneQ.style.display = (isQuotes && total===0) ? '' : 'none';
       var noneO=document.getElementById('orders-none');
-      if(noneO) noneO.style.display = (isOrders && visible===0) ? '' : 'none';
+      if(noneO) noneO.style.display = (isOrders && total===0) ? '' : 'none';
+    }
+
+    /* Construit/actualise la barre de pagination d'un panel. */
+    function renderPager(panelId, page, pages, total){
+      var panel=document.getElementById(panelId);
+      var pager=panel.querySelector('.pager');
+      if(pages<=1){ if(pager) pager.remove(); return; }
+      if(!pager){
+        pager=document.createElement('div');
+        pager.className='pager';
+        panel.appendChild(pager);
+      }
+      var from=(page-1)*PAGE_SIZE+1, to=Math.min(page*PAGE_SIZE, total);
+      pager.innerHTML=
+        '<button class="pg-btn" '+(page<=1?'disabled':'')+' onclick="gotoPage(\''+panelId+'\','+(page-1)+')">‹ Précédent</button>'+
+        '<span class="pg-info">'+from+'–'+to+' sur '+total+'</span>'+
+        '<button class="pg-btn" '+(page>=pages?'disabled':'')+' onclick="gotoPage(\''+panelId+'\','+(page+1)+')">Suivant ›</button>';
+    }
+
+    function gotoPage(panelId, page){
+      pageByPanel[panelId]=page;
+      filterCards();
+      // Remonte en haut de la liste pour le confort de lecture.
+      var panel=document.getElementById(panelId);
+      if(panel) panel.scrollIntoView({behavior:'smooth', block:'start'});
     }
     function toggleCard(head){head.parentElement.classList.toggle('open');}
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}
@@ -1732,5 +1801,8 @@ export function dashboardPage(
         closeInvoice();
       }
     });
+
+    // Pagination initiale : applique les filtres + la 1re page dès le chargement.
+    filterCards(true);
   </script>`);
 }
