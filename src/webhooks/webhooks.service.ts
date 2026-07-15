@@ -102,14 +102,22 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     const isNew = !(await this.orders.exists({ where: { shopifyOrderId } }));
 
     const customer = payload.customer || {};
+    const ship = payload.shipping_address || {};
+    const bill = payload.billing_address || {};
+    // Nom : compte client, sinon nom porté par l'adresse (cas commande invité,
+    // où l'objet customer est absent mais l'adresse contient bien un nom).
     const customerName =
       [customer.first_name, customer.last_name].filter(Boolean).join(' ') ||
+      ship.name ||
+      [ship.first_name, ship.last_name].filter(Boolean).join(' ') ||
+      bill.name ||
+      [bill.first_name, bill.last_name].filter(Boolean).join(' ') ||
       payload.email ||
+      customer.email ||
       null;
     const customerPhone =
       payload.phone || customer.phone ||
-      payload.shipping_address?.phone ||
-      payload.billing_address?.phone || null;
+      ship.phone || bill.phone || null;
 
     // Toutes les infos client utiles à la production/expédition.
     const fmtAddr = (a: Record<string, any> | undefined | null) =>
@@ -170,12 +178,32 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       delete (entity as Partial<Order>).seen;
       delete (entity as Partial<Order>).trackingNumber;
 
-      // Le suivi de production suit Shopify quand Shopify a bougé, mais sans
-      // rétrograder une étape que Shopify ne sait pas exprimer (« Prête »).
+      // PROTECTION DES INFOS CLIENT.
+      // Le webhook orders/create fournit le client complet (nom, e-mail,
+      // adresse). Mais la synchro périodique (/orders.json) renvoie souvent ces
+      // champs VIDES selon la protection des données du compte. Sans garde, elle
+      // écrasait le nom/e-mail par null → les infos « clignotaient » puis
+      // disparaissaient dans le dashboard et la fiche. On ne remplace donc un
+      // champ client QUE si la nouvelle valeur est réellement renseignée.
       const existing = await this.orders.findOne({
         where: { shopifyOrderId },
-        select: { productionStatus: true },
       });
+      if (existing) {
+        if (!entity.customerName) entity.customerName = existing.customerName;
+        if (!entity.customerEmail) entity.customerEmail = existing.customerEmail;
+        if (!entity.customerPhone) entity.customerPhone = existing.customerPhone;
+        // customerInfo : on ne remplace que si le nouveau apporte au moins une
+        // info (adresse OU e-mail OU téléphone), sinon on garde l'ancien.
+        const ni = customerInfo;
+        const hasNew =
+          ni.email || ni.phone || ni.shipping || ni.billing || ni.note;
+        if (!hasNew) {
+          delete (entity as Partial<Order>).customerInfo;
+        }
+      }
+
+      // Le suivi de production suit Shopify quand Shopify a bougé, mais sans
+      // rétrograder une étape que Shopify ne sait pas exprimer (« Prête »).
       const current = (existing?.productionStatus ||
         'to_produce') as ProductionStatus;
       const next = fromShopify(this.shippingStateOf(payload), current);
