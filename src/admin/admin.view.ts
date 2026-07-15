@@ -256,7 +256,15 @@ body{
 .thumbs{display:flex;gap:8px;flex-wrap:wrap}
 .thumb{
   width:72px;height:72px;border-radius:10px;border:1px solid var(--line);object-fit:contain;
-  background:var(--raise);cursor:zoom-in;transition:.15s;
+  /* Damier gris clair : un asset transparent (ex. texte blanc) reste visible,
+     alors qu'un fond blanc uni le rendrait invisible. */
+  background-color:#d4d4d8;
+  background-image:
+    linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%),
+    linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%);
+  background-size:14px 14px;
+  background-position:0 0,7px 7px;
+  cursor:zoom-in;transition:.15s;
 }
 .thumb:hover{border-color:var(--accent);transform:scale(1.03)}
 .no-thumb{
@@ -468,7 +476,13 @@ body{
 /* Lightbox */
 .lightbox{position:fixed;inset:0;background:rgba(10,10,12,.86);display:none;align-items:center;justify-content:center;z-index:100;padding:30px;cursor:zoom-out}
 .lightbox.open{display:flex}
-.lightbox img{max-width:92vw;max-height:88vh;border-radius:10px;background:var(--surface);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.lightbox img{max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 30px 80px rgba(0,0,0,.5);
+  /* Damier : un aperçu transparent (texte blanc) reste lisible en grand. */
+  background-color:#d4d4d8;
+  background-image:
+    linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%),
+    linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%);
+  background-size:22px 22px;background-position:0 0,11px 11px}
 
 /* Modale : envoi de facture */
 .modal{position:fixed;inset:0;background:rgba(10,10,12,.6);backdrop-filter:blur(3px);
