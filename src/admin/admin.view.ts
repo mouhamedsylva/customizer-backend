@@ -1698,10 +1698,16 @@ export function dashboardPage(
         panel.appendChild(pager);
       }
       var from=(page-1)*PAGE_SIZE+1, to=Math.min(page*PAGE_SIZE, total);
+      // Boutons construits par le DOM (pas d'onclick inline avec apostrophes
+      // imbriquées, qui cassaient le script généré).
       pager.innerHTML=
-        '<button class="pg-btn" '+(page<=1?'disabled':'')+' onclick="gotoPage(\''+panelId+'\','+(page-1)+')">‹ Précédent</button>'+
+        '<button class="pg-btn" data-pg="prev" '+(page<=1?'disabled':'')+'>‹ Précédent</button>'+
         '<span class="pg-info">'+from+'–'+to+' sur '+total+'</span>'+
-        '<button class="pg-btn" '+(page>=pages?'disabled':'')+' onclick="gotoPage(\''+panelId+'\','+(page+1)+')">Suivant ›</button>';
+        '<button class="pg-btn" data-pg="next" '+(page>=pages?'disabled':'')+'>Suivant ›</button>';
+      var prev=pager.querySelector('[data-pg="prev"]');
+      var next=pager.querySelector('[data-pg="next"]');
+      if(prev) prev.onclick=function(){ gotoPage(panelId, page-1); };
+      if(next) next.onclick=function(){ gotoPage(panelId, page+1); };
     }
 
     function gotoPage(panelId, page){
