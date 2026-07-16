@@ -546,10 +546,13 @@ export function loginPage(error?: boolean): string {
       </div>
       <h1 style="font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Connexion</h1>
       <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Accès réservé à l'équipe.</p>
-      ${error ? '<p style="color:var(--accent);font-size:12.5px;background:var(--accent-soft);padding:9px 12px;border-radius:9px;margin-bottom:14px">Mot de passe incorrect. Réessayez.</p>' : ''}
+      ${error ? '<p style="color:var(--accent);font-size:12.5px;background:var(--accent-soft);padding:9px 12px;border-radius:9px;margin-bottom:14px">E-mail ou mot de passe incorrect, ou compte bloqué.</p>' : ''}
       <form method="post" action="/api/admin/login">
+        <label class="lbl" style="display:block;margin-bottom:6px">E-mail</label>
+        <input name="email" type="email" autocomplete="username" required autofocus
+          style="width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--ink);font:inherit;font-size:14px;outline:none;margin-bottom:14px">
         <label class="lbl" style="display:block;margin-bottom:6px">Mot de passe</label>
-        <input name="password" type="password" autofocus
+        <input name="password" type="password" autocomplete="current-password" required
           style="width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--ink);font:inherit;font-size:14px;outline:none;margin-bottom:16px">
         <button type="submit"
           style="width:100%;padding:12px;border:none;border-radius:11px;background:var(--accent);color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer">Se connecter</button>
@@ -1043,8 +1046,12 @@ export function dashboardPage(
   extra: {
     filters?: DashboardFilters;
     settings?: AdminSettings;
+    /** Admin connecté : seul l'owner voit la gestion des comptes. */
+    me?: { id: string; email: string; role: 'owner' | 'admin' };
   } = {},
 ): string {
+  const me = extra.me;
+  const isOwner = me?.role === 'owner';
   const f: DashboardFilters = extra.filters || {
     period: 'all',
     payment: 'all',
@@ -1147,6 +1154,14 @@ export function dashboardPage(
           <div class="notif-list" id="notif-list">${notifList}</div>
         </div>
       </div>
+      ${
+        isOwner
+          ? `<button class="theme-btn" onclick="openAdmins()" title="Gérer les administrateurs">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        Admins
+      </button>`
+          : ''
+      }
       <button class="theme-btn" onclick="openSettings()" title="Réglages">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 8.6a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
         Réglages
@@ -1323,6 +1338,58 @@ export function dashboardPage(
       <p class="hint" id="set-status" style="margin-top:12px"></p>
     </div>
   </div>
+
+  ${
+    isOwner
+      ? `
+  <!-- Modale : gestion des administrateurs (owner uniquement) -->
+  <div class="modal" id="adm-modal" onclick="if(event.target===this)closeAdmins()">
+    <div class="modal-box" style="max-width:560px">
+      <h3>Administrateurs</h3>
+      <p class="sub">Invitez votre équipe et gérez les accès au dashboard.</p>
+
+      <div class="set-block">
+        <label class="lbl">Inviter un administrateur</label>
+        <div class="mail-row">
+          <input type="email" id="adm-email" class="price-input" placeholder="collegue@exemple.com">
+          <button class="btn primary" id="adm-add" onclick="inviteAdmin()">Générer le mot de passe</button>
+        </div>
+        <p class="hint">
+          Un mot de passe de 8 caractères est généré automatiquement. Il ne s'affiche
+          qu'une seule fois : partagez-le aussitôt.
+        </p>
+        <p class="hint" id="adm-status"></p>
+
+        <!-- Identifiants fraîchement générés + partage -->
+        <div id="adm-cred" style="display:none;margin-top:12px;background:var(--raise);border-radius:10px;padding:14px">
+          <div class="lbl" style="margin-bottom:8px">Identifiants à transmettre</div>
+          <div class="mono" id="adm-cred-txt"
+               style="font-size:13px;line-height:1.7;word-break:break-all;user-select:all"></div>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <button class="btn primary" onclick="shareCreds()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+              Partager
+            </button>
+            <button class="btn" onclick="copyCreds()">Copier</button>
+          </div>
+          <p class="hint" id="adm-share-hint" style="margin-top:8px"></p>
+        </div>
+      </div>
+
+      <div class="set-block">
+        <label class="lbl">Comptes existants</label>
+        <div id="adm-list" style="margin-top:8px">
+          <p class="hint">Chargement…</p>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeAdmins()">Fermer</button>
+      </div>
+    </div>
+  </div>`
+      : ''
+  }
 
   <!-- Modale : expédier (répercuté dans Shopify, e-mail envoyé au client) -->
   <div class="modal" id="ship-modal" onclick="if(event.target===this)closeShip()">
@@ -1682,6 +1749,184 @@ export function dashboardPage(
 
     function openSettings(){document.getElementById('set-modal').classList.add('open');}
     function closeSettings(){document.getElementById('set-modal').classList.remove('open');}
+
+    /* ═══════════════ Gestion des administrateurs (owner) ═══════════════ */
+
+    var LAST_CREDS=null;   // derniers identifiants générés (pour le partage)
+
+    function openAdmins(){
+      var m=document.getElementById('adm-modal');
+      if(!m) return;
+      m.classList.add('open');
+      loadAdmins();
+    }
+    function closeAdmins(){
+      var m=document.getElementById('adm-modal');
+      if(m) m.classList.remove('open');
+    }
+
+    function admEsc(s){
+      return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+
+    /* Liste des comptes + actions bloquer/débloquer. */
+    async function loadAdmins(){
+      var box=document.getElementById('adm-list');
+      if(!box) return;
+      box.innerHTML='<p class="hint">Chargement…</p>';
+      try{
+        var r=await fetch('/api/admin/admins',{credentials:'same-origin'});
+        var d=await r.json();
+        if(!d.ok){box.innerHTML='<p class="hint">'+admEsc(d.error||'Erreur')+'</p>';return;}
+        if(!d.admins.length){box.innerHTML='<p class="hint">Aucun compte.</p>';return;}
+
+        box.innerHTML=d.admins.map(function(a){
+          var isMe=d.me&&a.id===d.me.id;
+          var owner=a.role==='owner';
+          var tag=owner
+            ? '<span class="pill ok">Principal</span>'
+            : (a.blocked?'<span class="pill neutral">Bloqué</span>':'<span class="pill ok">Actif</span>');
+          var last=a.lastLoginAt
+            ? 'Dernière connexion : '+new Date(a.lastLoginAt).toLocaleString('fr-FR')
+            : 'Jamais connecté';
+          // Rattachement Shopify (client créé à l'invitation).
+          if(a.shopifyCustomerId) last+=' · Client Shopify ✓';
+          // L'owner et soi-même ne peuvent pas être bloqués.
+          var actions=(owner||isMe)
+            ? '<span class="hint">—</span>'
+            : '<button class="btn" onclick="toggleBlock(\\''+a.id+'\\','+(!a.blocked)+')">'+
+              (a.blocked?'Débloquer':'Bloquer')+'</button>'+
+              ' <button class="btn" onclick="resetPass(\\''+a.id+'\\')">Nouveau mot de passe</button>';
+          return '<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;'+
+                 'padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">'+
+                 '<div style="min-width:0">'+
+                   '<div style="font-weight:700;font-size:13.5px">'+admEsc(a.email)+
+                     (isMe?' <span class="hint">(vous)</span>':'')+'</div>'+
+                   '<div class="hint">'+last+'</div>'+
+                 '</div>'+
+                 '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+tag+actions+'</div>'+
+                 '</div>';
+        }).join('');
+      }catch(e){
+        box.innerHTML='<p class="hint">Erreur de chargement.</p>';
+      }
+    }
+
+    /* Invite : e-mail -> mot de passe généré côté serveur. */
+    async function inviteAdmin(){
+      var input=document.getElementById('adm-email');
+      var btn=document.getElementById('adm-add');
+      var status=document.getElementById('adm-status');
+      var email=(input.value||'').trim();
+      if(!email){status.textContent='Renseignez un e-mail.';return;}
+
+      btn.disabled=true;status.textContent='Création…';
+      try{
+        var r=await fetch('/api/admin/admins',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({email:email})
+        });
+        var d=await r.json();
+        if(!d.ok){status.textContent=d.error||'Erreur.';btn.disabled=false;return;}
+
+        // Le rattachement Shopify est un complément : on informe sans bloquer.
+        status.textContent='Compte créé.'+(d.shopify&&d.shopify.note?' '+d.shopify.note:'');
+        input.value='';
+        showCreds(d.admin.email,d.password);
+        loadAdmins();
+      }catch(e){
+        status.textContent='Erreur réseau.';
+      }
+      btn.disabled=false;
+    }
+
+    /* Régénère le mot de passe d'un compte existant. */
+    async function resetPass(id){
+      var status=document.getElementById('adm-status');
+      status.textContent='Génération…';
+      try{
+        var r=await fetch('/api/admin/admins/'+id+'/password',{
+          method:'POST',credentials:'same-origin'
+        });
+        var d=await r.json();
+        if(!d.ok){status.textContent=d.error||'Erreur.';return;}
+        status.textContent='Nouveau mot de passe généré.';
+        showCreds(d.email,d.password);
+      }catch(e){status.textContent='Erreur réseau.';}
+    }
+
+    /* Bloque / débloque un compte. */
+    async function toggleBlock(id,blocked){
+      var status=document.getElementById('adm-status');
+      try{
+        var r=await fetch('/api/admin/admins/'+id+'/blocked',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({blocked:blocked})
+        });
+        var d=await r.json();
+        if(!d.ok){status.textContent=d.error||'Erreur.';return;}
+        status.textContent=blocked?'Compte bloqué.':'Compte débloqué.';
+        loadAdmins();
+      }catch(e){status.textContent='Erreur réseau.';}
+    }
+
+    /* Affiche les identifiants générés + prépare le partage. */
+    function showCreds(email,password){
+      var url=location.origin+'/api/admin';
+      LAST_CREDS={
+        email:email,
+        password:password,
+        text:'Accès administrateur Custom Textile\\n'+
+             'Lien : '+url+'\\n'+
+             'E-mail : '+email+'\\n'+
+             'Mot de passe : '+password
+      };
+      var box=document.getElementById('adm-cred');
+      document.getElementById('adm-cred-txt').innerHTML=
+        'Lien : '+admEsc(url)+'<br>E-mail : '+admEsc(email)+
+        '<br>Mot de passe : <b>'+admEsc(password)+'</b>';
+      box.style.display='block';
+      document.getElementById('adm-share-hint').textContent='';
+    }
+
+    /* VRAI panneau de partage du système (Web Share API) : ouvre le sélecteur
+       d'applications natif (WhatsApp, Gmail, Messages…). Repli : copie. */
+    async function shareCreds(){
+      if(!LAST_CREDS) return;
+      var hint=document.getElementById('adm-share-hint');
+      if(navigator.share){
+        try{
+          await navigator.share({
+            title:'Accès administrateur — Custom Textile',
+            text:LAST_CREDS.text
+          });
+          hint.textContent='Partagé.';
+          return;
+        }catch(e){
+          // L'utilisateur a annulé : on ne fait rien de plus.
+          if(e && e.name==='AbortError'){hint.textContent='';return;}
+        }
+      }
+      // Navigateur sans panneau natif (souvent desktop) : on copie.
+      copyCreds();
+      hint.textContent='Partage natif indisponible ici : identifiants copiés.';
+    }
+
+    function copyCreds(){
+      if(!LAST_CREDS) return;
+      var hint=document.getElementById('adm-share-hint');
+      navigator.clipboard.writeText(LAST_CREDS.text).then(function(){
+        hint.textContent='Identifiants copiés.';
+      }).catch(function(){
+        hint.textContent='Copie impossible : sélectionnez le texte manuellement.';
+      });
+    }
     function saveSettings(){
       var st=document.getElementById('set-status');
       var btn=document.getElementById('set-save');

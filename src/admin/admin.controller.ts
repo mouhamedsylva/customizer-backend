@@ -34,10 +34,17 @@ export class AdminController {
     private readonly config: ConfigService,
   ) {}
 
-  /** Vrai si la requête porte un cookie de session valide. */
+  /** Vrai si la requête porte un cookie de session valide (signature + TTL). */
   private isAuthed(req: Request): boolean {
     const token = (req.cookies || {})[this.auth.cookieName];
     return this.auth.verifyToken(token);
+  }
+
+  /** Admin connecté (identité + rôle), ou null. Lit la BDD : à utiliser quand
+   *  on a besoin de savoir QUI agit (gestion des comptes). */
+  private async currentAdmin(req: Request) {
+    const token = (req.cookies || {})[this.auth.cookieName];
+    return this.auth.currentAdmin(token);
   }
 
   /**
@@ -57,11 +64,12 @@ export class AdminController {
       sort: String(req.query.sort || 'date_desc'),
     };
 
-    const [orders, quotes, designs, settings] = await Promise.all([
+    const [orders, quotes, designs, settings, me] = await Promise.all([
       this.data.getOrders(filters),
       this.data.getQuotes(filters.period),
       this.data.getDesigns(),
       this.settings.get(),
+      this.currentAdmin(req),
     ]);
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') || 'https://example.com';
@@ -72,21 +80,24 @@ export class AdminController {
         dashboardPage(orders, quotes, designs, frontendUrl, shopDomain, {
           filters,
           settings,
+          me: me || undefined,
         }),
       );
   }
 
-  /** POST /api/admin/login — vérifie le mot de passe, pose le cookie. */
+  /** POST /api/admin/login — vérifie e-mail + mot de passe, pose le cookie. */
   @Post('login')
-  login(
+  async login(
+    @Body('email') email: string,
     @Body('password') password: string,
     @Res() res: Response,
-  ): void {
-    if (!this.auth.checkPassword(password)) {
+  ): Promise<void> {
+    const admin = await this.auth.login(email, password);
+    if (!admin) {
       res.type('html').status(401).send(loginPage(true));
       return;
     }
-    res.cookie(this.auth.cookieName, this.auth.issueToken(), {
+    res.cookie(this.auth.cookieName, this.auth.issueToken(admin.id), {
       httpOnly: true,
       sameSite: 'lax',
       secure: true,
@@ -684,6 +695,175 @@ export class AdminController {
     await this.data.markOrdersSeen(Array.isArray(orderIds) ? orderIds : []);
     await this.data.markQuotesSeen(Array.isArray(quoteIds) ? quoteIds : []);
     res.json({ ok: true });
+  }
+
+  // ────────────────────────── Gestion des admins ──────────────────────────
+  // Réservée à l'owner : lister, inviter (e-mail + mot de passe généré),
+  // bloquer/débloquer, régénérer un mot de passe.
+
+  /** GET /api/admin/admins — liste des comptes (owner uniquement). */
+  @Get('admins')
+  async listAdmins(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const me = await this.currentAdmin(req);
+    if (!me) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (me.role !== 'owner') {
+      res.status(403).json({ ok: false, error: 'Réservé à l’admin principal.' });
+      return;
+    }
+    const admins = await this.auth.list();
+    res.json({
+      ok: true,
+      me: { id: me.id, email: me.email, role: me.role },
+      admins: admins.map((a) => ({
+        id: a.id,
+        email: a.email,
+        role: a.role,
+        blocked: a.blocked,
+        invitedBy: a.invitedBy,
+        shopifyCustomerId: a.shopifyCustomerId,
+        lastLoginAt: a.lastLoginAt,
+        createdAt: a.createdAt,
+      })),
+    });
+  }
+
+  /**
+   * POST /api/admin/admins — invite un admin.
+   * Body : { email }. Le mot de passe (8 caractères) est GÉNÉRÉ ici et renvoyé
+   * en clair UNE SEULE FOIS, pour que l'owner puisse le partager.
+   */
+  @Post('admins')
+  async inviteAdmin(
+    @Req() req: Request,
+    @Body('email') email: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const me = await this.currentAdmin(req);
+    if (!me) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (me.role !== 'owner') {
+      res.status(403).json({ ok: false, error: 'Réservé à l’admin principal.' });
+      return;
+    }
+
+    const mail = String(email || '').trim().toLowerCase();
+
+    // Validation AVANT tout appel Shopify : inutile de créer un client si
+    // l'e-mail est invalide ou déjà utilisé par un admin.
+    const check = await this.auth.validateNewEmail(mail);
+    if (!check.ok) {
+      res.status(400).json({ ok: false, error: check.error });
+      return;
+    }
+
+    // Rattachement Shopify : on crée (ou retrouve) le customer correspondant.
+    // Un échec Shopify NE BLOQUE PAS la création de l'admin : le dashboard doit
+    // rester utilisable même si la boutique est injoignable ou mal configurée.
+    let customerId: string | null = null;
+    let shopifyNote: string | undefined;
+    try {
+      const cust = await this.shopify.createCustomer({
+        email: mail,
+        tags: 'admin-dashboard',
+        note: `Compte administrateur du dashboard, invité par ${me.email}.`,
+      });
+      if (cust.ok && cust.customer) {
+        customerId = String(cust.customer.id);
+        shopifyNote = cust.existed
+          ? 'Client Shopify existant rattaché.'
+          : 'Client Shopify créé.';
+      } else {
+        shopifyNote = 'Client Shopify non créé : ' + (cust.error || 'erreur');
+      }
+    } catch (e) {
+      this.logger.warn(
+        `Rattachement Shopify impossible pour ${mail} : ${(e as Error).message}`,
+      );
+      shopifyNote = 'Client Shopify non créé (Shopify injoignable).';
+    }
+
+    const password = this.auth.generatePassword(8);
+    const result = await this.auth.createAdmin(
+      mail,
+      password,
+      me.email,
+      customerId,
+    );
+    if (!result.ok || !result.admin) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({
+      ok: true,
+      // Mot de passe en clair : unique occasion de l'afficher/partager.
+      password,
+      shopify: { customerId, note: shopifyNote },
+      admin: {
+        id: result.admin.id,
+        email: result.admin.email,
+        role: result.admin.role,
+        blocked: result.admin.blocked,
+        shopifyCustomerId: result.admin.shopifyCustomerId,
+        createdAt: result.admin.createdAt,
+      },
+    });
+  }
+
+  /** POST /api/admin/admins/:id/blocked — bloque/débloque (owner uniquement). */
+  @Post('admins/:id/blocked')
+  async blockAdmin(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body('blocked') blocked: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    const me = await this.currentAdmin(req);
+    if (!me) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (me.role !== 'owner') {
+      res.status(403).json({ ok: false, error: 'Réservé à l’admin principal.' });
+      return;
+    }
+    const result = await this.auth.setBlocked(id, blocked === true, me.id);
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({ ok: true });
+  }
+
+  /**
+   * POST /api/admin/admins/:id/password — régénère le mot de passe d'un admin.
+   * Renvoie le nouveau en clair, pour partage immédiat.
+   */
+  @Post('admins/:id/password')
+  async resetAdminPassword(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const me = await this.currentAdmin(req);
+    if (!me) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (me.role !== 'owner') {
+      res.status(403).json({ ok: false, error: 'Réservé à l’admin principal.' });
+      return;
+    }
+    const result = await this.auth.resetPassword(id);
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({ ok: true, password: result.password, email: result.email });
   }
 }
 

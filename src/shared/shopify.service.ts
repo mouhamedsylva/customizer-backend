@@ -513,4 +513,105 @@ export class ShopifyService {
     }
   }
 
+  // ───────────────────────────── Customers ─────────────────────────────
+  // Utilisés pour rattacher les comptes admin aux clients Shopify.
+  // Scopes requis sur l'app privée : read_customers, write_customers.
+
+  /** Cherche un customer par e-mail. Renvoie null si aucun (ou en cas d'erreur). */
+  async findCustomerByEmail(
+    email: string,
+  ): Promise<Record<string, any> | null> {
+    const mail = String(email || '').trim().toLowerCase();
+    if (!mail) return null;
+    try {
+      const url =
+        `${this.getBaseUrl()}/customers/search.json` +
+        `?query=${encodeURIComponent('email:' + mail)}&limit=1`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        this.logger.warn(
+          `Recherche customer ${mail} : ${response.status} ${text}`,
+        );
+        return null;
+      }
+      const result = (await response.json()) as {
+        customers: Record<string, any>[];
+      };
+      const found = (result.customers || []).find(
+        (c) => String(c.email || '').toLowerCase() === mail,
+      );
+      return found || null;
+    } catch (e) {
+      this.logger.warn(`Recherche customer ${mail} : ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Crée un customer Shopify, ou renvoie celui qui existe déjà pour cet e-mail.
+   *
+   * Utilisé à l'invitation d'un admin : le compte apparaît aussi dans les
+   * clients de la boutique. `note`/`tags` permettent de repérer ces comptes.
+   */
+  async createCustomer(input: {
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    tags?: string;
+    note?: string;
+  }): Promise<{
+    ok: boolean;
+    customer?: Record<string, any>;
+    existed?: boolean;
+    error?: string;
+  }> {
+    const mail = String(input.email || '').trim().toLowerCase();
+    if (!mail) return { ok: false, error: 'E-mail manquant.' };
+
+    // Déjà client ? on le réutilise (Shopify refuse les doublons d'e-mail).
+    const existing = await this.findCustomerByEmail(mail);
+    if (existing) return { ok: true, customer: existing, existed: true };
+
+    try {
+      const response = await fetch(`${this.getBaseUrl()}/customers.json`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({
+          customer: {
+            email: mail,
+            first_name: input.firstName || undefined,
+            last_name: input.lastName || undefined,
+            tags: input.tags || undefined,
+            note: input.note || undefined,
+            // Pas d'e-mail d'invitation Shopify : la transmission des accès se
+            // fait via le panneau de partage du dashboard.
+            send_email_invite: false,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        this.logger.error(
+          `Echec creation customer ${mail}: ${response.status} ${text}`,
+        );
+        return { ok: false, error: `Shopify (${response.status})` };
+      }
+
+      const result = (await response.json()) as {
+        customer: Record<string, any>;
+      };
+      return { ok: true, customer: result.customer, existed: false };
+    } catch (e) {
+      this.logger.error(
+        `Echec creation customer ${mail}: ${(e as Error).message}`,
+      );
+      return { ok: false, error: (e as Error).message };
+    }
+  }
+
 }
