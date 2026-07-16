@@ -1353,6 +1353,64 @@ export function dashboardPage(
 
   <script>
     var UNSEEN=${seenPayload};
+
+    /* ─────────── Auto-rafraîchissement du dashboard ───────────
+       On interroge périodiquement /api/admin/status (léger : juste des
+       compteurs). Si l'état a changé (nouvelle commande/devis, etc.), on recharge
+       la page — SAUF si l'utilisateur est occupé (champ en cours de saisie, menu
+       ou modale ouverte), pour ne rien interrompre. */
+    var DASH_STATE=${JSON.stringify({
+      orders: orders.length,
+      quotes: quotes.length,
+      designs: designs.length,
+      newOrders: newOrders.length,
+      newQuotes: newQuotes.length,
+    })};
+    var AUTO_REFRESH_MS=20000;   // fréquence de vérification (20 s)
+
+    // L'utilisateur est-il en train de faire quelque chose qu'il ne faut pas
+    // interrompre ? (saisie dans un champ, ou une modale/overlay visible)
+    function dashBusy(){
+      var ae=document.activeElement;
+      if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable)){
+        return true;
+      }
+      // Modales/overlays ouverts (id ou classe contenant "modal"/"overlay"/"invoice"/"drawer").
+      var open=document.querySelectorAll('.modal,.overlay,[class*="modal"],[class*="overlay"],[class*="drawer"]');
+      for(var i=0;i<open.length;i++){
+        var el=open[i];var st=window.getComputedStyle(el);
+        if(st.display!=='none'&&st.visibility!=='hidden'&&el.offsetParent!==null){return true;}
+      }
+      return false;
+    }
+
+    function dashChanged(s){
+      return s.orders!==DASH_STATE.orders || s.quotes!==DASH_STATE.quotes ||
+             s.designs!==DASH_STATE.designs || s.newOrders!==DASH_STATE.newOrders ||
+             s.newQuotes!==DASH_STATE.newQuotes;
+    }
+
+    var dashPending=false;   // un changement a été détecté mais on attend d'être libre
+    async function dashCheck(){
+      // Ne vérifie pas si l'onglet est en arrière-plan (économie).
+      if(document.hidden) return;
+      try{
+        var r=await fetch('/api/admin/status',{headers:{'Accept':'application/json'},credentials:'same-origin'});
+        if(!r.ok) return;                       // 401 (déconnecté) : on ne fait rien
+        var s=await r.json();
+        if(!s||!s.ok) return;
+        if(dashChanged(s)) dashPending=true;
+      }catch(e){/* réseau indisponible : on réessaiera au prochain tick */}
+
+      // Recharge dès qu'un changement est en attente ET que l'utilisateur est libre.
+      if(dashPending && !dashBusy()){
+        location.reload();
+      }
+    }
+    setInterval(dashCheck, AUTO_REFRESH_MS);
+    // Vérifie aussi quand l'utilisateur revient sur l'onglet.
+    document.addEventListener('visibilitychange',function(){ if(!document.hidden) dashCheck(); });
+
     var tabs=document.querySelectorAll('.tab');
     tabs.forEach(function(t){t.addEventListener('click',function(){
       tabs.forEach(function(x){x.classList.remove('active')});t.classList.add('active');

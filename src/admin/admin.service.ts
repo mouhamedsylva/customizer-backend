@@ -121,6 +121,28 @@ export class AdminService {
     await this.quotes.update({ id: In(ids) }, { seen: true });
   }
 
+  /**
+   * État LÉGER du dashboard, pour l'auto-rafraîchissement.
+   * Renvoie des compteurs (sans charger le JSON lourd) : le front compare cet
+   * état à celui de la page courante et ne recharge QUE s'il a changé.
+   */
+  async getStatus(): Promise<{
+    orders: number;
+    quotes: number;
+    designs: number;
+    newOrders: number;
+    newQuotes: number;
+  }> {
+    const [orders, quotes, designs, newOrders, newQuotes] = await Promise.all([
+      this.orders.count(),
+      this.quotes.count(),
+      this.designs.count(),
+      this.orders.count({ where: { seen: false } }),
+      this.quotes.count({ where: { seen: false } }),
+    ]);
+    return { orders, quotes, designs, newOrders, newQuotes };
+  }
+
   /** Devis, avec filtre de période optionnel (pour l'export). */
   async getQuotes(period?: string): Promise<Quote[]> {
     const qb = this.quotes.createQueryBuilder('q').select('q.id', 'id');

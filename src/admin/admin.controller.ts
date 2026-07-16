@@ -654,6 +654,21 @@ export class AdminController {
     );
   }
 
+  /**
+   * GET /api/admin/status — état léger (compteurs) pour l'auto-rafraîchissement.
+   * Le dashboard interroge cet endpoint périodiquement et ne se recharge que si
+   * les compteurs ont changé (nouvelle commande/devis, etc.).
+   */
+  @Get('status')
+  async status(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const status = await this.data.getStatus();
+    res.json({ ok: true, ...status });
+  }
+
   /** POST /api/admin/seen — marque commandes et devis comme vus. */
   @Post('seen')
   async markSeen(
