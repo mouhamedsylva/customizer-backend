@@ -13,6 +13,12 @@ import { ConfigService } from '@nestjs/config';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
 import { SettingsService } from './settings.service';
+import {
+  PricingService,
+  PRODUCT_KEYS,
+  PRODUCT_LABELS,
+  PRODUCT_VARIANTS,
+} from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { EmailService } from '../shared/email.service';
 import { loginPage, dashboardPage, productionSheetPage } from './admin.view';
@@ -29,6 +35,7 @@ export class AdminController {
     private readonly auth: AdminAuthService,
     private readonly data: AdminService,
     private readonly settings: SettingsService,
+    private readonly pricing: PricingService,
     private readonly shopify: ShopifyService,
     private readonly email: EmailService,
     private readonly config: ConfigService,
@@ -693,6 +700,68 @@ export class AdminController {
     await this.data.markOrdersSeen(Array.isArray(orderIds) ? orderIds : []);
     await this.data.markQuotesSeen(Array.isArray(quoteIds) ? quoteIds : []);
     res.json({ ok: true });
+  }
+
+  // ─────────────────────────────── Prix ───────────────────────────────
+  // Prix unitaires affichés par le configurateur. Toute modification est aussi
+  // poussée sur le variant Shopify : sans ça, le client paierait l'ancien prix
+  // au checkout (le panier natif facture le prix du variant).
+
+  /** GET /api/admin/pricing — prix actuels + libellés. */
+  @Get('pricing')
+  async getPricing(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const prices = await this.pricing.get();
+    res.json({
+      ok: true,
+      prices,
+      labels: PRODUCT_LABELS,
+      keys: PRODUCT_KEYS,
+      // Les coins passent par un devis : pas de variant à synchroniser.
+      variants: PRODUCT_VARIANTS,
+    });
+  }
+
+  /**
+   * POST /api/admin/pricing — enregistre les prix.
+   * Body : { sweatshirt: 45, patches: 2.45, ... } (partiel accepté).
+   * Chaque produit ayant un variant voit son prix Shopify mis à jour.
+   */
+  @Post('pricing')
+  async savePricing(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!this.isAuthed(req)) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+
+    // 1) Enregistrement local (source de vérité pour l'affichage).
+    const prices = await this.pricing.save(body);
+
+    // 2) Répercussion sur Shopify, produit par produit. Un échec n'annule pas
+    //    l'enregistrement : on le remonte pour que l'admin puisse réagir.
+    const warnings: string[] = [];
+    for (const key of PRODUCT_KEYS) {
+      if (!(key in body)) continue; // non modifié
+      const variantId = PRODUCT_VARIANTS[key];
+      if (!variantId) continue; // coins : devis, pas de variant
+      try {
+        const r = await this.shopify.updateVariantPrice(variantId, prices[key]);
+        if (!r.ok) {
+          warnings.push(`${PRODUCT_LABELS[key]} : ${r.error || 'échec Shopify'}`);
+        }
+      } catch (e) {
+        warnings.push(`${PRODUCT_LABELS[key]} : ${(e as Error).message}`);
+      }
+    }
+
+    res.json({ ok: true, prices, warnings });
   }
 
   // ────────────────────────── Gestion des admins ──────────────────────────

@@ -682,4 +682,64 @@ export class ShopifyService {
     return m ? m[1] : s;
   }
 
+  // ───────────────────────── Prix des variants ─────────────────────────
+  // Utilisés quand l'admin change un prix : le variant Shopify doit suivre,
+  // sinon le client paierait l'ancien prix au checkout.
+  // Scopes requis : read_products, write_products.
+
+  /**
+   * Met à jour le PRIX d'un variant.
+   *
+   * En GraphQL (obligatoire depuis 2025-04), `productVariantsBulkUpdate` exige
+   * l'id du PRODUIT parent : on le récupère d'abord depuis le variant.
+   *
+   * @param variantId  id numérique du variant (ex. 47843295428771)
+   * @param price      prix TTC/HT selon la config de la boutique (ex. 2.45)
+   */
+  async updateVariantPrice(
+    variantId: string | number,
+    price: number,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const gid = `gid://shopify/ProductVariant/${this.gidToId(variantId)}`;
+
+    // 1) Produit parent du variant.
+    const lookup = await this.graphql(
+      `query VariantParent($id: ID!) {
+         productVariant(id: $id) { id product { id } }
+       }`,
+      { id: gid },
+    );
+    if (lookup.error) return { ok: false, error: lookup.error };
+
+    const productId = lookup.data?.productVariant?.product?.id;
+    if (!productId) {
+      return { ok: false, error: `Variant ${variantId} introuvable.` };
+    }
+
+    // 2) Mise à jour du prix.
+    const res = await this.graphql(
+      `mutation SetPrice($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+         productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+           productVariants { id price }
+           userErrors { field message }
+         }
+       }`,
+      {
+        productId,
+        variants: [{ id: gid, price: price.toFixed(2) }],
+      },
+    );
+    if (res.error) return { ok: false, error: res.error };
+
+    const errs = res.data?.productVariantsBulkUpdate?.userErrors || [];
+    if (errs.length) {
+      const msg = errs
+        .map((e: any) => `${(e.field || []).join('.')} ${e.message}`.trim())
+        .join(' | ');
+      this.logger.error(`Echec prix variant ${variantId} : ${msg}`);
+      return { ok: false, error: msg };
+    }
+    return { ok: true };
+  }
+
 }

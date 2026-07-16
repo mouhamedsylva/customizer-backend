@@ -457,6 +457,17 @@ body{
 .mail-row .price-input{flex:1;min-width:0}
 .mail-row .btn{flex:none;white-space:nowrap}
 
+/* ── Modale Prix ── */
+.price-line{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:10px 0;border-bottom:1px solid var(--line-soft);
+}
+.price-line:last-child{border-bottom:none}
+.price-line label{font-size:13.5px;font-weight:600;margin:0}
+.price-field{display:flex;align-items:center;gap:8px;flex:none}
+.price-field .price-input{width:110px;text-align:right;font-size:14px}
+.price-cur{font-size:11.5px;color:var(--faint);font-weight:700;min-width:34px}
+
 /* ── Modale Administrateurs ── */
 .adm-row{
   display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);
@@ -1203,6 +1214,10 @@ export function dashboardPage(
           <div class="notif-list" id="notif-list">${notifList}</div>
         </div>
       </div>
+      <button class="theme-btn" onclick="openPricing()" title="Modifier les prix du configurateur">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Prix
+      </button>
       ${
         isOwner
           ? `<button class="theme-btn" onclick="openAdmins()" title="Gérer les administrateurs">
@@ -1344,6 +1359,30 @@ export function dashboardPage(
         <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer la facture</button>
       </div>
       <p class="hint" id="inv-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <!-- Modale : prix du configurateur -->
+  <div class="modal" id="price-modal" onclick="if(event.target===this)closePricing()">
+    <div class="modal-box" style="max-width:540px">
+      <h3>Prix du configurateur</h3>
+      <p class="sub">Prix unitaires HT affichés aux clients.</p>
+
+      <div class="set-block">
+        <div id="price-list"><p class="hint">Chargement…</p></div>
+        <p class="hint" style="margin-top:12px">
+          À l'enregistrement, le prix est aussi mis à jour sur le variant Shopify
+          correspondant : le client paiera bien le nouveau prix au checkout.
+          Les <strong>Coins</strong> passent par un devis chiffré à la main, leur
+          prix ici n'est donc qu'indicatif.
+        </p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closePricing()">Annuler</button>
+        <button class="btn primary" id="price-save" onclick="savePricing()">Enregistrer</button>
+      </div>
+      <p class="hint" id="price-status" style="margin-top:12px"></p>
     </div>
   </div>
 
@@ -1730,6 +1769,92 @@ export function dashboardPage(
           '<div class="notif-empty"><div class="ico">&#10003;</div>'+
           '<p>Rien de nouveau.</p><small>Vous êtes à jour.</small></div>';
       });
+    }
+
+    /* ═══════════════════ Prix du configurateur ═══════════════════ */
+
+    var PRICE_KEYS=[];   // ordre des produits, fourni par le serveur
+
+    function openPricing(){
+      document.getElementById('price-modal').classList.add('open');
+      loadPricing();
+    }
+    function closePricing(){
+      document.getElementById('price-modal').classList.remove('open');
+    }
+
+    async function loadPricing(){
+      var box=document.getElementById('price-list');
+      var st=document.getElementById('price-status');
+      if(st) st.textContent='';
+      box.innerHTML='<p class="hint">Chargement…</p>';
+      try{
+        var r=await fetch('/api/admin/pricing',{credentials:'same-origin'});
+        var d=await r.json();
+        if(!d.ok){ box.innerHTML='<p class="hint">'+admEsc(d.error||'Erreur')+'</p>'; return; }
+        PRICE_KEYS=d.keys||[];
+        box.innerHTML=PRICE_KEYS.map(function(k){
+          var noVariant=!d.variants||!d.variants[k];
+          return '<div class="price-line">'+
+                   '<label for="price-'+k+'">'+admEsc(d.labels[k]||k)+
+                     (noVariant?' <span class="hint">(devis)</span>':'')+'</label>'+
+                   '<div class="price-field">'+
+                     '<input type="number" id="price-'+k+'" class="price-input mono" '+
+                       'step="0.01" min="0" value="'+Number(d.prices[k]).toFixed(2)+'">'+
+                     '<span class="price-cur">€ HT</span>'+
+                   '</div>'+
+                 '</div>';
+        }).join('');
+      }catch(e){
+        box.innerHTML='<p class="hint">Erreur de chargement.</p>';
+      }
+    }
+
+    async function savePricing(){
+      var st=document.getElementById('price-status');
+      var btn=document.getElementById('price-save');
+      if(!PRICE_KEYS.length) return;
+
+      var body={};
+      for(var i=0;i<PRICE_KEYS.length;i++){
+        var k=PRICE_KEYS[i];
+        var el=document.getElementById('price-'+k);
+        if(!el) continue;
+        var v=parseFloat(el.value);
+        if(isNaN(v)||v<0){
+          st.className='hint err';
+          st.textContent='Prix invalide pour « '+k+' ».';
+          return;
+        }
+        body[k]=v;
+      }
+
+      btn.disabled=true; st.className='hint'; st.textContent='Enregistrement…';
+      try{
+        var r=await fetch('/api/admin/pricing',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify(body)
+        });
+        var d=await r.json();
+        btn.disabled=false;
+        if(!d.ok){ st.className='hint err'; st.textContent=d.error||'Échec.'; return; }
+
+        // Shopify a pu refuser certaines mises à jour : on le dit clairement,
+        // l'enregistrement local ayant tout de même eu lieu.
+        if(d.warnings&&d.warnings.length){
+          st.className='hint err';
+          st.textContent='Prix enregistrés, mais Shopify n\\'a pas suivi pour : '+d.warnings.join(' ; ');
+        }else{
+          st.className='hint ok';
+          st.textContent='Prix enregistrés et synchronisés avec Shopify.';
+          setTimeout(closePricing,1200);
+        }
+      }catch(e){
+        btn.disabled=false;
+        st.className='hint err'; st.textContent='Erreur réseau : '+e.message;
+      }
     }
 
     /* ═══════════════ Gestion des administrateurs (owner) ═══════════════ */

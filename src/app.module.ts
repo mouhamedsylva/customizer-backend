@@ -10,6 +10,7 @@ import { ExportModule } from './export/export.module';
 import { HealthModule } from './health/health.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AdminModule } from './admin/admin.module';
+import { PricingModule } from './pricing/pricing.module';
 import { Design } from './database/entities/design.entity';
 import { Quote } from './database/entities/quote.entity';
 import { Order } from './database/entities/order.entity';
@@ -48,6 +49,7 @@ import { Admin } from './database/entities/admin.entity';
     HealthModule,
     WebhooksModule,
     AdminModule,
+    PricingModule,
   ],
 })
 export class AppModule {}
