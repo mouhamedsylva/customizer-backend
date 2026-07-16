@@ -68,6 +68,17 @@ export const PRODUCT_SHOPIFY_IDS: Partial<Record<ProductKey, string>> = {
 };
 
 /**
+ * Produits à DÉCLINAISONS (couleurs/tailles) : leur prix est unique et
+ * s'applique à tous leurs variants. Sert au dashboard pour l'indiquer
+ * clairement à l'admin.
+ */
+export const MULTI_VARIANT_KEYS: ProductKey[] = [
+  'sweatshirt',
+  'tshirt',
+  'tshirt_polyester',
+];
+
+/**
  * Prix unitaires du configurateur, modifiables depuis le dashboard.
  *
  * Stockés dans la table clé/valeur `settings` : pas de migration, et le

@@ -18,6 +18,7 @@ import {
   PRODUCT_KEYS,
   PRODUCT_LABELS,
   PRODUCT_SHOPIFY_IDS,
+  MULTI_VARIANT_KEYS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { EmailService } from '../shared/email.service';
@@ -722,6 +723,8 @@ export class AdminController {
       keys: PRODUCT_KEYS,
       // Les coins passent par un devis : pas de produit à synchroniser.
       variants: PRODUCT_SHOPIFY_IDS,
+      // Produits dont le prix couvre toutes les couleurs/tailles.
+      multiVariant: MULTI_VARIANT_KEYS,
     });
   }
 

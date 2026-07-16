@@ -464,6 +464,9 @@ body{
 }
 .price-line:last-child{border-bottom:none}
 .price-line label{font-size:13.5px;font-weight:600;margin:0}
+.price-lbl{display:flex;flex-direction:column;gap:2px;min-width:0}
+/* Précision sous le nom du produit (ex. « toutes couleurs et tailles »). */
+.price-note{font-size:11px;color:var(--faint);font-weight:500}
 .price-field{display:flex;align-items:center;gap:8px;flex:none}
 .price-field .price-input{width:110px;text-align:right;font-size:14px}
 .price-cur{font-size:11.5px;color:var(--faint);font-weight:700;min-width:34px}
@@ -525,6 +528,38 @@ body{
   opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;
 }
 .toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ── Modale de confirmation (style « SweetAlert ») ──
+   Affichée au-dessus des autres modales (z-index > .modal). */
+.alert-modal{
+  position:fixed;inset:0;background:rgba(10,10,12,.55);backdrop-filter:blur(3px);
+  display:none;align-items:center;justify-content:center;z-index:200;padding:24px;
+}
+.alert-modal.open{display:flex}
+.alert-box{
+  background:var(--surface);border:1px solid var(--line);border-radius:18px;
+  width:min(92vw,380px);padding:30px 26px 22px;text-align:center;
+  box-shadow:0 30px 70px rgba(0,0,0,.32);
+  animation:alertPop .22s cubic-bezier(.2,1.3,.5,1);
+}
+@keyframes alertPop{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
+/* Pastille de l'icône : verte (succès) ou rouge (erreur). */
+.alert-ico{
+  width:66px;height:66px;margin:0 auto 16px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--ok-soft);color:var(--ok);
+}
+.alert-modal.is-error .alert-ico{background:var(--danger-soft);color:var(--danger)}
+/* Le trait de la coche se dessine à l'ouverture. */
+.alert-ico svg{stroke-dasharray:32;stroke-dashoffset:32;animation:alertDraw .4s .12s ease forwards}
+@keyframes alertDraw{to{stroke-dashoffset:0}}
+.alert-box h4{font-size:17px;font-weight:800;letter-spacing:-.01em;margin-bottom:6px}
+.alert-box p{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:20px}
+.alert-box .btn{width:100%;justify-content:center}
+@media (prefers-reduced-motion:reduce){
+  .alert-box,.alert-ico svg{animation:none}
+  .alert-ico svg{stroke-dashoffset:0}
+}
 .set-block code{
   background:var(--surface);border:1px solid var(--line);border-radius:5px;
   padding:1px 5px;font-size:12px;
@@ -1366,6 +1401,16 @@ export function dashboardPage(
     </div>
   </div>
 
+  <!-- Modale de confirmation (succès / erreur), réutilisable -->
+  <div class="alert-modal" id="alert-modal" onclick="if(event.target===this)closeAlert()">
+    <div class="alert-box">
+      <div class="alert-ico" id="alert-ico"></div>
+      <h4 id="alert-title">Enregistré</h4>
+      <p id="alert-text"></p>
+      <button class="btn primary" onclick="closeAlert()">OK</button>
+    </div>
+  </div>
+
   <!-- Modale : prix du configurateur -->
   <div class="modal" id="price-modal" onclick="if(event.target===this)closePricing()">
     <div class="modal-box" style="max-width:540px">
@@ -1375,10 +1420,13 @@ export function dashboardPage(
       <div class="set-block">
         <div id="price-list"><p class="hint">Chargement…</p></div>
         <p class="hint" style="margin-top:12px">
-          À l'enregistrement, le prix est aussi mis à jour sur le variant Shopify
-          correspondant : le client paiera bien le nouveau prix au checkout.
-          Les <strong>Coins</strong> passent par un devis chiffré à la main, leur
-          prix ici n'est donc qu'indicatif.
+          Le prix d'un textile s'applique à <strong>toutes ses couleurs et
+          tailles</strong> : un seul prix par article.
+        </p>
+        <p class="hint" style="margin-top:6px">
+          À l'enregistrement, le prix est aussi mis à jour dans Shopify : le client
+          paiera bien le nouveau prix au checkout. Les <strong>Coins</strong>
+          passent par un devis chiffré à la main, leur prix ici n'est qu'indicatif.
         </p>
       </div>
 
@@ -1775,6 +1823,42 @@ export function dashboardPage(
       });
     }
 
+    /* ═══════════════ Modale de confirmation (succès / erreur) ═══════════════ */
+
+    var ICO_OK='<svg width="34" height="34" viewBox="0 0 24 24" fill="none" '+
+      'stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="M20 6L9 17l-5-5"/></svg>';
+    var ICO_ERR='<svg width="34" height="34" viewBox="0 0 24 24" fill="none" '+
+      'stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="M18 6L6 18M6 6l12 12"/></svg>';
+
+    /**
+     * Affiche une confirmation centrée.
+     * @param title  titre court
+     * @param text   détail (optionnel)
+     * @param type   'success' (défaut) ou 'error'
+     */
+    function showAlert(title, text, type){
+      var m=document.getElementById('alert-modal');
+      if(!m) return;
+      var isErr = type==='error';
+      m.classList.toggle('is-error', isErr);
+      document.getElementById('alert-ico').innerHTML = isErr ? ICO_ERR : ICO_OK;
+      document.getElementById('alert-title').textContent = title || (isErr?'Échec':'Enregistré');
+      var p=document.getElementById('alert-text');
+      p.textContent = text || '';
+      p.style.display = text ? '' : 'none';
+      m.classList.add('open');
+    }
+    function closeAlert(){
+      var m=document.getElementById('alert-modal');
+      if(m) m.classList.remove('open');
+    }
+    /* Échap ferme la confirmation. */
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape') closeAlert();
+    });
+
     /* ═══════════════════ Prix du configurateur ═══════════════════ */
 
     var PRICE_KEYS=[];   // ordre des produits, fourni par le serveur
@@ -1797,11 +1881,19 @@ export function dashboardPage(
         var d=await r.json();
         if(!d.ok){ box.innerHTML='<p class="hint">'+admEsc(d.error||'Erreur')+'</p>'; return; }
         PRICE_KEYS=d.keys||[];
+        var multi=d.multiVariant||[];
         box.innerHTML=PRICE_KEYS.map(function(k){
           var noVariant=!d.variants||!d.variants[k];
+          // Textiles : le prix couvre toutes les couleurs/tailles -> on le dit
+          // sur la ligne, là où l'admin saisit la valeur.
+          var note = multi.indexOf(k)!==-1
+            ? '<span class="price-note">toutes couleurs et tailles</span>'
+            : (noVariant ? '<span class="price-note">devis — indicatif</span>' : '');
           return '<div class="price-line">'+
-                   '<label for="price-'+k+'">'+admEsc(d.labels[k]||k)+
-                     (noVariant?' <span class="hint">(devis)</span>':'')+'</label>'+
+                   '<div class="price-lbl">'+
+                     '<label for="price-'+k+'">'+admEsc(d.labels[k]||k)+'</label>'+
+                     note+
+                   '</div>'+
                    '<div class="price-field">'+
                      '<input type="number" id="price-'+k+'" class="price-input mono" '+
                        'step="0.01" min="0" value="'+Number(d.prices[k]).toFixed(2)+'">'+
@@ -1826,8 +1918,9 @@ export function dashboardPage(
         if(!el) continue;
         var v=parseFloat(el.value);
         if(isNaN(v)||v<0){
-          st.className='hint err';
-          st.textContent='Prix invalide pour « '+k+' ».';
+          showAlert('Prix invalide',
+            'Vérifiez la valeur saisie : elle doit être un nombre positif.', 'error');
+          el.focus();
           return;
         }
         body[k]=v;
@@ -1843,21 +1936,27 @@ export function dashboardPage(
         });
         var d=await r.json();
         btn.disabled=false;
-        if(!d.ok){ st.className='hint err'; st.textContent=d.error||'Échec.'; return; }
+        if(!d.ok){
+          st.textContent='';
+          showAlert('Échec', d.error||'Les prix n\\'ont pas pu être enregistrés.', 'error');
+          return;
+        }
 
-        // Shopify a pu refuser certaines mises à jour : on le dit clairement,
-        // l'enregistrement local ayant tout de même eu lieu.
+        st.textContent='';
+        // Shopify a pu refuser certaines mises à jour : l'enregistrement local a
+        // bien eu lieu, mais on ne peut pas parler de succès complet.
         if(d.warnings&&d.warnings.length){
-          st.className='hint err';
-          st.textContent='Prix enregistrés, mais Shopify n\\'a pas suivi pour : '+d.warnings.join(' ; ');
+          showAlert('Enregistré, mais…',
+            'Shopify n\\'a pas suivi pour : '+d.warnings.join(' ; '), 'error');
         }else{
-          st.className='hint ok';
-          st.textContent='Prix enregistrés et synchronisés avec Shopify.';
-          setTimeout(closePricing,1200);
+          closePricing();
+          showAlert('Prix mis à jour',
+            'Les nouveaux prix sont appliqués dans le configurateur et sur Shopify.');
         }
       }catch(e){
         btn.disabled=false;
-        st.className='hint err'; st.textContent='Erreur réseau : '+e.message;
+        st.textContent='';
+        showAlert('Erreur réseau', e.message, 'error');
       }
     }
 
