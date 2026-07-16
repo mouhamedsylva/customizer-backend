@@ -1632,6 +1632,8 @@ export function dashboardPage(
       card.classList.remove('flash');
       void card.offsetWidth;                            // relance l'animation
       card.classList.add('flash');
+      /* Ouverte depuis une notification : elle est lue immédiatement aussi. */
+      markCardSeen(card);
     }
 
     /* Marquer toutes les nouveautés comme lues. */
@@ -1789,7 +1791,76 @@ export function dashboardPage(
       var panel=document.getElementById(panelId);
       if(panel) panel.scrollIntoView({behavior:'smooth', block:'start'});
     }
-    function toggleCard(head){head.parentElement.classList.toggle('open');}
+    /* Ouvre/ferme une carte. À l'OUVERTURE d'une carte encore marquée « nouveau »,
+       on la marque IMMÉDIATEMENT comme lue (serveur + interface). */
+    function toggleCard(head){
+      var card=head.parentElement;
+      var wasClosed=!card.classList.contains('open');
+      card.classList.toggle('open');
+      if(wasClosed) markCardSeen(card);
+    }
+
+    /* Marque UNE carte (commande ou devis) comme lue : appel serveur, puis mise à
+       jour de l'interface (badge « nouveau », pastille de la cloche, liste des
+       notifications). Sans effet si la carte n'était pas « nouvelle ». */
+    function markCardSeen(card){
+      if(!card) return;
+      var badge=card.querySelector('.badge-new');
+      if(!badge) return;                                  // déjà lue
+
+      var id=card.id||'';
+      var payload={orders:[],quotes:[]};
+      if(id.indexOf('card-')===0){                        // commande
+        payload.orders=[id.slice(5)];
+      }else if(id.indexOf('quote-')===0){                 // devis
+        payload.quotes=[id.slice(6)];
+      }else{
+        return;
+      }
+
+      fetch('/api/admin/seen',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'same-origin',
+        body:JSON.stringify(payload)
+      }).then(function(){
+        badge.remove();                                   // retire « nouveau »
+
+        // Retire l'entrée correspondante de la liste des notifications.
+        var list=document.getElementById('notif-list');
+        if(list){
+          var links=list.querySelectorAll('.notif');
+          for(var i=0;i<links.length;i++){
+            var oc=links[i].getAttribute('onclick')||'';
+            if(oc.indexOf("'"+id+"'")!==-1){ links[i].remove(); break; }
+          }
+        }
+
+        // Retire l'id de la liste des non-lus (pour « Tout marquer comme lu »).
+        if(typeof UNSEEN==='object'&&UNSEEN){
+          UNSEEN.orders=(UNSEEN.orders||[]).filter(function(x){return payload.orders.indexOf(String(x))===-1;});
+          UNSEEN.quotes=(UNSEEN.quotes||[]).filter(function(x){return payload.quotes.indexOf(String(x))===-1;});
+        }
+
+        // Plus aucun « nouveau » ? -> pastille de la cloche + état vide.
+        if(!document.querySelector('.badge-new')){
+          var bell=document.getElementById('bell-btn');
+          var dot=bell?bell.querySelector('.bell-dot'):null;
+          if(dot) dot.remove();
+          var clear=document.querySelector('.notif-clear');
+          if(clear) clear.remove();
+          if(list) list.innerHTML=
+            '<div class="notif-empty"><div class="ico">&#10003;</div>'+
+            '<p>Rien de nouveau.</p><small>Vous êtes à jour.</small></div>';
+        }
+
+        // L'état local suit, pour que l'auto-refresh ne recharge pas inutilement.
+        if(typeof DASH_STATE==='object'&&DASH_STATE){
+          if(payload.orders.length&&DASH_STATE.newOrders>0) DASH_STATE.newOrders--;
+          if(payload.quotes.length&&DASH_STATE.newQuotes>0) DASH_STATE.newQuotes--;
+        }
+      });
+    }
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}
 
     /* ── Chiffrage du devis + envoi de la facture ── */
