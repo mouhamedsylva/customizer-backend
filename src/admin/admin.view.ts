@@ -1643,11 +1643,10 @@ export function dashboardPage(
       });
     }
 
-    /* ── Filtres serveur (période, paiement, tri) ── */
     /* Filtres SERVEUR (période, tri) : ils rechargent la page avec la query.
        On lit tous les .filter-sel de la page, car ils ne sont plus tous dans
        #filters (la période est descendue près du filtre de statut). Le select de
-       statut n'a pas d'attribut `name` : il est purement client, donc ignoré. */
+       statut n'a pas d'attribut name : il est purement client, donc ignoré. */
     function applyFilters(){
       var p=new URLSearchParams();
       document.querySelectorAll('.filter-sel').forEach(function(s){
