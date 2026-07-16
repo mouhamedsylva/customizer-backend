@@ -514,8 +514,56 @@ export class ShopifyService {
   }
 
   // ───────────────────────────── Customers ─────────────────────────────
-  // Utilisés pour rattacher les comptes admin aux clients Shopify.
+  // Rattachement des comptes admin aux clients Shopify.
+  //
+  // IMPORTANT : les endpoints REST /customers.json et /customers/search.json
+  // ont été SUPPRIMÉS par Shopify à partir de l'API 2025-04. Sur les versions
+  // récentes (2026-01…), les clients ne sont accessibles qu'en GraphQL : c'est
+  // donc ce qu'on utilise ici.
+  //
   // Scopes requis sur l'app privée : read_customers, write_customers.
+
+  /** Endpoint GraphQL Admin (même version que l'API REST configurée). */
+  private getGraphqlUrl(): string {
+    return `${this.getBaseUrl()}/graphql.json`;
+  }
+
+  /**
+   * Exécute une requête GraphQL Admin.
+   * Renvoie { data } ou { error } (erreurs réseau, HTTP, ou GraphQL).
+   */
+  private async graphql(
+    query: string,
+    variables: Record<string, any> = {},
+  ): Promise<{ data?: any; error?: string }> {
+    try {
+      const response = await fetch(this.getGraphqlUrl(), {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ query, variables }),
+      });
+
+      const text = await response.text().catch(() => '');
+      if (!response.ok) {
+        this.logger.error(`GraphQL Shopify : ${response.status} ${text}`);
+        return { error: `Shopify (${response.status})` };
+      }
+
+      const json = JSON.parse(text) as {
+        data?: any;
+        errors?: { message: string }[];
+      };
+      if (json.errors?.length) {
+        const msg = json.errors.map((e) => e.message).join(' | ');
+        this.logger.error(`GraphQL Shopify : ${msg}`);
+        return { error: msg };
+      }
+      return { data: json.data };
+    } catch (e) {
+      this.logger.error(`GraphQL Shopify : ${(e as Error).message}`);
+      return { error: (e as Error).message };
+    }
+  }
 
   /** Cherche un customer par e-mail. Renvoie null si aucun (ou en cas d'erreur). */
   async findCustomerByEmail(
@@ -523,32 +571,23 @@ export class ShopifyService {
   ): Promise<Record<string, any> | null> {
     const mail = String(email || '').trim().toLowerCase();
     if (!mail) return null;
-    try {
-      const url =
-        `${this.getBaseUrl()}/customers/search.json` +
-        `?query=${encodeURIComponent('email:' + mail)}&limit=1`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: this.getHeaders(),
-      });
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        this.logger.warn(
-          `Recherche customer ${mail} : ${response.status} ${text}`,
-        );
-        return null;
-      }
-      const result = (await response.json()) as {
-        customers: Record<string, any>[];
-      };
-      const found = (result.customers || []).find(
-        (c) => String(c.email || '').toLowerCase() === mail,
-      );
-      return found || null;
-    } catch (e) {
-      this.logger.warn(`Recherche customer ${mail} : ${(e as Error).message}`);
-      return null;
-    }
+
+    const query = `
+      query FindCustomer($q: String!) {
+        customers(first: 1, query: $q) {
+          edges { node { id email firstName lastName } }
+        }
+      }`;
+    // Le filtre `email:"..."` cible l'adresse exacte.
+    const res = await this.graphql(query, { q: `email:"${mail}"` });
+    if (res.error || !res.data) return null;
+
+    const edges = res.data.customers?.edges || [];
+    const node = edges[0]?.node;
+    if (!node) return null;
+    // Sécurité : Shopify peut renvoyer un résultat approchant.
+    if (String(node.email || '').toLowerCase() !== mail) return null;
+    return node;
   }
 
   /**
@@ -556,6 +595,9 @@ export class ShopifyService {
    *
    * Utilisé à l'invitation d'un admin : le compte apparaît aussi dans les
    * clients de la boutique. `note`/`tags` permettent de repérer ces comptes.
+   *
+   * L'id renvoyé est l'id NUMÉRIQUE (extrait du GID GraphQL), pour rester
+   * compatible avec le reste du code qui manipule des ids REST.
    */
   async createCustomer(input: {
     email: string;
@@ -574,44 +616,63 @@ export class ShopifyService {
 
     // Déjà client ? on le réutilise (Shopify refuse les doublons d'e-mail).
     const existing = await this.findCustomerByEmail(mail);
-    if (existing) return { ok: true, customer: existing, existed: true };
-
-    try {
-      const response = await fetch(`${this.getBaseUrl()}/customers.json`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          customer: {
-            email: mail,
-            first_name: input.firstName || undefined,
-            last_name: input.lastName || undefined,
-            tags: input.tags || undefined,
-            note: input.note || undefined,
-            // Pas d'e-mail d'invitation Shopify : la transmission des accès se
-            // fait via le panneau de partage du dashboard.
-            send_email_invite: false,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        this.logger.error(
-          `Echec creation customer ${mail}: ${response.status} ${text}`,
-        );
-        return { ok: false, error: `Shopify (${response.status})` };
-      }
-
-      const result = (await response.json()) as {
-        customer: Record<string, any>;
+    if (existing) {
+      return {
+        ok: true,
+        existed: true,
+        customer: { ...existing, id: this.gidToId(existing.id) },
       };
-      return { ok: true, customer: result.customer, existed: false };
-    } catch (e) {
-      this.logger.error(
-        `Echec creation customer ${mail}: ${(e as Error).message}`,
-      );
-      return { ok: false, error: (e as Error).message };
     }
+
+    const mutation = `
+      mutation CreateCustomer($input: CustomerInput!) {
+        customerCreate(input: $input) {
+          customer { id email firstName lastName }
+          userErrors { field message }
+        }
+      }`;
+
+    const variables = {
+      input: {
+        email: mail,
+        firstName: input.firstName || undefined,
+        lastName: input.lastName || undefined,
+        // GraphQL attend une liste de tags (le REST prenait une chaîne).
+        tags: input.tags
+          ? input.tags.split(',').map((t) => t.trim()).filter(Boolean)
+          : undefined,
+        note: input.note || undefined,
+      },
+    };
+
+    const res = await this.graphql(mutation, variables);
+    if (res.error) return { ok: false, error: res.error };
+
+    const payload = res.data?.customerCreate;
+    const userErrors = payload?.userErrors || [];
+    if (userErrors.length) {
+      const msg = userErrors
+        .map((e: any) => `${(e.field || []).join('.')} ${e.message}`.trim())
+        .join(' | ');
+      this.logger.error(`Echec creation customer ${mail} : ${msg}`);
+      return { ok: false, error: msg };
+    }
+
+    const customer = payload?.customer;
+    if (!customer) return { ok: false, error: 'Réponse Shopify inattendue.' };
+
+    return {
+      ok: true,
+      existed: false,
+      customer: { ...customer, id: this.gidToId(customer.id) },
+    };
+  }
+
+  /** `gid://shopify/Customer/123` -> `123`. */
+  private gidToId(gid: string | number | undefined): string {
+    const s = String(gid || '');
+    const m = s.match(/\/(\d+)(?:\?.*)?$/);
+    return m ? m[1] : s;
   }
 
 }
