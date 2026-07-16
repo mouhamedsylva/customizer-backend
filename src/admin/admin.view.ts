@@ -53,6 +53,7 @@ const STYLE = `
   --accent:#c2410c; --accent-soft:#fbeae1;
   --ok:#3f7d4e; --ok-soft:#e7f0e9;
   --warn:#b45309; --warn-soft:#fbefd9;
+  --danger:#c0392b; --danger-soft:#fbe6e3;
   --shadow:0 1px 2px rgba(27,31,36,.04),0 8px 24px rgba(27,31,36,.05);
   --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
   --radius:14px;
@@ -65,6 +66,7 @@ const STYLE = `
     --accent:#f4763e; --accent-soft:#3a251c;
     --ok:#6fbf83; --ok-soft:#1f2f24;
     --warn:#e0a95c; --warn-soft:#332a19;
+    --danger:#f0705f; --danger-soft:#3a1f1c;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
     --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 18px 40px rgba(0,0,0,.5);
   }
@@ -75,6 +77,7 @@ const STYLE = `
   --line:#e9e6e0; --line-soft:#f0ede8;
   --accent:#c2410c; --accent-soft:#fbeae1;
   --ok:#3f7d4e; --ok-soft:#e7f0e9; --warn:#b45309; --warn-soft:#fbefd9;
+  --danger:#c0392b; --danger-soft:#fbe6e3;
   --shadow:0 1px 2px rgba(27,31,36,.04),0 8px 24px rgba(27,31,36,.05);
   --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
 }
@@ -84,6 +87,7 @@ const STYLE = `
   --line:#2c3037; --line-soft:#24272d;
   --accent:#f4763e; --accent-soft:#3a251c;
   --ok:#6fbf83; --ok-soft:#1f2f24; --warn:#e0a95c; --warn-soft:#332a19;
+  --danger:#f0705f; --danger-soft:#3a1f1c;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
   --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 18px 40px rgba(0,0,0,.5);
 }
@@ -118,6 +122,11 @@ body{
   text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;
 }
 .theme-btn:hover,.logout:hover{color:var(--ink);background:var(--raise)}
+/* Déconnexion : action de sortie, signalée en rouge (règle placée après la
+   règle commune .theme-btn,.logout pour l'emporter). */
+.logout{color:var(--danger);font-weight:600}
+.logout:hover{color:#fff;background:var(--danger)}
+.logout svg{flex:none}
 
 .wrap{max-width:1080px;margin:0 auto;padding:clamp(20px,4vw,34px) clamp(16px,4vw,32px) 80px}
 
@@ -1223,7 +1232,10 @@ export function dashboardPage(
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
         Thème
       </button>
-      <a class="logout" href="/api/admin/logout">Déconnexion</a>
+      <a class="logout" href="/api/admin/logout" title="Se déconnecter">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        Déconnexion
+      </a>
     </div>
   </div>
 
