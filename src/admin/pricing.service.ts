@@ -48,19 +48,23 @@ const DEFAULTS: Pricing = {
 const KEY_PREFIX = 'price_';
 
 /**
- * Variant Shopify de chaque produit (mêmes ids que window.CONF_VARIANTS côté
- * configurateur). Quand l'admin change un prix, c'est ce variant qui est mis à
- * jour, sinon le client paierait l'ancien prix au checkout.
+ * PRODUIT Shopify de chaque type du configurateur.
  *
- * `coins` n'a pas de variant : il passe par une demande de devis (draft order),
- * son prix est chiffré à la main — il n'y a donc rien à répercuter.
+ * On cible le PRODUIT (et non un variant) pour deux raisons :
+ *  - les textiles ont 15 variants (un par couleur) : changer le prix doit tous
+ *    les mettre à jour, pas un seul ;
+ *  - les ids de variants changent quand on régénère les déclinaisons, alors que
+ *    l'id du produit reste stable.
+ *
+ * `coins` est inclus : son produit existe, même si la vente passe par un devis.
  */
-export const PRODUCT_VARIANTS: Partial<Record<ProductKey, string>> = {
-  sweatshirt: '47843224944803',
-  tshirt: '47843225338019',
-  tshirt_polyester: '47843228319907',
-  drapeaux: '47843229270179',
-  patches: '47843295428771',
+export const PRODUCT_SHOPIFY_IDS: Partial<Record<ProductKey, string>> = {
+  sweatshirt: '9167767240867', // Textile - Sweatshirt        (15 variants)
+  tshirt: '9167767404707', // Textile - T-shirt Coton     (15 variants)
+  tshirt_polyester: '9167767732387', // Textile - T-shirt Polyester (15 variants)
+  drapeaux: '9167767928995', // Drapeau personnalisé        (1 variant)
+  patches: '9167772254371', // Patch personnalisé          (1 variant)
+  // coins : vendu via devis (draft order), prix chiffré à la main -> non synchronisé.
 };
 
 /**

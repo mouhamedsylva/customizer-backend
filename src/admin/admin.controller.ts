@@ -17,7 +17,7 @@ import {
   PricingService,
   PRODUCT_KEYS,
   PRODUCT_LABELS,
-  PRODUCT_VARIANTS,
+  PRODUCT_SHOPIFY_IDS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { EmailService } from '../shared/email.service';
@@ -720,8 +720,8 @@ export class AdminController {
       prices,
       labels: PRODUCT_LABELS,
       keys: PRODUCT_KEYS,
-      // Les coins passent par un devis : pas de variant à synchroniser.
-      variants: PRODUCT_VARIANTS,
+      // Les coins passent par un devis : pas de produit à synchroniser.
+      variants: PRODUCT_SHOPIFY_IDS,
     });
   }
 
@@ -744,15 +744,16 @@ export class AdminController {
     // 1) Enregistrement local (source de vérité pour l'affichage).
     const prices = await this.pricing.save(body);
 
-    // 2) Répercussion sur Shopify, produit par produit. Un échec n'annule pas
-    //    l'enregistrement : on le remonte pour que l'admin puisse réagir.
+    // 2) Répercussion sur Shopify : TOUS les variants du produit (les textiles en
+    //    ont un par couleur). Un échec n'annule pas l'enregistrement : on le
+    //    remonte pour que l'admin puisse réagir.
     const warnings: string[] = [];
     for (const key of PRODUCT_KEYS) {
       if (!(key in body)) continue; // non modifié
-      const variantId = PRODUCT_VARIANTS[key];
-      if (!variantId) continue; // coins : devis, pas de variant
+      const productId = PRODUCT_SHOPIFY_IDS[key];
+      if (!productId) continue; // coins : devis, pas de produit à synchroniser
       try {
-        const r = await this.shopify.updateVariantPrice(variantId, prices[key]);
+        const r = await this.shopify.updateProductPrice(productId, prices[key]);
         if (!r.ok) {
           warnings.push(`${PRODUCT_LABELS[key]} : ${r.error || 'échec Shopify'}`);
         }

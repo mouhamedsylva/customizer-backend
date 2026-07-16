@@ -688,45 +688,55 @@ export class ShopifyService {
   // Scopes requis : read_products, write_products.
 
   /**
-   * Met à jour le PRIX d'un variant.
+   * Met le prix de TOUS les variants d'un produit à la même valeur.
    *
-   * En GraphQL (obligatoire depuis 2025-04), `productVariantsBulkUpdate` exige
-   * l'id du PRODUIT parent : on le récupère d'abord depuis le variant.
+   * Les textiles ont un variant par couleur (15) : changer le prix du produit
+   * doit donc tous les couvrir. `productVariantsBulkUpdate` (GraphQL, obligatoire
+   * depuis 2025-04) accepte jusqu'à 250 variants par appel — largement suffisant.
    *
-   * @param variantId  id numérique du variant (ex. 47843295428771)
-   * @param price      prix TTC/HT selon la config de la boutique (ex. 2.45)
+   * @param productId  id numérique du produit (ex. 9167767240867)
+   * @param price      nouveau prix (ex. 2.45)
    */
-  async updateVariantPrice(
-    variantId: string | number,
+  async updateProductPrice(
+    productId: string | number,
     price: number,
-  ): Promise<{ ok: boolean; error?: string }> {
-    const gid = `gid://shopify/ProductVariant/${this.gidToId(variantId)}`;
+  ): Promise<{ ok: boolean; updated?: number; error?: string }> {
+    const gid = `gid://shopify/Product/${this.gidToId(productId)}`;
 
-    // 1) Produit parent du variant.
+    // 1) Tous les variants du produit.
     const lookup = await this.graphql(
-      `query VariantParent($id: ID!) {
-         productVariant(id: $id) { id product { id } }
+      `query ProductVariants($id: ID!) {
+         product(id: $id) {
+           id
+           title
+           variants(first: 250) { edges { node { id } } }
+         }
        }`,
       { id: gid },
     );
     if (lookup.error) return { ok: false, error: lookup.error };
 
-    const productId = lookup.data?.productVariant?.product?.id;
-    if (!productId) {
-      return { ok: false, error: `Variant ${variantId} introuvable.` };
+    const product = lookup.data?.product;
+    if (!product) return { ok: false, error: `Produit ${productId} introuvable.` };
+
+    const ids: string[] = (product.variants?.edges || []).map(
+      (e: any) => e.node.id,
+    );
+    if (!ids.length) {
+      return { ok: false, error: `Aucun variant pour « ${product.title} ».` };
     }
 
-    // 2) Mise à jour du prix.
+    // 2) Même prix pour tous les variants.
     const res = await this.graphql(
-      `mutation SetPrice($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+      `mutation SetPrices($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
            productVariants { id price }
            userErrors { field message }
          }
        }`,
       {
-        productId,
-        variants: [{ id: gid, price: price.toFixed(2) }],
+        productId: gid,
+        variants: ids.map((id) => ({ id, price: price.toFixed(2) })),
       },
     );
     if (res.error) return { ok: false, error: res.error };
@@ -736,10 +746,13 @@ export class ShopifyService {
       const msg = errs
         .map((e: any) => `${(e.field || []).join('.')} ${e.message}`.trim())
         .join(' | ');
-      this.logger.error(`Echec prix variant ${variantId} : ${msg}`);
+      this.logger.error(`Echec prix produit ${productId} : ${msg}`);
       return { ok: false, error: msg };
     }
-    return { ok: true };
+
+    const updated =
+      res.data?.productVariantsBulkUpdate?.productVariants?.length || 0;
+    return { ok: true, updated };
   }
 
 }
