@@ -5,7 +5,6 @@
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
-import { AdminSettings } from './settings.service';
 
 function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -336,7 +335,8 @@ body{
   margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
 
 /* Sous-filtres (onglet Devis) */
-.subfilters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+/* Ligne de filtres de la liste : statut + période, alignés côte à côte. */
+.subfilters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 .chip-filter{
   border:1px solid var(--line);background:var(--surface);color:var(--muted);
   border-radius:20px;padding:6px 14px;font:inherit;font-size:12.5px;font-weight:600;
@@ -1071,12 +1071,6 @@ const PERIODS: Array<[string, string]> = [
   ['quarter', 'Ce trimestre'],
   ['year', 'Cette année'],
 ];
-const PAYMENTS: Array<[string, string]> = [
-  ['all', 'Tout paiement'],
-  ['paid', 'Payées'],
-  ['pending', 'En attente'],
-  ['refunded', 'Remboursées'],
-];
 const SORTS: Array<[string, string]> = [
   ['date_desc', 'Plus récentes'],
   ['date_asc', 'Plus anciennes'],
@@ -1107,7 +1101,6 @@ export function dashboardPage(
   shopDomain = '',
   extra: {
     filters?: DashboardFilters;
-    settings?: AdminSettings;
     /** Admin connecté : seul l'owner voit la gestion des comptes. */
     me?: { id: string; email: string; role: 'owner' | 'admin' };
   } = {},
@@ -1119,12 +1112,6 @@ export function dashboardPage(
     payment: 'all',
     production: 'all',
     sort: 'date_desc',
-  };
-  const cfg: AdminSettings = extra.settings || {
-    reminderEnabled: false,
-    reminderDays: [3, 7, 14],
-    notifyEmailEnabled: false,
-    notifyEmail: '',
   };
   const filtered =
     f.period !== 'all' || f.payment !== 'all' || f.production !== 'all';
@@ -1224,10 +1211,6 @@ export function dashboardPage(
       </button>`
           : ''
       }
-      <button class="theme-btn" onclick="openSettings()" title="Réglages">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 8.6a1.7 1.7 0 00-.4-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
-        Réglages
-      </button>
       <button class="theme-btn" onclick="toggleTheme()" title="Basculer le thème">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
         Thème
@@ -1260,8 +1243,6 @@ export function dashboardPage(
       </div>
 
       <div class="filters" id="filters">
-        ${selectFilter('period', PERIODS, f.period)}
-        ${selectFilter('payment', PAYMENTS, f.payment)}
         ${selectFilter('sort', SORTS, f.sort)}
         ${filtered ? `<a class="chip-clear" href="/api/admin">✕ Réinitialiser</a>` : ''}
       </div>
@@ -1290,14 +1271,19 @@ export function dashboardPage(
       ${
         orders.length
           ? `<div class="subfilters" id="order-filters">
-               <button class="chip-filter active" data-of="all" onclick="filterOrders(this)">
-                 Toutes <span class="count mono">${orders.length}</span>
-               </button>
-               ${PROD_STEPS.map(
-                 (s) => `<button class="chip-filter" data-of="${s.key}" onclick="filterOrders(this)">
-                           ${s.label} <span class="count mono">${prodCounts[s.key] || 0}</span>
-                         </button>`,
-               ).join('')}
+               <!-- Statut de production : dropdown (même style que la période).
+                    Filtrage côté client, d'où le <select> nu (pas de submit). -->
+               <select class="filter-sel" id="order-status" onchange="filterOrders(this)"
+                       aria-label="Filtrer par statut de production">
+                 <option value="all">Tous les statuts (${orders.length})</option>
+                 ${PROD_STEPS.map(
+                   (s) =>
+                     `<option value="${s.key}">${s.label} (${prodCounts[s.key] || 0})</option>`,
+                 ).join('')}
+               </select>
+               <!-- Période : filtre serveur, déplacé ici pour être aligné avec
+                    le statut (les deux filtrent la liste ci-dessous). -->
+               ${selectFilter('period', PERIODS, f.period)}
              </div>
              ${orders.map(orderCard).join('')}
              <div class="empty-state" id="orders-none" style="display:none">
@@ -1358,49 +1344,6 @@ export function dashboardPage(
         <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer la facture</button>
       </div>
       <p class="hint" id="inv-status" style="margin-top:12px"></p>
-    </div>
-  </div>
-
-  <!-- Modale : réglages (relances automatiques + notifications) -->
-  <div class="modal" id="set-modal" onclick="if(event.target===this)closeSettings()">
-    <div class="modal-box">
-      <h3>Réglages</h3>
-      <p class="sub">Relances des devis impayés et alertes de l'équipe.</p>
-
-      <div class="set-block">
-        <label class="switch">
-          <input type="checkbox" id="set-rem-on" ${cfg.reminderEnabled ? 'checked' : ''}>
-          <span>Relancer automatiquement les devis impayés</span>
-        </label>
-        <p class="hint">
-          Après l'envoi d'une facture, le client est relancé par e-mail aux jours
-          indiqués ci-dessous. Un devis réglé n'est plus jamais relancé.
-        </p>
-        <label class="lbl" style="margin-top:12px">Jours de relance (après l'envoi de la facture)</label>
-        <input type="text" id="set-rem-days" class="price-input mono"
-               value="${esc(cfg.reminderDays.join(', '))}" placeholder="3, 7, 14">
-        <p class="hint">Séparés par des virgules. Exemple : <code>3, 7, 14</code> → relance à J+3, J+7 puis J+14.</p>
-      </div>
-
-      <div class="set-block">
-        <label class="switch">
-          <input type="checkbox" id="set-mail-on" ${cfg.notifyEmailEnabled ? 'checked' : ''}>
-          <span>M'avertir par e-mail à chaque nouvelle commande</span>
-        </label>
-        <label class="lbl" style="margin-top:12px">Adresse de l'équipe</label>
-        <div class="mail-row">
-          <input type="email" id="set-mail" class="price-input"
-                 value="${esc(cfg.notifyEmail)}" placeholder="atelier@exemple.com">
-          <button class="btn" id="set-test" onclick="testEmail()">Tester l'envoi</button>
-        </div>
-        <p class="hint" id="set-test-status"></p>
-      </div>
-
-      <div class="modal-actions">
-        <button class="btn" onclick="closeSettings()">Annuler</button>
-        <button class="btn primary" id="set-save" onclick="saveSettings()">Enregistrer</button>
-      </div>
-      <p class="hint" id="set-status" style="margin-top:12px"></p>
     </div>
   </div>
 
@@ -1561,10 +1504,9 @@ export function dashboardPage(
       filterCards(true);
     }
 
-    function filterOrders(btn){
-      orderFilter=btn.getAttribute('data-of');
-      document.querySelectorAll('#order-filters .chip-filter')
-        .forEach(function(b){b.classList.toggle('active',b===btn);});
+    /* Statut de production : appelé par le <select> (sa valeur = le filtre). */
+    function filterOrders(sel){
+      orderFilter=sel.value||'all';
       filterCards(true);
     }
 
@@ -1702,10 +1644,14 @@ export function dashboardPage(
     }
 
     /* ── Filtres serveur (période, paiement, tri) ── */
+    /* Filtres SERVEUR (période, tri) : ils rechargent la page avec la query.
+       On lit tous les .filter-sel de la page, car ils ne sont plus tous dans
+       #filters (la période est descendue près du filtre de statut). Le select de
+       statut n'a pas d'attribut `name` : il est purement client, donc ignoré. */
     function applyFilters(){
-      var box=document.getElementById('filters');
       var p=new URLSearchParams();
-      box.querySelectorAll('.filter-sel').forEach(function(s){
+      document.querySelectorAll('.filter-sel').forEach(function(s){
+        if(!s.name) return;
         if(s.value && s.value!=='all' && s.value!=='date_desc') p.set(s.name,s.value);
       });
       var qs=p.toString();
@@ -1786,33 +1732,6 @@ export function dashboardPage(
           '<p>Rien de nouveau.</p><small>Vous êtes à jour.</small></div>';
       });
     }
-
-    /* ── Réglages (relances + notifications) ── */
-    /* Test SMTP : sans lui, un e-mail qui ne part pas échoue en silence. */
-    function testEmail(){
-      var st=document.getElementById('set-test-status');
-      var btn=document.getElementById('set-test');
-      var to=document.getElementById('set-mail').value.trim();
-      if(!to){ st.className='hint err'; st.textContent="Renseignez d'abord une adresse."; return; }
-      btn.disabled=true; st.className='hint'; st.textContent='Envoi du test…';
-      fetch('/api/admin/settings/test-email',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({email:to})
-      })
-      .then(function(r){return r.json();})
-      .then(function(res){
-        btn.disabled=false;
-        if(res.ok){ st.className='hint ok'; st.textContent='E-mail envoyé à '+res.to+'. Vérifiez votre boîte (et les indésirables).'; }
-        else { st.className='hint err'; st.textContent=res.error||'Échec.'; }
-      })
-      .catch(function(e){
-        btn.disabled=false; st.className='hint err'; st.textContent='Erreur réseau : '+e.message;
-      });
-    }
-
-    function openSettings(){document.getElementById('set-modal').classList.add('open');}
-    function closeSettings(){document.getElementById('set-modal').classList.remove('open');}
 
     /* ═══════════════ Gestion des administrateurs (owner) ═══════════════ */
 
@@ -2002,37 +1921,6 @@ export function dashboardPage(
         hint.textContent='Copie impossible : sélectionnez le texte manuellement.';
       });
     }
-    function saveSettings(){
-      var st=document.getElementById('set-status');
-      var btn=document.getElementById('set-save');
-      btn.disabled=true; st.className='hint'; st.textContent='Enregistrement…';
-      fetch('/api/admin/settings',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          reminderEnabled:document.getElementById('set-rem-on').checked,
-          reminderDays:document.getElementById('set-rem-days').value,
-          notifyEmailEnabled:document.getElementById('set-mail-on').checked,
-          notifyEmail:document.getElementById('set-mail').value
-        })
-      })
-      .then(function(r){return r.json();})
-      .then(function(res){
-        btn.disabled=false;
-        if(res.ok){
-          st.className='hint ok'; st.textContent='Réglages enregistrés.';
-          document.getElementById('set-rem-days').value=(res.settings.reminderDays||[]).join(', ');
-          setTimeout(closeSettings,900);
-        }else{
-          st.className='hint err'; st.textContent='Échec : '+(res.error||'');
-        }
-      })
-      .catch(function(e){
-        btn.disabled=false;
-        st.className='hint err'; st.textContent='Erreur réseau : '+e.message;
-      });
-    }
-
     /* Pagination : nb d'éléments par page, et page courante par panel. */
     var PAGE_SIZE=10;
     var pageByPanel={ 'p-orders':1, 'p-quotes':1, 'p-designs':1 };

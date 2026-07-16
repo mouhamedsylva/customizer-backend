@@ -64,11 +64,10 @@ export class AdminController {
       sort: String(req.query.sort || 'date_desc'),
     };
 
-    const [orders, quotes, designs, settings, me] = await Promise.all([
+    const [orders, quotes, designs, me] = await Promise.all([
       this.data.getOrders(filters),
       this.data.getQuotes(filters.period),
       this.data.getDesigns(),
-      this.settings.get(),
       this.currentAdmin(req),
     ]);
     const frontendUrl =
@@ -79,7 +78,6 @@ export class AdminController {
       .send(
         dashboardPage(orders, quotes, designs, frontendUrl, shopDomain, {
           filters,
-          settings,
           me: me || undefined,
         }),
       );
