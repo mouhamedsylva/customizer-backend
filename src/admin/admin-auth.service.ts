@@ -90,21 +90,26 @@ export class AdminAuthService implements OnModuleInit {
 
   /**
    * Crée l'admin « owner » par défaut s'il n'existe aucun compte.
-   * Identifiants pris dans ADMIN_EMAIL / ADMIN_PASSWORD ; à défaut, un mot de
-   * passe aléatoire est généré et affiché UNE FOIS dans les logs de démarrage.
+   *
+   * Identifiants FIXES, écrits ici et connus à l'avance : ce premier compte
+   * sert à se connecter la première fois, puis à inviter les autres admins.
+   *
+   * Volontairement indépendants des variables d'environnement, pour rester
+   * prévisibles (l'ancienne variable ADMIN_PASSWORD ne les écrase pas).
+   *
+   * ⚠ Ce mot de passe est écrit dans le code : changez-le après la première
+   *   connexion (bouton « Admins » → « Nouveau mot de passe »).
    */
+  private static readonly DEFAULT_EMAIL = 'admin@customizer.com';
+  private static readonly DEFAULT_PASSWORD = 'Admin2026!';
+
   private async seedOwner(): Promise<void> {
     try {
       const count = await this.admins.count();
       if (count > 0) return;
 
-      const email = (
-        this.config.get<string>('ADMIN_EMAIL') || 'admin@customizer.local'
-      )
-        .trim()
-        .toLowerCase();
-      const fromEnv = this.config.get<string>('ADMIN_PASSWORD');
-      const password = fromEnv || this.generatePassword(12);
+      const email = AdminAuthService.DEFAULT_EMAIL;
+      const password = AdminAuthService.DEFAULT_PASSWORD;
 
       await this.admins.save(
         this.admins.create({
@@ -120,13 +125,6 @@ export class AdminAuthService implements OnModuleInit {
       );
 
       this.logger.log(`Admin par défaut créé : ${email}`);
-      if (!fromEnv) {
-        // Sans ADMIN_PASSWORD, on affiche le mot de passe généré : c'est la
-        // seule occasion de le lire (il n'est stocké que haché).
-        this.logger.warn(
-          `Mot de passe généré pour ${email} : ${password} — notez-le puis changez-le.`,
-        );
-      }
     } catch (e) {
       // La table n'existe peut-être pas encore au tout premier démarrage.
       this.logger.error(`Seed admin impossible : ${(e as Error).message}`);
