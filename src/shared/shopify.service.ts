@@ -546,6 +546,13 @@ export class ShopifyService {
       const text = await response.text().catch(() => '');
       if (!response.ok) {
         this.logger.error(`GraphQL Shopify : ${response.status} ${text}`);
+        // 401/403 = token ou scopes ; on le dit clairement plutôt qu'un code brut.
+        if (response.status === 401 || response.status === 403) {
+          return {
+            error:
+              'accès refusé — vérifiez le token et les scopes read_customers / write_customers',
+          };
+        }
         return { error: `Shopify (${response.status})` };
       }
 

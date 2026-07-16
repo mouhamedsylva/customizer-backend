@@ -447,6 +447,53 @@ body{
 .mail-row{display:flex;gap:8px;align-items:stretch}
 .mail-row .price-input{flex:1;min-width:0}
 .mail-row .btn{flex:none;white-space:nowrap}
+
+/* ── Modale Administrateurs ── */
+.adm-row{
+  display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);
+  border-radius:12px;background:var(--surface);margin-bottom:8px;
+}
+.adm-row.is-blocked{opacity:.62}
+.adm-av{
+  width:36px;height:36px;flex:none;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;background:var(--accent-soft);color:var(--accent);
+  font-size:12px;font-weight:800;letter-spacing:.02em;
+}
+.adm-main{flex:1;min-width:0}
+.adm-mail{
+  font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;display:flex;align-items:center;gap:6px;
+}
+.adm-you{
+  font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+  background:var(--raise);color:var(--muted);padding:2px 6px;border-radius:5px;
+}
+.adm-meta{
+  font-size:11.5px;color:var(--faint);margin-top:3px;display:flex;
+  align-items:center;gap:8px;flex-wrap:wrap;
+}
+.adm-shop{
+  font-weight:700;color:var(--ok,#16a34a);
+}
+.adm-side{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:none}
+.adm-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.btn.adm-mini{padding:5px 9px;font-size:11.5px;border-radius:8px}
+
+/* Bloc identifiants générés */
+.adm-cred-box{
+  margin-top:12px;background:var(--raise);border:1px solid var(--line);
+  border-radius:12px;padding:14px;
+}
+.adm-cred-line{
+  display:flex;gap:8px;font-size:12.5px;padding:5px 0;align-items:baseline;
+}
+.adm-cred-line span{color:var(--faint);flex:none;min-width:86px}
+.adm-cred-line b{word-break:break-all;user-select:all}
+
+@media (max-width:560px){
+  .adm-row{flex-wrap:wrap}
+  .adm-side{width:100%;align-items:flex-start;flex-direction:row;justify-content:space-between}
+}
 .opt{font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0}
 
 /* Message éphémère (confirmation d'expédition) */
@@ -486,10 +533,16 @@ body{
 
 /* Modale : envoi de facture */
 .modal{position:fixed;inset:0;background:rgba(10,10,12,.6);backdrop-filter:blur(3px);
-  display:none;align-items:center;justify-content:center;z-index:110;padding:24px}
+  display:none;align-items:center;justify-content:center;z-index:110;padding:24px;
+  overflow-y:auto}
 .modal.open{display:flex}
+/* Une modale longue ne doit jamais dépasser l'écran : on borne sa hauteur et on
+   fait défiler son contenu à l'intérieur. */
 .modal-box{background:var(--surface);border:1px solid var(--line);border-radius:16px;
-  width:min(94vw,480px);padding:24px;box-shadow:0 30px 70px rgba(0,0,0,.3)}
+  width:min(94vw,480px);padding:24px;box-shadow:0 30px 70px rgba(0,0,0,.3);
+  max-height:calc(100vh - 48px);overflow-y:auto;overscroll-behavior:contain}
+.modal-box::-webkit-scrollbar{width:8px}
+.modal-box::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
 .modal-box h3{font-size:17px;font-weight:800;letter-spacing:-.01em;margin-bottom:4px}
 .modal-box p.sub{font-size:13px;color:var(--muted);margin-bottom:16px}
 .modal-box label{display:block;margin-bottom:6px}
@@ -1361,10 +1414,9 @@ export function dashboardPage(
         <p class="hint" id="adm-status"></p>
 
         <!-- Identifiants fraîchement générés + partage -->
-        <div id="adm-cred" style="display:none;margin-top:12px;background:var(--raise);border-radius:10px;padding:14px">
+        <div id="adm-cred" class="adm-cred-box" style="display:none">
           <div class="lbl" style="margin-bottom:8px">Identifiants à transmettre</div>
-          <div class="mono" id="adm-cred-txt"
-               style="font-size:13px;line-height:1.7;word-break:break-all;user-select:all"></div>
+          <div class="mono" id="adm-cred-txt"></div>
           <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
             <button class="btn primary" onclick="shareCreds()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
@@ -1377,8 +1429,8 @@ export function dashboardPage(
       </div>
 
       <div class="set-block">
-        <label class="lbl">Comptes existants</label>
-        <div id="adm-list" style="margin-top:8px">
+        <label class="lbl">Comptes existants <span id="adm-count" class="opt"></span></label>
+        <div id="adm-list" style="margin-top:10px">
           <p class="hint">Chargement…</p>
         </div>
       </div>
@@ -1782,6 +1834,10 @@ export function dashboardPage(
         if(!d.ok){box.innerHTML='<p class="hint">'+admEsc(d.error||'Erreur')+'</p>';return;}
         if(!d.admins.length){box.innerHTML='<p class="hint">Aucun compte.</p>';return;}
 
+        // Compteur à côté du titre de la section.
+        var cnt=document.getElementById('adm-count');
+        if(cnt) cnt.textContent='('+d.admins.length+')';
+
         box.innerHTML=d.admins.map(function(a){
           var isMe=d.me&&a.id===d.me.id;
           var owner=a.role==='owner';
@@ -1792,21 +1848,27 @@ export function dashboardPage(
             ? 'Dernière connexion : '+new Date(a.lastLoginAt).toLocaleString('fr-FR')
             : 'Jamais connecté';
           // Rattachement Shopify (client créé à l'invitation).
-          if(a.shopifyCustomerId) last+=' · Client Shopify ✓';
+          var shop=a.shopifyCustomerId
+            ? '<span class="adm-shop" title="Client Shopify rattaché">Shopify ✓</span>'
+            : '';
           // L'owner et soi-même ne peuvent pas être bloqués.
           var actions=(owner||isMe)
-            ? '<span class="hint">—</span>'
-            : '<button class="btn" onclick="toggleBlock(\\''+a.id+'\\','+(!a.blocked)+')">'+
+            ? ''
+            : '<button class="btn adm-mini" onclick="toggleBlock(\\''+a.id+'\\','+(!a.blocked)+')">'+
               (a.blocked?'Débloquer':'Bloquer')+'</button>'+
-              ' <button class="btn" onclick="resetPass(\\''+a.id+'\\')">Nouveau mot de passe</button>';
-          return '<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;'+
-                 'padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">'+
-                 '<div style="min-width:0">'+
-                   '<div style="font-weight:700;font-size:13.5px">'+admEsc(a.email)+
-                     (isMe?' <span class="hint">(vous)</span>':'')+'</div>'+
-                   '<div class="hint">'+last+'</div>'+
+              '<button class="btn adm-mini" onclick="resetPass(\\''+a.id+'\\')">Nouveau mot de passe</button>';
+          // Initiales pour l'avatar.
+          var ini=(a.email||'?').trim().slice(0,2).toUpperCase();
+          return '<div class="adm-row'+(a.blocked?' is-blocked':'')+'">'+
+                 '<div class="adm-av">'+admEsc(ini)+'</div>'+
+                 '<div class="adm-main">'+
+                   '<div class="adm-mail">'+admEsc(a.email)+
+                     (isMe?' <span class="adm-you">vous</span>':'')+'</div>'+
+                   '<div class="adm-meta">'+last+shop+'</div>'+
                  '</div>'+
-                 '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+tag+actions+'</div>'+
+                 '<div class="adm-side">'+tag+
+                   (actions?'<div class="adm-acts">'+actions+'</div>':'')+
+                 '</div>'+
                  '</div>';
         }).join('');
       }catch(e){
@@ -1889,8 +1951,9 @@ export function dashboardPage(
       };
       var box=document.getElementById('adm-cred');
       document.getElementById('adm-cred-txt').innerHTML=
-        'Lien : '+admEsc(url)+'<br>E-mail : '+admEsc(email)+
-        '<br>Mot de passe : <b>'+admEsc(password)+'</b>';
+        '<div class="adm-cred-line"><span>Lien</span><b>'+admEsc(url)+'</b></div>'+
+        '<div class="adm-cred-line"><span>E-mail</span><b>'+admEsc(email)+'</b></div>'+
+        '<div class="adm-cred-line"><span>Mot de passe</span><b>'+admEsc(password)+'</b></div>';
       box.style.display='block';
       document.getElementById('adm-share-hint').textContent='';
     }
