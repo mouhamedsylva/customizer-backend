@@ -768,6 +768,35 @@ export class AdminController {
     res.json({ ok: true, prices, warnings });
   }
 
+  /**
+   * POST /api/admin/me/password — l'admin CONNECTÉ change son mot de passe.
+   * Body : { currentPassword, newPassword }.
+   * Accessible à tous les admins (chacun gère le sien), pas seulement l'owner.
+   */
+  @Post('me/password')
+  async changeOwnPassword(
+    @Req() req: Request,
+    @Body('currentPassword') currentPassword: string,
+    @Body('newPassword') newPassword: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const me = await this.currentAdmin(req);
+    if (!me) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const result = await this.auth.changeOwnPassword(
+      me.id,
+      currentPassword,
+      newPassword,
+    );
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({ ok: true });
+  }
+
   // ────────────────────────── Gestion des admins ──────────────────────────
   // Réservée à l'owner : lister, inviter (e-mail + mot de passe généré),
   // bloquer/débloquer, régénérer un mot de passe.

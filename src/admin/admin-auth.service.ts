@@ -304,4 +304,40 @@ export class AdminAuthService implements OnModuleInit {
     await this.admins.save(admin);
     return { ok: true, password, email: admin.email };
   }
+
+  /**
+   * Change le mot de passe de l'admin CONNECTÉ.
+   *
+   * Le mot de passe actuel est exigé : sans cette vérification, quiconque
+   * accède à une session ouverte (poste non verrouillé, cookie volé) pourrait
+   * changer le mot de passe et verrouiller le propriétaire dehors.
+   */
+  async changeOwnPassword(
+    id: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const admin = await this.admins.findOne({ where: { id } });
+    if (!admin) return { ok: false, error: 'Compte introuvable.' };
+
+    if (!this.verifyPassword(currentPassword || '', admin.passwordHash)) {
+      return { ok: false, error: 'Mot de passe actuel incorrect.' };
+    }
+
+    const pwd = String(newPassword || '');
+    if (pwd.length < 8) {
+      return {
+        ok: false,
+        error: 'Le nouveau mot de passe doit faire au moins 8 caractères.',
+      };
+    }
+    if (this.verifyPassword(pwd, admin.passwordHash)) {
+      return { ok: false, error: 'Le nouveau mot de passe est identique à l’actuel.' };
+    }
+
+    admin.passwordHash = this.hashPassword(pwd);
+    await this.admins.save(admin);
+    this.logger.log(`Mot de passe changé pour ${admin.email}`);
+    return { ok: true };
+  }
 }

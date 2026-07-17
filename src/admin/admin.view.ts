@@ -617,9 +617,89 @@ body{
 .price-total strong{display:block;font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
 
 @media (max-width:640px){
+  /* Carte commande : le bloc prix/date passe sous le titre, sur une ligne. */
   .head{grid-template-columns:auto 1fr;gap:12px}
-  .head .right{grid-column:1/-1;text-align:left;align-items:flex-start;flex-direction:row;justify-content:space-between;width:100%}
+  .head .right{grid-column:1/-1;text-align:left;align-items:center;flex-direction:row;justify-content:space-between;width:100%}
+  .head .right .when{white-space:nowrap}
+  /* Le montant ne doit jamais se couper en deux lignes. */
+  .amount{white-space:nowrap}
 }
+
+/* ══════════════════ MOBILE ══════════════════ */
+@media (max-width:760px){
+  /* Filet de sécurité : la page ne défile jamais horizontalement. */
+  html,body{max-width:100%;overflow-x:hidden}
+
+  /* — Barre du haut : hauteur libre, actions sur une 2e ligne défilante — */
+  .topbar{
+    height:auto;flex-wrap:wrap;gap:8px;padding:10px 14px;
+    align-items:center;
+  }
+  .brand{flex:1;min-width:0}                 /* min-width:0 => l'ellipse marche */
+  .brand-txt{min-width:0}
+  .brand-txt b{
+    font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  /* Le sous-titre passait sur 3 lignes : on le masque, il n'apporte rien ici. */
+  .brand-txt span{display:none}
+
+  .topbar-actions{
+    order:3;
+    /* width:100% ne suffit pas : sans min-width:0 ni max-width, la ligne de
+       boutons s'étire au-delà de l'écran et pousse toute la page en largeur. */
+    width:100%;min-width:0;max-width:100%;
+    gap:4px;
+    overflow-x:auto;                          /* si trop de boutons : défilement */
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    padding-bottom:2px;
+  }
+  .topbar-actions::-webkit-scrollbar{display:none}
+  .theme-btn,.logout{
+    font-size:11.5px;padding:6px 8px;gap:4px;white-space:nowrap;flex:none;
+  }
+  /* La cloche reste en tête de ligne, toujours accessible. */
+  .bell-wrap{order:-1}
+
+  /* — Stats : 2 colonnes. Le chiffre est réduit et ne se coupe plus
+       (« 4510,60 € » passait sur 2 lignes). — */
+  .stats{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px}
+  .stat{padding:13px;gap:8px}
+  .stat-body{min-width:0}
+  .stat .num{font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stat .cap{font-size:11px}
+  .stat-ico{width:34px;height:34px;flex:none}
+
+  /* — Barre d'outils : recherche pleine largeur — */
+  .toolbar{flex-direction:column;align-items:stretch;gap:8px}
+  .toolbar .search{width:100%}
+  .filters{width:100%}
+  .filter-sel{flex:1;min-width:0}
+  .export-wrap{width:100%}
+  .export-wrap .btn{width:100%;justify-content:center}
+
+  /* — Filtres de liste : les deux selects se partagent la ligne — */
+  .subfilters{gap:6px}
+  .subfilters .filter-sel{flex:1 1 46%;min-width:0}
+
+  /* — Modales : plein écran utile — */
+  .modal{padding:12px}
+  .modal-box{padding:18px;max-height:calc(100vh - 24px)}
+  .modal-actions{flex-direction:column-reverse;gap:8px}
+  .modal-actions .btn{width:100%}
+
+  /* — Prix : label au-dessus du champ — */
+  .price-line{flex-direction:column;align-items:stretch;gap:6px}
+  .price-field{justify-content:space-between}
+  .price-field .price-input{flex:1;width:auto}
+}
+
+/* Très petits écrans : une stat par ligne plutôt que des chiffres tronqués. */
+@media (max-width:400px){
+  .stats{grid-template-columns:1fr}
+  .stat .num{font-size:22px}
+}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
 
@@ -1265,6 +1345,10 @@ export function dashboardPage(
       </button>`
           : ''
       }
+      <button class="theme-btn" onclick="openAccount()" title="${esc(me?.email || 'Mon compte')} — changer mon mot de passe">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Mon compte
+      </button>
       <button class="theme-btn" onclick="toggleTheme()" title="Basculer le thème">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
         Thème
@@ -1408,6 +1492,34 @@ export function dashboardPage(
       <h4 id="alert-title">Enregistré</h4>
       <p id="alert-text"></p>
       <button class="btn primary" onclick="closeAlert()">OK</button>
+    </div>
+  </div>
+
+  <!-- Modale : mon compte (changement de mot de passe) -->
+  <div class="modal" id="acc-modal" onclick="if(event.target===this)closeAccount()">
+    <div class="modal-box" style="max-width:420px">
+      <h3>Mon compte</h3>
+      <p class="sub">${esc(me?.email || '')}</p>
+
+      <div class="set-block">
+        <label class="lbl" for="acc-cur">Mot de passe actuel</label>
+        <input type="password" id="acc-cur" class="price-input" autocomplete="current-password"
+               style="width:100%;text-align:left">
+
+        <label class="lbl" style="margin-top:12px" for="acc-new">Nouveau mot de passe</label>
+        <input type="password" id="acc-new" class="price-input" autocomplete="new-password"
+               style="width:100%;text-align:left">
+        <p class="hint">8 caractères minimum.</p>
+
+        <label class="lbl" style="margin-top:12px" for="acc-new2">Confirmer le nouveau mot de passe</label>
+        <input type="password" id="acc-new2" class="price-input" autocomplete="new-password"
+               style="width:100%;text-align:left">
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeAccount()">Annuler</button>
+        <button class="btn primary" id="acc-save" onclick="saveOwnPassword()">Changer</button>
+      </div>
     </div>
   </div>
 
@@ -1858,6 +1970,55 @@ export function dashboardPage(
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape') closeAlert();
     });
+
+    /* ═══════════════ Mon compte : changer mon mot de passe ═══════════════ */
+
+    function openAccount(){
+      ['acc-cur','acc-new','acc-new2'].forEach(function(id){
+        var el=document.getElementById(id); if(el) el.value='';
+      });
+      document.getElementById('acc-modal').classList.add('open');
+      var f=document.getElementById('acc-cur'); if(f) f.focus();
+    }
+    function closeAccount(){
+      document.getElementById('acc-modal').classList.remove('open');
+    }
+
+    async function saveOwnPassword(){
+      var cur=document.getElementById('acc-cur').value;
+      var pwd=document.getElementById('acc-new').value;
+      var pwd2=document.getElementById('acc-new2').value;
+      var btn=document.getElementById('acc-save');
+
+      // Contrôles côté client : messages immédiats, sans aller-retour serveur.
+      if(!cur){ showAlert('Champ manquant','Saisissez votre mot de passe actuel.','error');
+        document.getElementById('acc-cur').focus(); return; }
+      if(pwd.length<8){ showAlert('Mot de passe trop court',
+        'Le nouveau mot de passe doit faire au moins 8 caractères.','error');
+        document.getElementById('acc-new').focus(); return; }
+      if(pwd!==pwd2){ showAlert('Confirmation différente',
+        'Les deux nouveaux mots de passe ne correspondent pas.','error');
+        document.getElementById('acc-new2').focus(); return; }
+
+      btn.disabled=true;
+      try{
+        var r=await fetch('/api/admin/me/password',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({currentPassword:cur,newPassword:pwd})
+        });
+        var d=await r.json();
+        btn.disabled=false;
+        if(!d.ok){ showAlert('Échec', d.error||'Le mot de passe n\\'a pas été changé.','error'); return; }
+        closeAccount();
+        showAlert('Mot de passe changé',
+          'Utilisez le nouveau mot de passe à votre prochaine connexion.');
+      }catch(e){
+        btn.disabled=false;
+        showAlert('Erreur réseau', e.message, 'error');
+      }
+    }
 
     /* ═══════════════════ Prix du configurateur ═══════════════════ */
 
