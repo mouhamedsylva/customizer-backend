@@ -617,12 +617,33 @@ body{
 .price-total strong{display:block;font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
 
 @media (max-width:640px){
-  /* Carte commande : le bloc prix/date passe sous le titre, sur une ligne. */
+  /* Carte commande / devis : le bloc de droite passe sous le titre.
+     Grille 2 lignes : les pastilles occupent la 1re (sinon « Shopify : Non
+     traitée » se comprimait sur 3 lignes), prix et date se partagent la 2e. */
   .head{grid-template-columns:auto 1fr;gap:12px}
-  .head .right{grid-column:1/-1;text-align:left;align-items:center;flex-direction:row;justify-content:space-between;width:100%}
+  /* Flex + wrap plutôt qu'une grille : les cartes COMMANDE ont un conteneur
+     .pills, les cartes DEVIS une pastille directe. Le flex gère les deux. */
+  .head .right{
+    grid-column:1/-1;width:100%;text-align:left;
+    flex-direction:row;flex-wrap:wrap;align-items:center;
+    justify-content:flex-start;gap:8px;
+  }
+  /* Les pastilles prennent toute la ligne, puis s'enroulent entre elles. */
+  .head .right .pills{
+    flex:1 0 100%;
+    display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-start;
+  }
+  /* Chaque pastille garde sa largeur naturelle, sur une seule ligne de texte
+     (« Shopify : Non traitée » se comprimait sur 3 lignes). */
+  .head .right .pill{flex:none;white-space:nowrap}
+  /* Devis : la pastille est un enfant DIRECT (pas de .pills). Elle ouvre la
+     ligne, le prix la suit. */
+  .head .right > .pill{align-self:flex-start}
+  /* Prix, puis date poussée à droite. Le 2e .when (« Brouillon #… ») passe
+     à la ligne suivante plutôt que d'être collé à la date. */
+  .head .right .amount{white-space:nowrap}
   .head .right .when{white-space:nowrap}
-  /* Le montant ne doit jamais se couper en deux lignes. */
-  .amount{white-space:nowrap}
+  .head .right .amount ~ .when:first-of-type{margin-left:auto;text-align:right}
 }
 
 /* ══════════════════ MOBILE ══════════════════ */
