@@ -353,6 +353,10 @@ body{
   border:1px solid var(--line);background:var(--surface);color:var(--ink);
   border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;font-weight:600;
   cursor:pointer;outline:none;transition:.15s;
+  /* Ne dépasse jamais son conteneur, quelle que soit la longueur des options
+     (« Tous les statuts (30) », « Montant décroissant »…). */
+  max-width:100%;
+  text-overflow:ellipsis;
 }
 .filter-sel:hover{border-color:var(--accent)}
 .chip-clear{
@@ -699,9 +703,10 @@ body{
   .export-wrap{width:100%}
   .export-wrap .btn{width:100%;justify-content:center}
 
-  /* — Filtres de liste : les deux selects se partagent la ligne — */
-  .subfilters{gap:6px}
-  .subfilters .filter-sel{flex:1 1 46%;min-width:0}
+  /* — Filtres de liste : un select par ligne, pleine largeur.
+       Côte à côte, « Tous les statuts (30) » était tronqué et débordait. — */
+  .subfilters{gap:8px;flex-direction:column;align-items:stretch}
+  .subfilters .filter-sel{width:100%;min-width:0}
 
   /* — Modales : plein écran utile — */
   .modal{padding:12px}
