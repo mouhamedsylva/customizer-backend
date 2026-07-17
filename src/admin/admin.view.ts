@@ -750,7 +750,13 @@ function shell(body: string): string {
 }
 
 /** Page de connexion. */
-export function loginPage(error?: boolean): string {
+/**
+ * Page de connexion.
+ * @param error  identifiants refusés
+ * @param reason 'blocked' : la session a été coupée (compte bloqué/supprimé),
+ *               d'où un message dédié plutôt qu'un écran de login muet.
+ */
+export function loginPage(error?: boolean, reason?: 'blocked'): string {
   return shell(`
   <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
     <div style="width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:32px;box-shadow:var(--shadow)">
@@ -761,6 +767,7 @@ export function loginPage(error?: boolean): string {
       <h1 style="font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Connexion</h1>
       <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Accès réservé à l'équipe.</p>
       ${error ? '<p style="color:var(--accent);font-size:12.5px;background:var(--accent-soft);padding:9px 12px;border-radius:9px;margin-bottom:14px">E-mail ou mot de passe incorrect, ou compte bloqué.</p>' : ''}
+      ${reason === 'blocked' ? '<p style="color:var(--danger);font-size:12.5px;background:var(--danger-soft);padding:9px 12px;border-radius:9px;margin-bottom:14px">Votre session a pris fin : votre accès a été suspendu. Contactez l’administrateur principal.</p>' : ''}
       <form method="post" action="/api/admin/login">
         <label class="lbl" style="display:block;margin-bottom:6px">E-mail</label>
         <input name="email" type="email" autocomplete="username" required autofocus
@@ -1699,7 +1706,11 @@ export function dashboardPage(
       if(document.hidden) return;
       try{
         var r=await fetch('/api/admin/status',{headers:{'Accept':'application/json'},credentials:'same-origin'});
-        if(!r.ok) return;                       // 401 (déconnecté) : on ne fait rien
+        // 401 = session finie (déconnexion ailleurs, ou compte bloqué par
+        // l'admin principal). On recharge : la page de connexion s'affiche avec
+        // l'explication, au lieu de laisser un dashboard figé et inutilisable.
+        if(r.status===401){ location.reload(); return; }
+        if(!r.ok) return;
         var s=await r.json();
         if(!s||!s.ok) return;
         if(dashChanged(s)) dashPending=true;

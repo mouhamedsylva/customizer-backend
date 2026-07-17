@@ -42,10 +42,15 @@ export class AdminController {
     private readonly config: ConfigService,
   ) {}
 
-  /** Vrai si la requête porte un cookie de session valide (signature + TTL). */
-  private isAuthed(req: Request): boolean {
-    const token = (req.cookies || {})[this.auth.cookieName];
-    return this.auth.verifyToken(token);
+  /**
+   * Vrai si la requête porte une session VALIDE et un compte encore actif.
+   *
+   * On consulte la BDD (via currentAdmin) plutôt que de se fier à la seule
+   * signature du cookie : sinon un admin bloqué garderait l'accès jusqu'à
+   * l'expiration de son cookie (12 h). Le blocage doit être immédiat.
+   */
+  private async isAuthed(req: Request): Promise<boolean> {
+    return (await this.currentAdmin(req)) !== null;
   }
 
   /** Admin connecté (identité + rôle), ou null. Lit la BDD : à utiliser quand
@@ -61,8 +66,15 @@ export class AdminController {
    */
   @Get()
   async home(@Req() req: Request, @Res() res: Response): Promise<void> {
-    if (!this.isAuthed(req)) {
-      res.type('html').send(loginPage(false));
+    if (!(await this.isAuthed(req))) {
+      // Cookie signé mais compte bloqué/supprimé : on le dit clairement, sinon
+      // l'utilisateur croit à un bug de session. Et on purge le cookie devenu
+      // inutile pour éviter une boucle de redirection.
+      const hadSession = this.auth.verifyToken(
+        (req.cookies || {})[this.auth.cookieName],
+      );
+      if (hadSession) res.clearCookie(this.auth.cookieName);
+      res.type('html').send(loginPage(false, hadSession ? 'blocked' : undefined));
       return;
     }
     const filters = {
@@ -134,7 +146,7 @@ export class AdminController {
     @Body('unitPrice') unitPrice: unknown,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -217,7 +229,7 @@ export class AdminController {
     @Body('status') status: string,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -293,7 +305,7 @@ export class AdminController {
     @Body('note') note: string,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -311,7 +323,7 @@ export class AdminController {
     @Param('id') orderId: string,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.redirect('/api/admin');
       return;
     }
@@ -333,7 +345,7 @@ export class AdminController {
     @Param('id') orderId: string,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.redirect('/api/admin');
       return;
     }
@@ -457,7 +469,7 @@ export class AdminController {
     @Param('id') quoteId: string,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -497,7 +509,7 @@ export class AdminController {
    */
   @Get('export.csv')
   async exportCsv(@Req() req: Request, @Res() res: Response): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.redirect('/api/admin');
       return;
     }
@@ -600,7 +612,7 @@ export class AdminController {
     @Body() body: Record<string, unknown>,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -630,7 +642,7 @@ export class AdminController {
     @Body('email') email: string,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -678,7 +690,7 @@ export class AdminController {
    */
   @Get('status')
   async status(@Req() req: Request, @Res() res: Response): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -694,7 +706,7 @@ export class AdminController {
     @Body('quotes') quoteIds: string[],
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -711,7 +723,7 @@ export class AdminController {
   /** GET /api/admin/pricing — prix actuels + libellés. */
   @Get('pricing')
   async getPricing(@Req() req: Request, @Res() res: Response): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
@@ -739,7 +751,7 @@ export class AdminController {
     @Body() body: Record<string, unknown>,
     @Res() res: Response,
   ): Promise<void> {
-    if (!this.isAuthed(req)) {
+    if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
