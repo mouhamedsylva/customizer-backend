@@ -349,16 +349,47 @@ body{
 
 /* Filtres serveur (période, paiement, tri) */
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.filter-sel{
+/* ── Menu déroulant personnalisé (remplace <select>) ──
+   Le menu natif est dessiné par l'OS par-dessus la page : impossible de
+   contrôler sa largeur, il débordait de l'écran sur mobile. Ici, tout est
+   rendu DANS la page, donc entièrement maîtrisé. */
+.dd{position:relative;display:inline-block;min-width:0}
+.dd-btn{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;max-width:100%;
   border:1px solid var(--line);background:var(--surface);color:var(--ink);
   border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;font-weight:600;
-  cursor:pointer;outline:none;transition:.15s;
-  /* Ne dépasse jamais son conteneur, quelle que soit la longueur des options
-     (« Tous les statuts (30) », « Montant décroissant »…). */
-  max-width:100%;
-  text-overflow:ellipsis;
+  cursor:pointer;outline:none;transition:border-color .15s;
 }
-.filter-sel:hover{border-color:var(--accent)}
+.dd-btn:hover{border-color:var(--accent)}
+.dd.open .dd-btn{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+/* Le libellé se tronque proprement plutôt que d'élargir le bouton. */
+.dd-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.dd-caret{flex:none;color:var(--muted);transition:transform .18s}
+.dd.open .dd-caret{transform:rotate(180deg)}
+
+.dd-menu{
+  position:absolute;z-index:60;top:calc(100% + 6px);left:0;
+  /* Jamais plus large que le déclencheur : le menu ne peut pas déborder. */
+  min-width:100%;max-width:100%;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 16px 40px rgba(0,0,0,.18);
+  padding:5px;display:none;
+  max-height:min(300px,60vh);overflow-y:auto;overscroll-behavior:contain;
+}
+.dd.open .dd-menu{display:block}
+/* Près du bord droit : on aligne le menu à droite (posé en JS). */
+.dd.to-left .dd-menu{left:auto;right:0}
+
+.dd-item{
+  display:block;width:100%;text-align:left;
+  border:none;background:none;color:var(--ink);
+  font:inherit;font-size:13px;font-weight:500;
+  padding:9px 10px;border-radius:8px;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.dd-item:hover{background:var(--raise)}
+.dd-item.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
 .chip-clear{
   color:var(--muted);font-size:12.5px;font-weight:600;text-decoration:none;
   padding:8px 10px;border-radius:8px;
@@ -699,14 +730,14 @@ body{
   .toolbar{flex-direction:column;align-items:stretch;gap:8px}
   .toolbar .search{width:100%}
   .filters{width:100%}
-  .filter-sel{flex:1;min-width:0}
+  .filters .dd{flex:1;min-width:0;display:block}
   .export-wrap{width:100%}
   .export-wrap .btn{width:100%;justify-content:center}
 
-  /* — Filtres de liste : un select par ligne, pleine largeur.
-       Côte à côte, « Tous les statuts (30) » était tronqué et débordait. — */
+  /* — Filtres de liste : un menu par ligne, pleine largeur.
+       Côte à côte, « Tous les statuts (30) » était tronqué. — */
   .subfilters{gap:8px;flex-direction:column;align-items:stretch}
-  .subfilters .filter-sel{width:100%;min-width:0}
+  .subfilters .dd{width:100%;min-width:0;display:block}
 
   /* — Modales : plein écran utile — */
   .modal{padding:12px}
@@ -1238,18 +1269,45 @@ const SORTS: Array<[string, string]> = [
 ];
 
 /** <select> d'une barre de filtres. */
+/**
+ * Menu déroulant PERSONNALISÉ (div), pas un <select> natif.
+ *
+ * Le menu natif est dessiné par le système par-dessus la page : sa largeur et
+ * son placement échappent totalement au CSS, et il débordait de l'écran sur
+ * mobile. Ici tout est rendu dans la page, donc maîtrisé.
+ *
+ * @param name    clé de filtre (period, sort…) ; '' = filtre client (pas d'URL)
+ * @param options [valeur, libellé]
+ * @param current valeur sélectionnée
+ * @param opts    onPick : fonction JS appelée à la sélection (filtres client)
+ */
 function selectFilter(
   name: string,
   options: Array<[string, string]>,
   current: string,
+  opts: { id?: string; onPick?: string; label?: string } = {},
 ): string {
-  const opts = options
+  const sel = options.find(([v]) => v === current) || options[0];
+  const id = opts.id ? ` id="${opts.id}"` : '';
+  const onPick = opts.onPick || 'applyFilters';
+  const aria = opts.label ? ` aria-label="${esc(opts.label)}"` : '';
+
+  const items = options
     .map(
       ([v, l]) =>
-        `<option value="${v}"${v === current ? ' selected' : ''}>${l}</option>`,
+        `<button type="button" class="dd-item${v === current ? ' on' : ''}"
+           role="option" aria-selected="${v === current}"
+           data-value="${esc(v)}" onclick="ddPick(this)">${esc(l)}</button>`,
     )
     .join('');
-  return `<select class="filter-sel" name="${name}" onchange="applyFilters()">${opts}</select>`;
+
+  return `<div class="dd"${id} data-name="${esc(name)}" data-value="${esc(sel[0])}" data-onpick="${esc(onPick)}"${aria}>
+    <button type="button" class="dd-btn" onclick="ddToggle(this)" aria-haspopup="listbox" aria-expanded="false">
+      <span class="dd-txt">${esc(sel[1])}</span>
+      <svg class="dd-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="dd-menu" role="listbox">${items}</div>
+  </div>`;
 }
 
 export function dashboardPage(
@@ -1448,19 +1506,31 @@ export function dashboardPage(
       ${
         orders.length
           ? `<div class="subfilters" id="order-filters">
-               <!-- Statut de production : dropdown (même style que la période).
-                    Filtrage côté client, d'où le <select> nu (pas de submit). -->
-               <select class="filter-sel" id="order-status" onchange="filterOrders(this)"
-                       aria-label="Filtrer par statut de production">
-                 <option value="all">Tous les statuts (${orders.length})</option>
-                 ${PROD_STEPS.map(
-                   (s) =>
-                     `<option value="${s.key}">${s.label} (${prodCounts[s.key] || 0})</option>`,
-                 ).join('')}
-               </select>
-               <!-- Période : filtre serveur, déplacé ici pour être aligné avec
-                    le statut (les deux filtrent la liste ci-dessous). -->
-               ${selectFilter('period', PERIODS, f.period)}
+               <!-- Statut de production : filtre CLIENT (pas de rechargement),
+                    d'où onPick=filterOrders au lieu du applyFilters par défaut. -->
+               ${selectFilter(
+                 '',
+                 [
+                   ['all', `Tous les statuts (${orders.length})`],
+                   ...PROD_STEPS.map(
+                     (s) =>
+                       [s.key, `${s.label} (${prodCounts[s.key] || 0})`] as [
+                         string,
+                         string,
+                       ],
+                   ),
+                 ],
+                 'all',
+                 {
+                   id: 'order-status',
+                   onPick: 'filterOrders',
+                   label: 'Filtrer par statut de production',
+                 },
+               )}
+               <!-- Période : filtre serveur, aligné avec le statut. -->
+               ${selectFilter('period', PERIODS, f.period, {
+                 label: 'Filtrer par période',
+               })}
              </div>
              ${orders.map(orderCard).join('')}
              <div class="empty-state" id="orders-none" style="display:none">
@@ -1670,6 +1740,67 @@ export function dashboardPage(
   <script>
     var UNSEEN=${seenPayload};
 
+    /* ═══════════ Menus déroulants personnalisés (.dd) ═══════════
+       Remplacent les <select> natifs, dont le menu (dessiné par l'OS) débordait
+       de l'écran sur mobile sans qu'aucun CSS ne puisse l'en empêcher. */
+
+    function ddCloseAll(except){
+      document.querySelectorAll('.dd.open').forEach(function(d){
+        if(d===except) return;
+        d.classList.remove('open');
+        var b=d.querySelector('.dd-btn');
+        if(b) b.setAttribute('aria-expanded','false');
+      });
+    }
+
+    function ddToggle(btn){
+      var dd=btn.closest('.dd');
+      var willOpen=!dd.classList.contains('open');
+      ddCloseAll(dd);
+      dd.classList.toggle('open', willOpen);
+      btn.setAttribute('aria-expanded', willOpen?'true':'false');
+      if(!willOpen) return;
+
+      /* Si le menu déborderait à droite, on l'aligne sur le bord droit du
+         bouton. (Le CSS le borne déjà en largeur ; ceci gère le placement.) */
+      dd.classList.remove('to-left');
+      var m=dd.querySelector('.dd-menu');
+      if(m && m.getBoundingClientRect().right > document.documentElement.clientWidth-4){
+        dd.classList.add('to-left');
+      }
+      // Amène l'option courante dans le champ de vision.
+      var on=m && m.querySelector('.dd-item.on');
+      if(on) on.scrollIntoView({block:'nearest'});
+    }
+
+    /* Sélection d'une option : met à jour le libellé, puis déclenche l'action
+       associée (rechargement serveur, ou filtre client). */
+    function ddPick(item){
+      var dd=item.closest('.dd');
+      var val=item.getAttribute('data-value');
+      dd.setAttribute('data-value', val);
+      var txt=dd.querySelector('.dd-txt');
+      if(txt) txt.textContent=item.textContent.trim();
+
+      dd.querySelectorAll('.dd-item').forEach(function(i){
+        var on=i===item;
+        i.classList.toggle('on', on);
+        i.setAttribute('aria-selected', on?'true':'false');
+      });
+      ddCloseAll();
+
+      var fn=window[dd.getAttribute('data-onpick')||'applyFilters'];
+      if(typeof fn==='function') fn(dd);
+    }
+
+    /* Clic à l'extérieur, ou Échap : on referme. */
+    document.addEventListener('click', function(e){
+      if(!e.target.closest('.dd')) ddCloseAll();
+    });
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape') ddCloseAll();
+    });
+
     /* ─────────── Auto-rafraîchissement du dashboard ───────────
        On interroge périodiquement /api/admin/status (léger : juste des
        compteurs). Si l'état a changé (nouvelle commande/devis, etc.), on recharge
@@ -1691,6 +1822,8 @@ export function dashboardPage(
       if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable)){
         return true;
       }
+      // Un menu déroulant ouvert : recharger le fermerait sous le doigt.
+      if(document.querySelector('.dd.open')) return true;
       // Modales/overlays ouverts (id ou classe contenant "modal"/"overlay"/"invoice"/"drawer").
       var open=document.querySelectorAll('.modal,.overlay,[class*="modal"],[class*="overlay"],[class*="drawer"]');
       for(var i=0;i<open.length;i++){
@@ -1750,9 +1883,9 @@ export function dashboardPage(
       filterCards(true);
     }
 
-    /* Statut de production : appelé par le <select> (sa valeur = le filtre). */
-    function filterOrders(sel){
-      orderFilter=sel.value||'all';
+    /* Statut de production : appelé par le menu .dd (data-value = le filtre). */
+    function filterOrders(dd){
+      orderFilter=(dd && dd.getAttribute('data-value')) || 'all';
       filterCards(true);
     }
 
@@ -1895,9 +2028,13 @@ export function dashboardPage(
        statut n'a pas d'attribut name : il est purement client, donc ignoré. */
     function applyFilters(){
       var p=new URLSearchParams();
-      document.querySelectorAll('.filter-sel').forEach(function(s){
-        if(!s.name) return;
-        if(s.value && s.value!=='all' && s.value!=='date_desc') p.set(s.name,s.value);
+      // Les menus .dd portent leur clé (data-name) et leur valeur (data-value).
+      // Ceux sans data-name sont des filtres client : on les ignore ici.
+      document.querySelectorAll('.dd[data-name]').forEach(function(d){
+        var name=d.getAttribute('data-name');
+        var val=d.getAttribute('data-value');
+        if(!name) return;
+        if(val && val!=='all' && val!=='date_desc') p.set(name,val);
       });
       var qs=p.toString();
       window.location.href='/api/admin'+(qs?('?'+qs):'');
