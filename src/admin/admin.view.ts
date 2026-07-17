@@ -1410,7 +1410,13 @@ export function dashboardPage(
     <div class="toolbar">
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input id="search" placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
+        <!-- type=search + autocomplete=off : sans ça, le navigateur prenait ce
+             champ pour un identifiant et y réinjectait l'e-mail de connexion
+             mémorisé à chaque rechargement. name=… l'écarte des gestionnaires
+             de mots de passe. -->
+        <input id="search" type="search" name="dashboard-search"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
       </div>
 
       <div class="filters" id="filters">
@@ -2585,6 +2591,19 @@ export function dashboardPage(
     });
 
     // Pagination initiale : applique les filtres + la 1re page dès le chargement.
+    /* Chrome ignore souvent autocomplete=off et réinjecte l'e-mail de connexion
+       dans le champ de recherche (il le prend pour un identifiant). On le vide
+       au chargement, puis une fois de plus après le remplissage automatique,
+       qui survient juste après. */
+    (function(){
+      var s=document.getElementById('search');
+      if(!s) return;
+      var clear=function(){ if(s.value){ s.value=''; filterCards(true); } };
+      clear();
+      setTimeout(clear, 60);
+      setTimeout(clear, 300);
+    })();
+
     filterCards(true);
   </script>`);
 }
