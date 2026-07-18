@@ -480,6 +480,49 @@ body{
   background:var(--accent);color:#fff;border-radius:20px;padding:2px 8px;
   font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
 }
+/* Badge « Groupe » sur une carte devis de commande groupée. */
+.badge-group{
+  display:inline-block;vertical-align:middle;margin-left:7px;
+  background:var(--ok-soft);color:var(--ok);border-radius:20px;padding:2px 8px;
+  font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+}
+/* Tableau de la liste des personnes (commande de groupe). */
+.grp-list-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:6px}
+.grp-list{width:100%;border-collapse:collapse;font-size:12.5px;min-width:420px}
+.grp-list th{
+  text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  color:var(--muted);padding:8px 10px;background:var(--raise);border-bottom:1px solid var(--line);
+}
+.grp-list td{padding:7px 10px;border-bottom:1px solid var(--line-soft)}
+.grp-list tr:last-child td{border-bottom:none}
+.grp-list .num{text-align:right;font-variant-numeric:tabular-nums}
+.grp-list tfoot td{font-weight:800;background:var(--raise)}
+.grp-list .empty{color:var(--faint)}
+
+/* Récap agrégé couleur × taille (production). */
+.grp-agg-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:6px}
+.grp-agg{width:100%;border-collapse:collapse;font-size:12.5px;min-width:360px}
+.grp-agg th{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  color:var(--muted);padding:8px 10px;background:var(--raise);border-bottom:1px solid var(--line);
+  text-align:left;
+}
+.grp-agg th.num, .grp-agg td.num{text-align:center;font-variant-numeric:tabular-nums;min-width:38px}
+.grp-agg td{padding:7px 10px;border-bottom:1px solid var(--line-soft)}
+.grp-agg td:first-child{font-weight:600}
+.grp-agg td.zero{color:var(--faint)}
+.grp-agg td.tot{font-weight:800}
+.grp-agg tfoot td{background:var(--raise);font-weight:800;border-bottom:none}
+
+/* Liste des flocages. */
+.grp-flocks{margin-top:10px}
+.grp-flocks-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:6px}
+.grp-flock-list{display:flex;flex-wrap:wrap;gap:6px}
+.grp-flock{
+  font-size:12px;background:var(--raise);border:1px solid var(--line);border-radius:7px;
+  padding:5px 9px;display:inline-flex;align-items:center;gap:5px;
+}
+.grp-flock em{color:var(--faint);font-style:normal;font-size:11px}
 
 /* Modale de réglages */
 .set-block{
@@ -1012,10 +1055,128 @@ function quoteStatus(q: Quote): { key: string; pill: string } {
   return { key: 'open', pill: `<span class="pill neutral">À chiffrer</span>` };
 }
 
+/**
+ * Agrège les lignes d'une commande de groupe en un tableau croisé
+ * COULEUR × TAILLE (avec totaux) + la liste des flocages.
+ * Sert au récap dans la carte devis ET à la fiche de production.
+ */
+function groupAggregate(rows: any[]): {
+  sizes: string[];
+  matrix: Array<{ color: string; counts: Record<string, number>; total: number }>;
+  colTotals: Record<string, number>;
+  grandTotal: number;
+  flocks: Array<{ name: string; size: string; color: string; text: string }>;
+} {
+  // Ordre de tailles usuel ; les tailles inconnues sont ajoutées à la fin.
+  const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
+  const sizeSet = new Set<string>();
+  const byColor = new Map<string, Record<string, number>>();
+
+  rows.forEach((r) => {
+    const size = String(r.size || '?').trim();
+    const color = String(r.color || '?').trim();
+    const qty = Number(r.qty) || 0;
+    if (qty < 1) return;
+    sizeSet.add(size);
+    if (!byColor.has(color)) byColor.set(color, {});
+    const row = byColor.get(color)!;
+    row[size] = (row[size] || 0) + qty;
+  });
+
+  const sizes = [...sizeSet].sort((a, b) => {
+    const ia = SIZE_ORDER.indexOf(a);
+    const ib = SIZE_ORDER.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+
+  const colTotals: Record<string, number> = {};
+  let grandTotal = 0;
+  const matrix = [...byColor.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([color, counts]) => {
+      let total = 0;
+      sizes.forEach((s) => {
+        const n = counts[s] || 0;
+        total += n;
+        colTotals[s] = (colTotals[s] || 0) + n;
+      });
+      grandTotal += total;
+      return { color, counts, total };
+    });
+
+  const flocks = rows
+    .filter((r) => r.flock && String(r.flock).trim())
+    .map((r) => ({
+      name: String(r.name || '').trim(),
+      size: String(r.size || '').trim(),
+      color: String(r.color || '').trim(),
+      text: String(r.flock).trim(),
+    }));
+
+  return { sizes, matrix, colTotals, grandTotal, flocks };
+}
+
+/** Rend le tableau croisé + la liste des flocages en HTML (carte et fiche). */
+function groupSummaryHtml(rows: any[]): string {
+  const agg = groupAggregate(rows);
+  if (!agg.matrix.length) return '';
+
+  const head =
+    `<tr><th>Couleur</th>${agg.sizes
+      .map((s) => `<th class="num">${esc(s)}</th>`)
+      .join('')}<th class="num">Total</th></tr>`;
+
+  const body = agg.matrix
+    .map(
+      (m) =>
+        `<tr><td>${esc(m.color)}</td>${agg.sizes
+          .map((s) => {
+            const n = m.counts[s] || 0;
+            return `<td class="num${n ? '' : ' zero'}">${n || '·'}</td>`;
+          })
+          .join('')}<td class="num tot">${m.total}</td></tr>`,
+    )
+    .join('');
+
+  const foot =
+    `<tr><td>Total</td>${agg.sizes
+      .map((s) => `<td class="num tot">${agg.colTotals[s] || 0}</td>`)
+      .join('')}<td class="num tot">${agg.grandTotal}</td></tr>`;
+
+  const flocksHtml = agg.flocks.length
+    ? `<div class="grp-flocks">
+         <div class="grp-flocks-lbl">Flocages (${agg.flocks.length})</div>
+         <div class="grp-flock-list">${agg.flocks
+           .map(
+             (f) =>
+               `<span class="grp-flock">${
+                 f.name ? esc(f.name) + ' → ' : ''
+               }<strong>${esc(f.text)}</strong> <em>${esc(f.size)}/${esc(
+                 f.color,
+               )}</em></span>`,
+           )
+           .join('')}</div>
+       </div>`
+    : '';
+
+  return `<div class="grp-agg-wrap">
+    <table class="grp-agg">
+      <thead>${head}</thead>
+      <tbody>${body}</tbody>
+      <tfoot>${foot}</tfoot>
+    </table>
+  </div>${flocksHtml}`;
+}
+
 function quoteCard(q: Quote, shopDomain: string): string {
   const d: any = q.quoteData || {};
   const c = d.customer || {};
   const coin = d.coin || {};
+  const group: any = d.group || null;
+  const groupRows: any[] = group && Array.isArray(group.rows) ? group.rows : [];
   const previews: any[] = Array.isArray(coin.previews) ? coin.previews : [];
   const imgs = previews.flatMap((p) => [p.logo, p.base].filter(isImg));
   const thumbs = imgs.length
@@ -1029,10 +1190,15 @@ function quoteCard(q: Quote, shopDomain: string): string {
     <div class="head" onclick="toggleCard(this)">
       <div class="avatar">${esc(initials(c.nom))}</div>
       <div>
-        <div class="id">${esc(coin.name || 'Devis')}
+        <div class="id">${esc(group ? group.productLabel || 'Commande de groupe' : coin.name || 'Devis')}
+          ${group ? '<span class="badge-group">Groupe</span>' : ''}
           ${q.seen ? '' : '<span class="badge-new">nouveau</span>'}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
-        <div class="sub">${esc(c.nom || 'Client')}${c.email ? ' · ' + esc(c.email) : ''} · Qté ${esc(coin.qty || '')}</div>
+        <div class="sub">${esc(c.nom || 'Client')}${c.email ? ' · ' + esc(c.email) : ''} · ${
+          group
+            ? `${group.pieces || 0} pièce(s) · ${groupRows.length} ligne(s)`
+            : 'Qté ' + esc(coin.qty || '')
+        }</div>
       </div>
       <div class="right">
         ${st.pill}
@@ -1054,20 +1220,51 @@ function quoteCard(q: Quote, shopDomain: string): string {
         ${c.entreprise ? `<div class="kv"><span class="k">Société</span>${esc(c.entreprise)}</div>` : ''}
         ${c.message ? `<div class="kv" style="grid-column:1/-1"><span class="k">Message</span>${esc(c.message)}</div>` : ''}
       </div>` : ''}
-      <div class="section-lbl lbl">Détail du produit</div>
+      <div class="section-lbl lbl">${group ? 'Design commun' : 'Détail du produit'}</div>
       <div class="item">
         ${thumbs}
         <div class="item-body">
           <div class="specs">${details.map((x) => `<span class="spec">${esc(x)}</span>`).join('') || '<span class="empty">—</span>'}</div>
         </div>
       </div>
+      ${
+        group && groupRows.length
+          ? `<div class="section-lbl lbl">Récap production (par taille / couleur)</div>
+      ${groupSummaryHtml(groupRows)}
+      <div class="section-lbl lbl">Liste détaillée (${group.hasFlock ? 'flocage à chiffrer' : 'sans flocage'})</div>
+      <div class="grp-list-wrap">
+        <table class="grp-list">
+          <thead><tr><th>Nom / réf.</th><th>Taille</th><th>Couleur</th><th>Floquage</th><th class="num">Qté</th></tr></thead>
+          <tbody>
+            ${groupRows
+              .map(
+                (r) => `<tr>
+                  <td>${esc(r.name || '—')}</td>
+                  <td>${esc(r.size || '')}</td>
+                  <td>${esc(r.color || '')}</td>
+                  <td>${r.flock ? esc(r.flock) : '<span class="empty">—</span>'}</td>
+                  <td class="num">${esc(r.qty || 1)}</td>
+                </tr>`,
+              )
+              .join('')}
+          </tbody>
+          <tfoot><tr><td colspan="4">Total</td><td class="num">${group.pieces || 0}</td></tr></tfoot>
+        </table>
+      </div>`
+          : ''
+      }
       <div class="quote-actions">
+        ${
+          group
+            ? `<a class="btn" href="/api/admin/quotes/${esc(q.id)}/sheet" target="_blank" rel="noopener">🖨 Fiche production</a>`
+            : ''
+        }
         ${
           !q.draftOrderId
             ? `<span class="hint">Aucun brouillon Shopify associé : facture indisponible.</span>`
             : isPaid
               ? `<span class="hint ok">✓ Devis réglé par le client${q.totalPrice ? ` — ${money(q.totalPrice)}` : ''}.</span>`
-              : `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(coin.name || '')}',${Number(coin.qty) || 1})">
+              : `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(group ? group.productLabel || 'Commande de groupe' : coin.name || '')}',${group ? Number(group.pieces) || groupRows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : Number(coin.qty) || 1},${group ? groupRows.filter((r: any) => r.flock).reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : 0})">
                    ✉ ${st.key === 'sent' ? 'Corriger le prix et renvoyer' : 'Chiffrer et envoyer la facture'}
                  </button>
                  ${
@@ -1242,6 +1439,175 @@ export function productionSheetPage(o: Order): string {
     </footer>
   </div>
 </body></html>`;
+}
+
+/**
+ * Fiche de production d'une COMMANDE DE GROUPE (devis textile).
+ * Design commun en grand + récap taille/couleur + liste des flocages + liste
+ * détaillée. Même charte que la fiche commande, imprimable A4.
+ */
+export function groupSheetPage(q: Quote): string {
+  const d: any = q.quoteData || {};
+  const c = d.customer || {};
+  const group: any = d.group || {};
+  const rows: any[] = Array.isArray(group.rows) ? group.rows : [];
+  const coin: any = d.coin || {};
+  const previews: any[] = Array.isArray(coin.previews) ? coin.previews : [];
+  const designImgs = previews.flatMap((p) => [p.base, p.logo].filter(isImg));
+
+  const ref = String(q.id).slice(0, 8).toUpperCase();
+  const created = fdate(q.createdAt) + ' · ' + ftime(q.createdAt);
+
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fiche groupe ${esc(ref)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;color:#1b1f24;background:#eceae6;padding:24px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .sheet{max-width:820px;margin:0 auto;background:#fff;padding:34px 38px;box-shadow:0 8px 30px rgba(0,0,0,.1)}
+  .toolbar{max-width:820px;margin:0 auto 14px;display:flex;gap:10px;justify-content:flex-end}
+  .toolbar button,.toolbar a{padding:9px 16px;border:1px solid #d6d2cb;background:#fff;color:#1b1f24;
+    border-radius:9px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
+  .toolbar button{background:#c2410c;border-color:#c2410c;color:#fff}
+  header.ps-head{display:flex;justify-content:space-between;align-items:flex-start;
+    border-bottom:2px solid #1b1f24;padding-bottom:14px;margin-bottom:20px}
+  .ps-title{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#8b8478}
+  .ps-order{font-size:24px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+  .ps-badge{display:inline-block;margin-left:8px;background:#e7f0e9;color:#3f7d4e;
+    border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;vertical-align:middle}
+  .ps-meta{text-align:right;font-size:12px;color:#6b665e;line-height:1.7}
+  .ps-block{margin-bottom:20px}
+  .ps-lbl{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#8b8478;margin-bottom:7px}
+  .ps-client{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 18px;font-size:13px;
+    background:#f6f4f0;border-radius:9px;padding:13px 16px}
+  .ps-client b{display:block;font-size:9.5px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;color:#a29a8e;margin-bottom:1px}
+  .ps-visuals{display:flex;gap:14px;flex-wrap:wrap}
+  .ps-visuals figure{width:200px}
+  .ps-visuals img{width:100%;height:200px;object-fit:contain;border:1px solid #e4e0d9;border-radius:8px;background:#faf9f7}
+  .ps-visuals figcaption{font-size:10.5px;color:#8b8478;text-align:center;margin-top:5px;font-weight:600}
+  .ps-none{font-size:12.5px;color:#a29a8e}
+  /* Tableaux */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  .agg th,.agg td{border:1px solid #e4e0d9;padding:8px 10px;text-align:center}
+  .agg th{background:#f6f4f0;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8b8478}
+  .agg td:first-child,.agg th:first-child{text-align:left;font-weight:700}
+  .agg tfoot td{background:#f6f4f0;font-weight:800}
+  .agg .tot{font-weight:800}
+  .lst th,.lst td{border-bottom:1px solid #eee;padding:7px 10px;text-align:left;font-size:12.5px}
+  .lst th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#8b8478;border-bottom:1px solid #e4e0d9}
+  .lst .num{text-align:right}
+  .flk{display:flex;flex-wrap:wrap;gap:7px}
+  .flk span{background:#f6f4f0;border:1px solid #e4e0d9;border-radius:7px;padding:5px 10px;font-size:12.5px}
+  .flk em{color:#a29a8e;font-style:normal;font-size:11px}
+  footer.ps-foot{margin-top:22px;padding-top:12px;border-top:1px solid #e4e0d9;
+    font-size:11px;color:#a29a8e;display:flex;justify-content:space-between}
+  @media print{ body{background:#fff;padding:0} .toolbar{display:none}
+    .sheet{box-shadow:none;max-width:none;padding:0} .ps-visuals img{height:160px} }
+</style></head><body>
+  <div class="toolbar">
+    <a href="/api/admin">← Retour</a>
+    <button onclick="window.print()">Imprimer</button>
+  </div>
+
+  <div class="sheet">
+    <header class="ps-head">
+      <div>
+        <div class="ps-title">Fiche de production — groupe</div>
+        <div class="ps-order mono">${esc(group.productLabel || 'Textile')}<span class="ps-badge">${group.pieces || rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)} pièces</span></div>
+      </div>
+      <div class="ps-meta">
+        Réf. ${esc(ref)}<br>${esc(created)}
+      </div>
+    </header>
+
+    <div class="ps-block">
+      <div class="ps-lbl">Client</div>
+      <div class="ps-client">
+        <div><b>Nom</b>${esc(c.nom || '—')}</div>
+        <div><b>E-mail</b>${esc(c.email || '—')}</div>
+        <div><b>Téléphone</b>${esc(c.telephone || '—')}</div>
+        ${c.entreprise ? `<div><b>Société</b>${esc(c.entreprise)}</div>` : ''}
+        ${c.message ? `<div class="wide" style="grid-column:1/-1"><b>Message</b>${esc(c.message)}</div>` : ''}
+      </div>
+    </div>
+
+    <div class="ps-block">
+      <div class="ps-lbl">Design commun</div>
+      <div class="ps-visuals">
+        ${
+          designImgs.length
+            ? designImgs
+                .map((u) => `<figure><img src="${esc(u)}" alt="design"><figcaption>Design</figcaption></figure>`)
+                .join('')
+            : '<p class="ps-none">Aucun visuel fourni.</p>'
+        }
+      </div>
+    </div>
+
+    <div class="ps-block">
+      <div class="ps-lbl">Récap production — quantités par taille / couleur</div>
+      ${groupSheetAggHtml(rows)}
+    </div>
+
+    ${
+      rows.some((r) => r.flock)
+        ? `<div class="ps-block">
+             <div class="ps-lbl">Flocages à réaliser</div>
+             <div class="flk">
+               ${rows
+                 .filter((r) => r.flock)
+                 .map(
+                   (r) =>
+                     `<span>${r.name ? esc(r.name) + ' → ' : ''}<strong>${esc(r.flock)}</strong> <em>${esc(r.size)}/${esc(r.color)}</em></span>`,
+                 )
+                 .join('')}
+             </div>
+           </div>`
+        : ''
+    }
+
+    <div class="ps-block">
+      <div class="ps-lbl">Liste détaillée</div>
+      <table class="lst">
+        <thead><tr><th>#</th><th>Nom / réf.</th><th>Taille</th><th>Couleur</th><th>Floquage</th><th class="num">Qté</th></tr></thead>
+        <tbody>
+          ${rows
+            .map(
+              (r, i) =>
+                `<tr><td>${i + 1}</td><td>${esc(r.name || '—')}</td><td>${esc(r.size || '')}</td><td>${esc(r.color || '')}</td><td>${r.flock ? esc(r.flock) : '—'}</td><td class="num">${esc(r.qty || 1)}</td></tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <footer class="ps-foot">
+      <span>Custom Textile — commande de groupe</span>
+      <span class="mono">Réf. ${esc(ref)}</span>
+    </footer>
+  </div>
+</body></html>`;
+}
+
+/** Tableau croisé couleur × taille pour la fiche (classe .agg). */
+function groupSheetAggHtml(rows: any[]): string {
+  const agg = groupAggregate(rows);
+  if (!agg.matrix.length) return '<p class="ps-none">Aucune ligne.</p>';
+  const head =
+    `<tr><th>Couleur</th>${agg.sizes.map((s) => `<th>${esc(s)}</th>`).join('')}<th>Total</th></tr>`;
+  const body = agg.matrix
+    .map(
+      (m) =>
+        `<tr><td>${esc(m.color)}</td>${agg.sizes
+          .map((s) => `<td>${m.counts[s] || '·'}</td>`)
+          .join('')}<td class="tot">${m.total}</td></tr>`,
+    )
+    .join('');
+  const foot =
+    `<tr><td>Total</td>${agg.sizes.map((s) => `<td class="tot">${agg.colTotals[s] || 0}</td>`).join('')}<td class="tot">${agg.grandTotal}</td></tr>`;
+  return `<table class="agg"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
 }
 
 /** Filtres actifs, tels que reçus en query string. */
@@ -1581,6 +1947,23 @@ export function dashboardPage(
           <span class="lbl">Total (<span id="inv-qty" class="mono">1</span> unités)</span>
           <strong id="inv-total" class="mono">—</strong>
         </div>
+      </div>
+
+      <!-- Chiffrage assisté pour les commandes de groupe avec flocage. -->
+      <div id="inv-flock-block" style="display:none;margin-top:12px;background:var(--raise);border-radius:10px;padding:12px 14px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:150px">
+            <label class="lbl">Prix par flocage (€)</label>
+            <input type="number" id="inv-flock-price" min="0" step="0.01" placeholder="0,00"
+                   oninput="updateInvoiceTotal()" class="price-input mono">
+          </div>
+          <div class="hint" id="inv-flock-info" style="align-self:flex-end;padding-bottom:10px"></div>
+        </div>
+        <p class="hint" id="inv-breakdown" style="margin-top:8px"></p>
+        <p class="hint" style="margin-top:4px">
+          ⚠️ Shopify facture un <strong>prix unitaire × quantité</strong>. Le total ci-dessus
+          (base + flocages) est réparti en un prix unitaire moyen — vous pouvez l'ajuster.
+        </p>
       </div>
 
       <label class="lbl" style="margin-top:16px">Message au client</label>
@@ -2643,14 +3026,26 @@ export function dashboardPage(
     var invQuoteId=null, invQty=1;
     function euro(n){return n.toFixed(2).replace('.',',')+' €';}
 
-    function openInvoice(id,email,nom,produit,qty){
+    var invFlockCount = 0;   // nombre de pièces floquées (commande de groupe)
+    function openInvoice(id,email,nom,produit,qty,flockCount){
       invQuoteId=id;
       invQty=Math.max(1,parseInt(qty,10)||1);
+      invFlockCount=Math.max(0,parseInt(flockCount,10)||0);
       document.getElementById('inv-sub').textContent =
         email ? ('Destinataire : '+email) : 'Aucune adresse e-mail renseignée pour ce client.';
       document.getElementById('inv-qty').textContent = invQty;
       document.getElementById('inv-price').value='';
       document.getElementById('inv-total').textContent='—';
+
+      // Bloc « chiffrage assisté » : visible seulement si des pièces sont floquées.
+      var fb=document.getElementById('inv-flock-block');
+      if(fb){
+        fb.style.display = invFlockCount>0 ? 'block' : 'none';
+        var fp=document.getElementById('inv-flock-price'); if(fp) fp.value='';
+        var fi=document.getElementById('inv-flock-info');
+        if(fi) fi.textContent = invFlockCount+' pièce(s) à floquer';
+        var bd=document.getElementById('inv-breakdown'); if(bd) bd.textContent='';
+      }
       document.getElementById('inv-msg').value =
         'Bonjour '+(nom||'')+',\\n\\n'+
         'Voici votre devis pour '+(produit||'votre commande personnalisée')+'. '+
@@ -2666,8 +3061,39 @@ export function dashboardPage(
 
     function updateInvoiceTotal(){
       var p=parseFloat(document.getElementById('inv-price').value);
-      document.getElementById('inv-total').textContent =
-        (isFinite(p) && p>0) ? euro(p*invQty) : '—';
+      var base=(isFinite(p) && p>0) ? p*invQty : 0;
+
+      // Chiffrage assisté : ajoute (prix flocage × nb de pièces floquées).
+      var flockTotal=0, flockUnit=0;
+      if(invFlockCount>0){
+        var fp=document.getElementById('inv-flock-price');
+        flockUnit=fp ? parseFloat(fp.value) : NaN;
+        if(isFinite(flockUnit) && flockUnit>=0) flockTotal=flockUnit*invFlockCount;
+      }
+
+      var grand=base+flockTotal;
+      var totalEl=document.getElementById('inv-total');
+      totalEl.textContent = base>0 ? euro(grand) : '—';
+
+      // Détail du calcul (transparence).
+      var bd=document.getElementById('inv-breakdown');
+      if(bd && invFlockCount>0){
+        if(base>0){
+          var unitAvg = grand/invQty;               // prix unitaire moyen
+          var unitRounded = Math.round(unitAvg*100)/100;
+          var shopifyTotal = unitRounded*invQty;    // ce que Shopify facturera
+          var diff = Math.round((shopifyTotal-grand)*100)/100;
+          bd.innerHTML='Base : '+euro(p||0)+' × '+invQty+' = <strong>'+euro(base)+'</strong>'+
+            (flockTotal>0 ? ' · Flocage : '+euro(flockUnit)+' × '+invFlockCount+' = <strong>'+euro(flockTotal)+'</strong>' : '')+
+            ' → Prix unitaire : <strong>'+euro(unitRounded)+'</strong>'+
+            (Math.abs(diff)>=0.01 ? ' <span style="color:var(--warn)">(total facturé '+euro(shopifyTotal)+', soit '+(diff>0?'+':'')+euro(diff)+' d\\'arrondi)</span>' : '');
+        } else {
+          bd.textContent='Saisissez le prix unitaire pour calculer le total.';
+        }
+      }
+
+      // Prix unitaire moyen mémorisé pour l'envoi (Shopify facture unit × qty).
+      window._invUnitToSend = (base>0) ? (grand/invQty) : 0;
     }
 
     function closeInvoice(){
@@ -2688,6 +3114,14 @@ export function dashboardPage(
         return;
       }
 
+      // Commande de groupe avec flocage : on facture le prix unitaire MOYEN
+      // (base + flocages réparti sur toutes les pièces), calculé en direct.
+      var unitToSend = price;
+      if(invFlockCount>0){
+        updateInvoiceTotal();
+        if(window._invUnitToSend>0) unitToSend = window._invUnitToSend;
+      }
+
       btn.disabled=true; btn.textContent='Envoi…';
       st.className='hint'; st.textContent='Application du prix, puis envoi…';
 
@@ -2695,7 +3129,7 @@ export function dashboardPage(
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
-          unitPrice:price,
+          unitPrice:unitToSend,
           message:document.getElementById('inv-msg').value
         })
       })

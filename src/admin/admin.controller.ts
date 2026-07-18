@@ -22,7 +22,12 @@ import {
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { EmailService } from '../shared/email.service';
-import { loginPage, dashboardPage, productionSheetPage } from './admin.view';
+import {
+  loginPage,
+  dashboardPage,
+  productionSheetPage,
+  groupSheetPage,
+} from './admin.view';
 
 // JSZip : construction d'archives en mémoire, API stable et sans streams.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -333,6 +338,29 @@ export class AdminController {
       return;
     }
     res.type('html').send(productionSheetPage(order));
+  }
+
+  /**
+   * GET /api/admin/quotes/:id/sheet — fiche de production d'une commande de
+   * GROUPE (le devis n'est pas encore une commande payée). Design commun +
+   * récap taille/couleur + liste des flocages, imprimable A4.
+   */
+  @Get('quotes/:id/sheet')
+  async groupSheet(
+    @Req() req: Request,
+    @Param('id') quoteId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.redirect('/api/admin');
+      return;
+    }
+    const quote = await this.data.getQuote(quoteId);
+    if (!quote) {
+      res.status(404).type('text').send('Devis introuvable.');
+      return;
+    }
+    res.type('html').send(groupSheetPage(quote));
   }
 
   /**

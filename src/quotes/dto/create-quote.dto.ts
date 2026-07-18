@@ -69,6 +69,52 @@ export class QuoteCoinDto {
   previews!: QuotePreviewDto[];
 }
 
+/** Une ligne d'une commande de groupe (une personne). */
+export class GroupRowDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  size!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  color!: string;
+
+  @IsOptional()
+  @IsString()
+  flock?: string;
+
+  @IsNumber()
+  @Min(1)
+  qty!: number;
+}
+
+/** Commande de groupe (textiles) : design commun + liste de personnes. */
+export class GroupOrderDto {
+  @IsString()
+  @IsNotEmpty()
+  productType!: string;
+
+  @IsOptional()
+  @IsString()
+  productLabel?: string;
+
+  @IsNumber()
+  @Min(1)
+  pieces!: number;
+
+  @IsOptional()
+  hasFlock?: boolean;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GroupRowDto)
+  rows!: GroupRowDto[];
+}
+
 /** Body de POST /api/quotes. */
 export class CreateQuoteDto {
   @IsDefined()
@@ -82,4 +128,11 @@ export class CreateQuoteDto {
   @ValidateNested()
   @Type(() => QuoteCoinDto)
   coin!: QuoteCoinDto;
+
+  /** Présent uniquement pour une commande de groupe (textiles). */
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => GroupOrderDto)
+  group?: GroupOrderDto;
 }

@@ -201,17 +201,54 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
       customer.message ? `Message : ${customer.message}` : null,
     ].filter(Boolean);
 
-    return {
-      line_items: [
+    // Commande de GROUPE (textiles) : une ligne de brouillon par personne, pour
+    // que l'atelier voie chaque taille / couleur / nom floqué. Sinon (coin,
+    // patch…), une seule ligne comme avant.
+    const group = dto.group;
+    let lineItems: CreateDraftOrderPayload['line_items'];
+    let tags = 'devis, coins, configurateur';
+
+    if (group && Array.isArray(group.rows) && group.rows.length) {
+      lineItems = group.rows.map((r) => {
+        const props: Array<{ name: string; value: string }> = [
+          { name: 'Taille', value: r.size },
+          { name: 'Couleur', value: r.color },
+        ];
+        if (r.name) props.push({ name: 'Nom / réf.', value: r.name });
+        if (r.flock) props.push({ name: 'Floquage', value: r.flock });
+        props.push({ name: 'Référence devis', value: quoteId });
+        return {
+          title: `${group.productLabel || 'Textile'} — ${r.size} / ${r.color}`,
+          price: '0.00', // devis : prix défini par l'équipe
+          quantity: r.qty,
+          custom: true,
+          properties: props,
+        };
+      });
+      tags = 'devis, groupe, textile, configurateur';
+    } else {
+      lineItems = [
         {
           title: coin.name,
-          // Prix 0 : c'est un devis, le montant sera défini par l'équipe.
           price: '0.00',
           quantity: coin.qty,
           custom: true,
           properties: properties.length ? properties : undefined,
         },
-      ],
+      ];
+    }
+
+    // En-tête de note enrichi pour une commande de groupe.
+    if (group) {
+      noteLines.unshift(
+        `COMMANDE DE GROUPE — ${group.productLabel || 'Textile'} · ` +
+          `${group.pieces} pièce(s)` +
+          (group.hasFlock ? ' · avec flocage (à chiffrer)' : ''),
+      );
+    }
+
+    return {
+      line_items: lineItems,
       customer: {
         email: customer.email,
         first_name: firstName,
@@ -220,7 +257,7 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
       },
       email: customer.email,
       note: noteLines.join('\n'),
-      tags: 'devis, coins, configurateur',
+      tags,
     };
   }
 
