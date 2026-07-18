@@ -1838,8 +1838,9 @@ export function dashboardPage(
              champ pour un identifiant et y réinjectait l'e-mail de connexion
              mémorisé à chaque rechargement. name=… l'écarte des gestionnaires
              de mots de passe. -->
-        <input id="search" type="search" name="dashboard-search"
-               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <input id="search" type="search" name="dashboard-search-${Date.now()}"
+               autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
+               data-form-type="other" data-lpignore="true" data-1p-ignore="true"
                placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
       </div>
 
@@ -3169,10 +3170,23 @@ export function dashboardPage(
     (function(){
       var s=document.getElementById('search');
       if(!s) return;
-      var clear=function(){ if(s.value){ s.value=''; filterCards(true); } };
+      /* Vrai seulement quand l'utilisateur a tapé : tant qu'il n'a pas touché au
+         champ, toute valeur qui apparaît vient du remplissage automatique. */
+      var typed=false;
+      s.addEventListener('keydown', function(){ typed=true; });
+      s.addEventListener('paste',   function(){ typed=true; });
+
+      var clear=function(){
+        if(!typed && s.value){ s.value=''; filterCards(true); }
+      };
       clear();
-      setTimeout(clear, 60);
-      setTimeout(clear, 300);
+      [60,150,300,600,1200].forEach(function(d){ setTimeout(clear, d); });
+
+      /* Chrome remplit parfois APRÈS le premier clic dans la page (ou au retour
+         d'onglet) : on surveille tant que l'utilisateur n'a rien saisi. */
+      s.addEventListener('focus', clear);
+      document.addEventListener('click', clear, true);
+      window.addEventListener('pageshow', function(){ typed=false; clear(); });
     })();
 
     filterCards(true);
