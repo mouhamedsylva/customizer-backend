@@ -498,6 +498,14 @@ body{
 .grp-list .num{text-align:right;font-variant-numeric:tabular-nums}
 .grp-list tfoot td{font-weight:800;background:var(--raise)}
 .grp-list .empty{color:var(--faint)}
+/* Pastille de couleur devant le nom de la teinte.
+   Bordure semi-opaque : sans elle, White et Ash disparaissent sur fond clair. */
+.color-cell{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.color-dot{
+  width:13px;height:13px;border-radius:50%;flex:0 0 13px;
+  border:1px solid rgba(0,0,0,.22);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.12)
+}
 
 /* Récap agrégé couleur × taille (production). */
 .grp-agg-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:6px}
@@ -1056,6 +1064,69 @@ function quoteStatus(q: Quote): { key: string; pill: string } {
 }
 
 /**
+ * Couleurs textiles : nom affiché -> code hex, pour la pastille de couleur.
+ * Les lignes d'une commande de groupe ne stockent que le NOM de la couleur
+ * (ex. « Royal Blue ») ; la source de vérité des codes est le configurateur
+ * (sections/configurateur.liquid, appels selColor). Toute couleur ajoutée
+ * là-bas doit l'être ici, sinon la pastille retombe sur un gris neutre.
+ */
+const COLOR_HEX: Record<string, string> = {
+  Ash: '#eff1f0',
+  Apricot: '#f5a623',
+  Atoll: '#3bb9e0',
+  Black: '#0a0a0a',
+  'Bottle Green': '#143f2e',
+  Brown: '#3a3130',
+  Burgundy: '#3d1f35',
+  Chocolate: '#4a3830',
+  'Cobalt Blue': '#1e32e6',
+  'Dark Grey': '#2e3944',
+  'Diva Blue': '#1e6b78',
+  'Fire Red': '#e01e1e',
+  Gold: '#f5c518',
+  'Kelly Green': '#2fa84f',
+  'Millennial Lilac': '#6e7bd8',
+  'Millennial Mint': '#9ee5c4',
+  Natural: '#e8e2d0',
+  Navy: '#1a2438',
+  'Navy Blue': '#1b2a5b',
+  Orange: '#f0500a',
+  'Orchid Green': '#7de01e',
+  'Orchid Pink': '#f5c8dc',
+  'Pacific Grey': '#8a8d91',
+  'Pixel Lime': '#a8e020',
+  'Radiant Purple': '#3a1e9e',
+  Red: '#a81e32',
+  'Royal Blue': '#1e4be0',
+  Sand: '#c4b49a',
+  Sky: '#9ed8f0',
+  'Solar Yellow': '#f5e518',
+  Sorbet: '#b01e78',
+  'Sport Grey': '#8a9499',
+  'Stone Blue': '#3e6b85',
+  'Sunset Orange': '#f5455e',
+  'Swimming Pool': '#5ed0c4',
+  'Urban Khaki': '#3a4130',
+  'Urban Orange': '#c43418',
+  'Urban Purple': '#1e1e6e',
+  'Used Black': '#2e3438',
+  White: '#ffffff',
+};
+
+/**
+ * Nom de couleur précédé de sa pastille.
+ * Couleur inconnue -> pastille grise + le nom reste lisible (pas de perte
+ * d'information si le configurateur ajoute une teinte non répertoriée ici).
+ */
+function colorCell(name: string): string {
+  if (!name) return '<span class="empty">—</span>';
+  const hex = COLOR_HEX[name] || '#d4d4d4';
+  return `<span class="color-cell"><span class="color-dot" style="background:${esc(
+    hex,
+  )}"></span>${esc(name)}</span>`;
+}
+
+/**
  * Agrège les lignes d'une commande de groupe en un tableau croisé
  * COULEUR × TAILLE (avec totaux) + la liste des flocages.
  * Sert au récap dans la carte devis ET à la fiche de production.
@@ -1119,57 +1190,6 @@ function groupAggregate(rows: any[]): {
   return { sizes, matrix, colTotals, grandTotal, flocks };
 }
 
-/** Rend le tableau croisé + la liste des flocages en HTML (carte et fiche). */
-function groupSummaryHtml(rows: any[]): string {
-  const agg = groupAggregate(rows);
-  if (!agg.matrix.length) return '';
-
-  const head =
-    `<tr><th>Couleur</th>${agg.sizes
-      .map((s) => `<th class="num">${esc(s)}</th>`)
-      .join('')}<th class="num">Total</th></tr>`;
-
-  const body = agg.matrix
-    .map(
-      (m) =>
-        `<tr><td>${esc(m.color)}</td>${agg.sizes
-          .map((s) => {
-            const n = m.counts[s] || 0;
-            return `<td class="num${n ? '' : ' zero'}">${n || '·'}</td>`;
-          })
-          .join('')}<td class="num tot">${m.total}</td></tr>`,
-    )
-    .join('');
-
-  const foot =
-    `<tr><td>Total</td>${agg.sizes
-      .map((s) => `<td class="num tot">${agg.colTotals[s] || 0}</td>`)
-      .join('')}<td class="num tot">${agg.grandTotal}</td></tr>`;
-
-  const flocksHtml = agg.flocks.length
-    ? `<div class="grp-flocks">
-         <div class="grp-flocks-lbl">Flocages (${agg.flocks.length})</div>
-         <div class="grp-flock-list">${agg.flocks
-           .map(
-             (f) =>
-               `<span class="grp-flock">${
-                 f.name ? esc(f.name) + ' → ' : ''
-               }<strong>${esc(f.text)}</strong> <em>${esc(f.size)}/${esc(
-                 f.color,
-               )}</em></span>`,
-           )
-           .join('')}</div>
-       </div>`
-    : '';
-
-  return `<div class="grp-agg-wrap">
-    <table class="grp-agg">
-      <thead>${head}</thead>
-      <tbody>${body}</tbody>
-      <tfoot>${foot}</tfoot>
-    </table>
-  </div>${flocksHtml}`;
-}
 
 function quoteCard(q: Quote, shopDomain: string): string {
   const d: any = q.quoteData || {};
@@ -1230,9 +1250,7 @@ function quoteCard(q: Quote, shopDomain: string): string {
       </div>
       ${
         group && groupRows.length
-          ? `<div class="section-lbl lbl">Récap production (par taille / couleur)</div>
-      ${groupSummaryHtml(groupRows)}
-      <div class="section-lbl lbl">Liste détaillée (${group.hasFlock ? 'flocage à chiffrer' : 'sans flocage'})</div>
+          ? `<div class="section-lbl lbl">Liste détaillée (${group.hasFlock ? 'flocage à chiffrer' : 'sans flocage'})</div>
       <div class="grp-list-wrap">
         <table class="grp-list">
           <thead><tr><th>Nom / réf.</th><th>Taille</th><th>Couleur</th><th>Floquage</th><th class="num">Qté</th></tr></thead>
@@ -1242,7 +1260,7 @@ function quoteCard(q: Quote, shopDomain: string): string {
                 (r) => `<tr>
                   <td>${esc(r.name || '—')}</td>
                   <td>${esc(r.size || '')}</td>
-                  <td>${esc(r.color || '')}</td>
+                  <td>${colorCell(r.color || '')}</td>
                   <td>${r.flock ? esc(r.flock) : '<span class="empty">—</span>'}</td>
                   <td class="num">${esc(r.qty || 1)}</td>
                 </tr>`,
