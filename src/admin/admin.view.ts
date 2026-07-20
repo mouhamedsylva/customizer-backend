@@ -1751,13 +1751,19 @@ export function dashboardPage(
 
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
   // Devis : « à traiter » (à chiffrer ou facture envoyée) vs « payés ».
-  const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
-  const nbOpen = quotes.length - nbPaid;
-  // Commandes de groupe : comptage séparé pour affichage distinct.
-  const nbGroup = quotes.filter((q) => {
+  const isGroupQuote = (q: Quote): boolean => {
     const d: any = q.quoteData || {};
     return d.group !== null && d.group !== undefined;
-  }).length;
+  };
+  const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
+  // « À traiter » exclut les groupes (onglet dédié) : le compteur doit refléter
+  // exactement ce que le filtre affiche, sinon la puce promet plus de résultats
+  // qu'elle n'en montre.
+  const nbOpen = quotes.filter(
+    (q) => q.draftStatus !== 'completed' && !isGroupQuote(q),
+  ).length;
+  // Commandes de groupe : comptage séparé pour affichage distinct.
+  const nbGroup = quotes.filter(isGroupQuote).length;
   // Commandes : comptage par étape de production (pour les filtres).
   const prodCounts: Record<string, number> = {};
   orders.forEach((o) => {
@@ -1840,12 +1846,11 @@ export function dashboardPage(
     <div class="toolbar">
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <!-- type=search + autocomplete=off : sans ça, le navigateur prenait ce
-             champ pour un identifiant et y réinjectait l'e-mail de connexion
-             mémorisé à chaque rechargement. name=… l'écarte des gestionnaires
-             de mots de passe. -->
-        <input id="search" type="search" name="dashboard-search-${Date.now()}"
-               value="" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <!-- type=text + autocomplete=off + readonly temporaire : empêche le 
+             navigateur de pré-remplir le champ avec l'e-mail de connexion.
+             Le readonly est retiré après 1 seconde en JS. -->
+        <input id="search" type="text" name="search-${Date.now()}" readonly
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                data-form-type="other" data-lpignore="true" data-1p-ignore="true"
                placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
       </div>
@@ -2910,8 +2915,9 @@ export function dashboardPage(
           } else if(quoteFilter==='paid'){
             matchStatus = (st==='paid');
           } else {
-            // filter='open': non payés et non-groupe
-            matchStatus = (st!=='paid');
+            // filter='open': non payés et non-groupe (les commandes de groupe
+            // ont leur propre onglet « 🎯 Commandes de groupe »).
+            matchStatus = (st!=='paid') && !isGrp;
           }
         }
         if(isOrders && orderFilter!=='all'){
@@ -3187,40 +3193,38 @@ export function dashboardPage(
     (function(){
       var s=document.getElementById('search');
       if(!s) return;
+      
+      // Retire readonly après que le navigateur ait tenté son autocomplétion
+      setTimeout(function(){ 
+        s.removeAttribute('readonly'); 
+        s.value = ''; // Force le vide une dernière fois
+      }, 1000);
+      
       /* Vrai seulement quand l'utilisateur a tapé : tant qu'il n'a pas touché au
          champ, toute valeur qui apparaît vient du remplissage automatique. */
       var typed=false;
       s.addEventListener('keydown', function(){ typed=true; });
       s.addEventListener('paste',   function(){ typed=true; });
+      s.addEventListener('input', function(){ typed=true; });
 
       var clear=function(){
         if(!typed && s.value){ 
           s.value=''; 
-          s.setAttribute('value', '');
           filterCards(true); 
         }
       };
       
-      // Nettoyage immédiat et répété pour contrer l'autocomplétion agressive
+      // Nettoyage immédiat et répété
       clear();
-      [10,50,100,200,400,800,1500].forEach(function(d){ setTimeout(clear, d); });
+      [100,300,600,1200].forEach(function(d){ setTimeout(clear, d); });
 
       /* Chrome remplit parfois APRÈS le premier clic dans la page (ou au retour
          d'onglet) : on surveille tant que l'utilisateur n'a rien saisi. */
-      s.addEventListener('focus', clear);
-      s.addEventListener('blur', clear);
+      s.addEventListener('focus', function(){
+        if(!typed && s.value) { s.value=''; filterCards(true); }
+      });
       document.addEventListener('click', clear, true);
       window.addEventListener('pageshow', function(){ typed=false; clear(); });
-      
-      // Observer pour détecter les changements de valeur par le navigateur
-      var observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-          if (mutation.type === 'attributes' && mutation.attributeName === 'value' && !typed) {
-            clear();
-          }
-        });
-      });
-      observer.observe(s, { attributes: true });
     })();
 
     filterCards(true);
