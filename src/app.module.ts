@@ -33,8 +33,17 @@ import { Admin } from './database/entities/admin.entity';
           config.get<string>('MYSQL_URL') ||
           config.get<string>('DATABASE_URL'),
         entities: [Design, Quote, Order, Setting, Admin],
-        // Crée/adapte les tables automatiquement au démarrage (étape 1).
-        synchronize: true,
+        // Adaptation automatique du schéma au démarrage.
+        //
+        // DANGER : synchronize fait ALTER/DROP pour aligner la base sur les
+        // entités. Renommer ou supprimer un champ DÉTRUIT la colonne et ses
+        // données, sans confirmation. Les tables existent déjà en production :
+        // laisser ceci actif n'apporte rien et risque tout.
+        //
+        // Opt-in explicite (et non « désactivé si NODE_ENV=production ») :
+        // NODE_ENV n'est pas défini sur l'instance Railway, un test sur sa
+        // valeur laisserait donc synchronize actif en production.
+        synchronize: config.get<string>('DB_SYNCHRONIZE') === 'true',
         // Railway MySQL n'exige pas de TLS strict ; on reste tolérant.
         autoLoadEntities: true,
       }),
