@@ -143,11 +143,25 @@ export class AdminService {
     return { orders, quotes, designs, newOrders, newQuotes };
   }
 
-  /** Devis, avec filtre de période optionnel (pour l'export). */
-  async getQuotes(period?: string): Promise<Quote[]> {
+  /**
+   * Devis, avec filtre de période optionnel.
+   *
+   * @param includePaid  true (défaut) : tous les devis, y compris ceux déjà
+   *   payés — nécessaire pour l'export CSV, qui doit rester exhaustif.
+   *   false : masque les devis devenus des commandes (draftStatus
+   *   'completed'). Le dashboard les exclut, car la commande correspondante
+   *   est déjà listée dans l'onglet Commandes : l'y laisser ferait compter
+   *   la même vente deux fois.
+   */
+  async getQuotes(period?: string, includePaid = true): Promise<Quote[]> {
     const qb = this.quotes.createQueryBuilder('q').select('q.id', 'id');
     const since = periodStart(period);
     if (since) qb.andWhere('q.createdAt >= :since', { since });
+    if (!includePaid) {
+      qb.andWhere('(q.draftStatus IS NULL OR q.draftStatus <> :done)', {
+        done: 'completed',
+      });
+    }
 
     const ids = await qb
       .orderBy('q.createdAt', 'DESC')

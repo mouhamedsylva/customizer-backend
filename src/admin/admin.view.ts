@@ -1779,14 +1779,14 @@ export function dashboardPage(
        </div>`;
 
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
-  // Devis : « à traiter » (à chiffrer ou facture envoyée) vs « payés ».
   const isGroupQuote = (q: Quote): boolean => {
     const d: any = q.quoteData || {};
     return d.group !== null && d.group !== undefined;
   };
-  const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
-  // « À traiter » = tous les non-payés, groupes compris (voir filterCards).
-  const nbOpen = quotes.length - nbPaid;
+  // Les devis payés sont exclus en amont (AdminService.getQuotes, includePaid
+  // = false) : devenus des commandes, ils vivent désormais dans l'onglet
+  // Commandes. Tout ce qui arrive ici est donc « à traiter ».
+  const nbOpen = quotes.length;
   // Commandes de groupe : comptage séparé pour affichage distinct.
   const nbGroup = quotes.filter(isGroupQuote).length;
   // Commandes : comptage par étape de production (pour les filtres).
@@ -1951,9 +1951,6 @@ export function dashboardPage(
                </button>
                <button class="chip-filter" data-qf="group" onclick="filterQuotes(this)">
                  🎯 Commandes de groupe <span class="count mono">${nbGroup}</span>
-               </button>
-               <button class="chip-filter" data-qf="paid" onclick="filterQuotes(this)">
-                 Payés <span class="count mono">${nbPaid}</span>
                </button>
                <button class="chip-filter" data-qf="all" onclick="filterQuotes(this)">
                  Tous <span class="count mono">${quotes.length}</span>
@@ -2294,7 +2291,7 @@ export function dashboardPage(
       document.getElementById('p-'+t.dataset.tab).classList.add('active');
       var s=document.getElementById('search');s.value='';filterCards(true);
     });});
-    /* Filtre courant de l'onglet Devis : 'open' (à traiter), 'paid', 'all'. */
+    /* Filtre courant de l'onglet Devis : 'open' (à traiter), 'group', 'all'. */
     var quoteFilter='open';
     /* Filtre courant de l'onglet Commandes (étape de production). */
     var orderFilter='all';
@@ -2933,18 +2930,11 @@ export function dashboardPage(
 
         var matchStatus = true;
         if(isQuotes && quoteFilter!=='all'){
-          var st=c.getAttribute('data-qstatus')||'open';
           var isGrp=c.getAttribute('data-group')==='true';
-          if(quoteFilter==='group'){
-            matchStatus = isGrp;
-          } else if(quoteFilter==='paid'){
-            matchStatus = (st==='paid');
-          } else {
-            // filter='open' : tous les devis non payés, groupes compris.
-            // L'onglet « Commandes de groupe » est un raccourci, pas une
-            // catégorie exclusive : un devis de groupe reste à traiter.
-            matchStatus = (st!=='paid');
-          }
+          // Plus de filtre « payés » : un devis payé est devenu une commande
+          // et n'est plus servi ici (getQuotes, includePaid=false). Reste
+          // « groupe » (raccourci) et « à traiter » (= tout le reste).
+          matchStatus = (quoteFilter==='group') ? isGrp : true;
         }
         if(isOrders && orderFilter!=='all'){
           matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;

@@ -91,7 +91,9 @@ export class AdminController {
 
     const [orders, quotes, designs, me] = await Promise.all([
       this.data.getOrders(filters),
-      this.data.getQuotes(filters.period),
+      // Dashboard : un devis payé est devenu une commande, il n'a plus sa
+      // place dans la liste des devis (il figure dans l'onglet Commandes).
+      this.data.getQuotes(filters.period, false),
       this.data.getDesigns(),
       this.currentAdmin(req),
     ]);
