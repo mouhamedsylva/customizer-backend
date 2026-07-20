@@ -1186,7 +1186,8 @@ function quoteCard(q: Quote, shopDomain: string): string {
   const search = esc([c.nom, c.email, coin.name].join(' ').toLowerCase());
   const st = quoteStatus(q);
   const isPaid = st.key === 'paid';
-  return `<div class="card" data-search="${search}" data-qstatus="${st.key}" id="quote-${esc(q.id)}">
+  const isGroup = !!group;
+  return `<div class="card" data-search="${search}" data-qstatus="${st.key}" data-group="${isGroup}" id="quote-${esc(q.id)}">
     <div class="head" onclick="toggleCard(this)">
       <div class="avatar">${esc(initials(c.nom))}</div>
       <div>
@@ -1752,6 +1753,11 @@ export function dashboardPage(
   // Devis : « à traiter » (à chiffrer ou facture envoyée) vs « payés ».
   const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
   const nbOpen = quotes.length - nbPaid;
+  // Commandes de groupe : comptage séparé pour affichage distinct.
+  const nbGroup = quotes.filter((q) => {
+    const d: any = q.quoteData || {};
+    return d.group !== null && d.group !== undefined;
+  }).length;
   // Commandes : comptage par étape de production (pour les filtres).
   const prodCounts: Record<string, number> = {};
   orders.forEach((o) => {
@@ -1839,7 +1845,7 @@ export function dashboardPage(
              mémorisé à chaque rechargement. name=… l'écarte des gestionnaires
              de mots de passe. -->
         <input id="search" type="search" name="dashboard-search-${Date.now()}"
-               autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
+               value="" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
                data-form-type="other" data-lpignore="true" data-1p-ignore="true"
                placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
       </div>
@@ -1912,6 +1918,9 @@ export function dashboardPage(
           ? `<div class="subfilters" id="quote-filters">
                <button class="chip-filter active" data-qf="open" onclick="filterQuotes(this)">
                  À traiter <span class="count mono">${nbOpen}</span>
+               </button>
+               <button class="chip-filter" data-qf="group" onclick="filterQuotes(this)">
+                 🎯 Commandes de groupe <span class="count mono">${nbGroup}</span>
                </button>
                <button class="chip-filter" data-qf="paid" onclick="filterQuotes(this)">
                  Payés <span class="count mono">${nbPaid}</span>
@@ -2895,7 +2904,15 @@ export function dashboardPage(
         var matchStatus = true;
         if(isQuotes && quoteFilter!=='all'){
           var st=c.getAttribute('data-qstatus')||'open';
-          matchStatus = (quoteFilter==='paid') ? (st==='paid') : (st!=='paid');
+          var isGrp=c.getAttribute('data-group')==='true';
+          if(quoteFilter==='group'){
+            matchStatus = isGrp;
+          } else if(quoteFilter==='paid'){
+            matchStatus = (st==='paid');
+          } else {
+            // filter='open': non payés et non-groupe
+            matchStatus = (st!=='paid');
+          }
         }
         if(isOrders && orderFilter!=='all'){
           matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;
@@ -3177,16 +3194,33 @@ export function dashboardPage(
       s.addEventListener('paste',   function(){ typed=true; });
 
       var clear=function(){
-        if(!typed && s.value){ s.value=''; filterCards(true); }
+        if(!typed && s.value){ 
+          s.value=''; 
+          s.setAttribute('value', '');
+          filterCards(true); 
+        }
       };
+      
+      // Nettoyage immédiat et répété pour contrer l'autocomplétion agressive
       clear();
-      [60,150,300,600,1200].forEach(function(d){ setTimeout(clear, d); });
+      [10,50,100,200,400,800,1500].forEach(function(d){ setTimeout(clear, d); });
 
       /* Chrome remplit parfois APRÈS le premier clic dans la page (ou au retour
          d'onglet) : on surveille tant que l'utilisateur n'a rien saisi. */
       s.addEventListener('focus', clear);
+      s.addEventListener('blur', clear);
       document.addEventListener('click', clear, true);
       window.addEventListener('pageshow', function(){ typed=false; clear(); });
+      
+      // Observer pour détecter les changements de valeur par le navigateur
+      var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'value' && !typed) {
+            clear();
+          }
+        });
+      });
+      observer.observe(s, { attributes: true });
     })();
 
     filterCards(true);
