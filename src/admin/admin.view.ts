@@ -504,7 +504,8 @@ body{
 .color-dot{
   width:13px;height:13px;border-radius:50%;flex:0 0 13px;
   border:1px solid rgba(0,0,0,.22);
-  box-shadow:inset 0 1px 2px rgba(0,0,0,.12)
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.12);
+  -webkit-print-color-adjust:exact;print-color-adjust:exact
 }
 
 /* Récap agrégé couleur × taille (production). */
@@ -1520,6 +1521,16 @@ export function groupSheetPage(q: Quote): string {
   .flk{display:flex;flex-wrap:wrap;gap:7px}
   .flk span{background:#f6f4f0;border:1px solid #e4e0d9;border-radius:7px;padding:5px 10px;font-size:12.5px}
   .flk em{color:#a29a8e;font-style:normal;font-size:11px}
+  /* Pastille de couleur. Le récap croisé centre ses cellules : la pastille
+     s'aligne à gauche avec le nom, comme dans la liste détaillée. */
+  .color-cell{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+  .color-dot{
+    width:12px;height:12px;border-radius:50%;flex:0 0 12px;
+    border:1px solid rgba(0,0,0,.25);
+    /* print-color-adjust : sans cela le navigateur retire les aplats à
+       l'impression et l'atelier reçoit des pastilles blanches. */
+    -webkit-print-color-adjust:exact;print-color-adjust:exact
+  }
   footer.ps-foot{margin-top:22px;padding-top:12px;border-top:1px solid #e4e0d9;
     font-size:11px;color:#a29a8e;display:flex;justify-content:space-between}
   @media print{ body{background:#fff;padding:0} .toolbar{display:none}
@@ -1595,7 +1606,7 @@ export function groupSheetPage(q: Quote): string {
           ${rows
             .map(
               (r, i) =>
-                `<tr><td>${i + 1}</td><td>${esc(r.name || '—')}</td><td>${esc(r.size || '')}</td><td>${esc(r.color || '')}</td><td>${r.flock ? esc(r.flock) : '—'}</td><td class="num">${esc(r.qty || 1)}</td></tr>`,
+                `<tr><td>${i + 1}</td><td>${esc(r.name || '—')}</td><td>${esc(r.size || '')}</td><td>${colorCell(r.color || '')}</td><td>${r.flock ? esc(r.flock) : '—'}</td><td class="num">${esc(r.qty || 1)}</td></tr>`,
             )
             .join('')}
         </tbody>
@@ -1619,7 +1630,7 @@ function groupSheetAggHtml(rows: any[]): string {
   const body = agg.matrix
     .map(
       (m) =>
-        `<tr><td>${esc(m.color)}</td>${agg.sizes
+        `<tr><td>${colorCell(m.color)}</td>${agg.sizes
           .map((s) => `<td>${m.counts[s] || '·'}</td>`)
           .join('')}<td class="tot">${m.total}</td></tr>`,
     )
