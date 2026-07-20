@@ -1756,12 +1756,8 @@ export function dashboardPage(
     return d.group !== null && d.group !== undefined;
   };
   const nbPaid = quotes.filter((q) => q.draftStatus === 'completed').length;
-  // « À traiter » exclut les groupes (onglet dédié) : le compteur doit refléter
-  // exactement ce que le filtre affiche, sinon la puce promet plus de résultats
-  // qu'elle n'en montre.
-  const nbOpen = quotes.filter(
-    (q) => q.draftStatus !== 'completed' && !isGroupQuote(q),
-  ).length;
+  // « À traiter » = tous les non-payés, groupes compris (voir filterCards).
+  const nbOpen = quotes.length - nbPaid;
   // Commandes de groupe : comptage séparé pour affichage distinct.
   const nbGroup = quotes.filter(isGroupQuote).length;
   // Commandes : comptage par étape de production (pour les filtres).
@@ -2915,9 +2911,10 @@ export function dashboardPage(
           } else if(quoteFilter==='paid'){
             matchStatus = (st==='paid');
           } else {
-            // filter='open': non payés et non-groupe (les commandes de groupe
-            // ont leur propre onglet « 🎯 Commandes de groupe »).
-            matchStatus = (st!=='paid') && !isGrp;
+            // filter='open' : tous les devis non payés, groupes compris.
+            // L'onglet « Commandes de groupe » est un raccourci, pas une
+            // catégorie exclusive : un devis de groupe reste à traiter.
+            matchStatus = (st!=='paid');
           }
         }
         if(isOrders && orderFilter!=='all'){
