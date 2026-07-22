@@ -57,19 +57,9 @@ const STYLE = `
   --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
   --radius:14px;
 }
-@media (prefers-color-scheme:dark){
-  :root{
-    --paper:#16181c; --surface:#1d2025; --raise:#23272e;
-    --ink:#eceae5; --muted:#9a938a; --faint:#6a655d;
-    --line:#2c3037; --line-soft:#24272d;
-    --accent:#f4763e; --accent-soft:#3a251c;
-    --ok:#6fbf83; --ok-soft:#1f2f24;
-    --warn:#e0a95c; --warn-soft:#332a19;
-    --danger:#f0705f; --danger-soft:#3a1f1c;
-    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
-    --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 18px 40px rgba(0,0,0,.5);
-  }
-}
+/* Thème CLAIR par défaut : plus de bascule automatique sur la préférence
+   système. Le sombre ne s'applique que si l'utilisateur le choisit
+   explicitement (data-theme="dark", mémorisé dans localStorage). */
 :root[data-theme="light"]{
   --paper:#fbfaf8; --surface:#ffffff; --raise:#f6f4f0;
   --ink:#1b1f24; --muted:#8b8478; --faint:#b3ada2;
@@ -80,15 +70,20 @@ const STYLE = `
   --shadow:0 1px 2px rgba(27,31,36,.04),0 8px 24px rgba(27,31,36,.05);
   --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
 }
+/* Thème sombre — palette Night Owl (Sarah Drasner, VS Code).
+   Bleu nuit profond plutôt que gris neutre, accents saturés froids.
+   Couleurs d'origine : fond #011627, panneaux #0b2942, texte #d6deeb,
+   accent cyan #7fdbca, bleu #82aaff, orange #f78c6c, rouge #ef5350. */
 :root[data-theme="dark"]{
-  --paper:#16181c; --surface:#1d2025; --raise:#23272e;
-  --ink:#eceae5; --muted:#9a938a; --faint:#6a655d;
-  --line:#2c3037; --line-soft:#24272d;
-  --accent:#f4763e; --accent-soft:#3a251c;
-  --ok:#6fbf83; --ok-soft:#1f2f24; --warn:#e0a95c; --warn-soft:#332a19;
-  --danger:#f0705f; --danger-soft:#3a1f1c;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
-  --shadow-hover:0 2px 6px rgba(0,0,0,.4),0 18px 40px rgba(0,0,0,.5);
+  --paper:#011627; --surface:#0b2942; --raise:#1d3b53;
+  --ink:#d6deeb; --muted:#8badc1; --faint:#5f7e97;
+  --line:#1d3b53; --line-soft:#122d42;
+  --accent:#7fdbca; --accent-soft:#0e3a3a;
+  --ok:#addb67; --ok-soft:#16351f;
+  --warn:#ecc48d; --warn-soft:#3a2f1c;
+  --danger:#ef5350; --danger-soft:#3d1f22;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.45);
+  --shadow-hover:0 2px 6px rgba(0,0,0,.5),0 18px 40px rgba(0,0,0,.6);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -303,8 +298,7 @@ body{
 .pill.prod.doing{background:var(--warn-soft);color:var(--warn)}
 .pill.prod.ready{background:#e6eefc;color:#2b57c4}
 .pill.prod.done{background:var(--ok-soft);color:var(--ok)}
-:root[data-theme="dark"] .pill.prod.ready{background:#1c2740;color:#7fa4f0}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.prod.ready{background:#1c2740;color:#7fa4f0}}
+:root[data-theme="dark"] .pill.prod.ready{background:#12314f;color:#82aaff}
 
 .steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .step{
@@ -824,7 +818,9 @@ function shell(body: string): string {
   try{var t=localStorage.getItem(KEY);if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
   window.toggleTheme=function(){
     var cur=document.documentElement.getAttribute('data-theme');
-    var next=cur==='dark'?'light':(cur==='light'?'dark':(matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark'));
+    // Défaut = clair : un premier clic passe donc au sombre, quelle que
+    // soit la préférence système.
+    var next = (cur === 'dark') ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme',next);
     try{localStorage.setItem(KEY,next);}catch(e){}
   };
