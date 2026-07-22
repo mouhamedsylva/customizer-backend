@@ -89,11 +89,14 @@ export class AdminController {
       sort: String(req.query.sort || 'date_desc'),
     };
 
-    const [orders, quotes, designs, me] = await Promise.all([
+    const [orders, quotes, allQuotes, designs, me] = await Promise.all([
       this.data.getOrders(filters),
       // Dashboard : un devis payé est devenu une commande, il n'a plus sa
       // place dans la liste des devis (il figure dans l'onglet Commandes).
       this.data.getQuotes(filters.period, false),
+      // Tous les devis, payés compris : sert à rattacher une commande de groupe
+      // à son devis d'origine (liste des personnes) sur la carte commande.
+      this.data.getQuotes(filters.period, true),
       this.data.getDesigns(),
       this.currentAdmin(req),
     ]);
@@ -106,6 +109,7 @@ export class AdminController {
         dashboardPage(orders, quotes, designs, frontendUrl, shopDomain, {
           filters,
           me: me || undefined,
+          allQuotes,
         }),
       );
   }

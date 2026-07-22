@@ -985,7 +985,51 @@ function prodPill(status: string): string {
   return `<span class="pill prod ${st.cls}">${st.label}</span>`;
 }
 
-function orderCard(o: Order): string {
+/* Bloc « liste des personnes » sur une carte COMMANDE.
+   Une commande de groupe naît d'un devis : la liste (tailles, couleurs, noms
+   floqués) vit dans quoteData.group, pas dans la commande Shopify. Sans ce
+   rappel, l'atelier devrait rouvrir le devis d'origine pour produire.
+   Rendu identique à la carte devis — mêmes helpers, pas de duplication. */
+function groupBlockForOrder(q?: Quote): string {
+  if (!q) return '';
+  const d: any = q.quoteData || {};
+  const group: any = d.group || null;
+  const rows: any[] = group && Array.isArray(group.rows) ? group.rows : [];
+  if (!rows.length) return '';
+
+  const total = group.pieces || rows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0);
+  return `<div class="section-lbl lbl">
+      Commande de groupe · ${esc(group.productLabel || 'Textile')}
+      <span class="badge-group">Groupe</span>
+      <a class="mono" style="float:right;font-size:10px;cursor:pointer"
+         onclick="gotoCard('quotes','quote-${esc(q.id)}')">Devis d'origine ›</a>
+    </div>
+    <div class="grp-list-wrap">
+      <table class="grp-list">
+        <thead><tr><th>Nom / réf.</th><th>Taille</th><th>Couleur</th><th>Floquage</th><th class="num">Qté</th></tr></thead>
+        <tbody>
+          ${rows
+            .map(
+              (r) => `<tr>
+                <td>${esc(r.name || '—')}</td>
+                <td>${esc(r.size || '')}</td>
+                <td>${colorCell(r.color || '')}</td>
+                <td>${r.flock ? esc(r.flock) : '<span class="empty">—</span>'}</td>
+                <td class="num">${esc(r.qty || 1)}</td>
+              </tr>`,
+            )
+            .join('')}
+        </tbody>
+        <tfoot><tr><td colspan="4">Total</td><td class="num">${total}</td></tr></tfoot>
+      </table>
+    </div>`;
+}
+
+/* @param srcQuote  Devis à l'origine de la commande, s'il y en a un
+     (rapproché via Quote.paidOrderId). Sert à afficher la liste des personnes
+     d'une commande de groupe : sans ce lien, l'atelier devrait retrouver le
+     devis à la main pour connaître les tailles et les noms floqués. */
+function orderCard(o: Order, srcQuote?: Quote): string {
   const items = Array.isArray(o.lineItems) ? o.lineItems : [];
   const nbItems = items.reduce((s: number, li: any) => s + (li.quantity || 0), 0);
   const productNames = items.map((li: any) => li.title).filter(Boolean);
@@ -1013,6 +1057,7 @@ function orderCard(o: Order): string {
     </div>
 
     <div class="body">
+      ${groupBlockForOrder(srcQuote)}
       <!-- Suivi de production -->
       <div class="section-lbl lbl">Suivi de production</div>
       <div class="steps" id="steps-${id}">
@@ -1712,6 +1757,10 @@ export function dashboardPage(
     filters?: DashboardFilters;
     /** Admin connecté : seul l'owner voit la gestion des comptes. */
     me?: { id: string; email: string; role: 'owner' | 'admin' };
+    /** TOUS les devis, payés compris.  n'en contient que les non-payés
+        (ils deviennent des commandes) : il faut cette liste complète pour
+        rattacher une commande à son devis d'origine. */
+    allQuotes?: Quote[];
   } = {},
 ): string {
   const me = extra.me;
@@ -1773,6 +1822,16 @@ export function dashboardPage(
          <p>Rien de nouveau.</p>
          <small>Les commandes et devis arrivés depuis votre dernière visite s'afficheront ici.</small>
        </div>`;
+
+  /* Index devis payé -> commande. La liste des personnes d'une commande de
+     groupe vit dans le devis (quoteData.group) : cet index permet de l'afficher
+     directement sur la carte commande, sans requête ni recherche à la main.
+     NB : les devis payés sont exclus de la liste servie au dashboard
+     (getQuotes includePaid=false), on interroge donc allQuotes. */
+  const quoteByPaidOrder = new Map<string, Quote>();
+  (extra.allQuotes || quotes).forEach((q) => {
+    if (q.paidOrderId) quoteByPaidOrder.set(String(q.paidOrderId), q);
+  });
 
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
   const isGroupQuote = (q: Quote): boolean => {
@@ -1931,7 +1990,7 @@ export function dashboardPage(
                  label: 'Filtrer par période',
                })}
              </div>
-             ${orders.map(orderCard).join('')}
+             ${orders.map((o) => orderCard(o, quoteByPaidOrder.get(String(o.shopifyOrderId)))).join('')}
              <div class="empty-state" id="orders-none" style="display:none">
                <div class="ico">✓</div><p>Aucune commande dans cette catégorie.</p>
              </div>`
