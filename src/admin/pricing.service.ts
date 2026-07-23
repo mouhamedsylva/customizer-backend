@@ -37,8 +37,8 @@ export type Pricing = Record<ProductKey, number>;
  */
 const DEFAULTS: Pricing = {
   sweatshirt: 60,
-  tshirt: 29.4,
-  tshirt_polyester: 29.4,
+  tshirt: 29.5,
+  tshirt_polyester: 29.5,
   coins: 2.45,
   drapeaux: 19.9,
   patches: 2.45,
