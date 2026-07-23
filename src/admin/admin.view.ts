@@ -417,6 +417,12 @@ body{
   background:var(--accent);color:#fff;border-radius:9px;
   font-size:10.5px;font-weight:800;line-height:17px;text-align:center;
 }
+/* Rappel visuel quand une nouvelle commande arrive (badge live). */
+@keyframes bellRing{
+  0%,100%{transform:rotate(0)}
+  20%{transform:rotate(-13deg)}40%{transform:rotate(11deg)}
+  60%{transform:rotate(-7deg)}80%{transform:rotate(4deg)}
+}
 
 /* Panneau déroulant, ancré sous la cloche */
 .notif-pop{
@@ -990,37 +996,83 @@ function prodPill(status: string): string {
    floqués) vit dans quoteData.group, pas dans la commande Shopify. Sans ce
    rappel, l'atelier devrait rouvrir le devis d'origine pour produire.
    Rendu identique à la carte devis — mêmes helpers, pas de duplication. */
-function groupBlockForOrder(q?: Quote): string {
-  if (!q) return '';
-  const d: any = q.quoteData || {};
-  const group: any = d.group || null;
-  const rows: any[] = group && Array.isArray(group.rows) ? group.rows : [];
+/** Lit une propriété de line item par nom (insensible à la casse). */
+function propVal(li: any, name: string): string {
+  const props: Array<{ name: string; value: string }> = Array.isArray(li?.properties) ? li.properties : [];
+  const p = props.find((x) => String(x.name).toLowerCase() === name.toLowerCase());
+  return p ? String(p.value) : '';
+}
+
+/**
+ * Reconstruit les lignes d'une commande de groupe à partir des line items.
+ * Les groupes passent désormais par le PANIER (plus par un devis) : chaque
+ * ligne porte les propriétés Personne / Liste / Ligne posées au checkout.
+ * On détecte un groupe dès qu'au moins un item porte la propriété « Liste ».
+ */
+function groupRowsFromItems(items: any[]): { rows: any[]; label: string } | null {
+  const rows: any[] = [];
+  let label = '';
+  for (const li of items) {
+    const liste = propVal(li, 'Liste');
+    if (!liste) continue; // item hors groupe (ex. add-on manche)
+    if (!label) label = liste;
+    rows.push({
+      name: propVal(li, 'Personne') || '—',
+      size: propVal(li, 'Taille'),
+      // Détails = « Couleur : X » côté panier ; on isole le nom lisible.
+      color: (propVal(li, 'Détails') || '').replace(/^\s*couleur\s*:\s*/i, ''),
+      flock: propVal(li, 'Personne'), // nom floqué = identifiant de la ligne
+      qty: Number(li.quantity) || 1,
+    });
+  }
+  return rows.length ? { rows, label } : null;
+}
+
+function groupBlockForOrder(q?: Quote, items?: any[]): string {
+  // 1) Source privilégiée : les line items de la commande (flux panier actuel).
+  let rows: any[] = [];
+  let productLabel = 'Textile';
+  let quoteLink = '';
+
+  const fromItems = Array.isArray(items) ? groupRowsFromItems(items) : null;
+  if (fromItems) {
+    rows = fromItems.rows;
+    productLabel = fromItems.label || 'Groupe';
+  } else if (q) {
+    // 2) Repli : ancien flux devis (commandes de groupe historiques).
+    const d: any = q.quoteData || {};
+    const group: any = d.group || null;
+    rows = group && Array.isArray(group.rows) ? group.rows : [];
+    if (rows.length) {
+      productLabel = group.productLabel || 'Textile';
+      quoteLink = `<a class="mono" style="float:right;font-size:10px;cursor:pointer"
+         onclick="gotoCard('quotes','quote-${esc(q.id)}')">Devis d'origine ›</a>`;
+    }
+  }
   if (!rows.length) return '';
 
-  const total = group.pieces || rows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0);
+  const total = rows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0);
   return `<div class="section-lbl lbl">
-      Commande de groupe · ${esc(group.productLabel || 'Textile')}
+      Commande de groupe · ${esc(productLabel)}
       <span class="badge-group">Groupe</span>
-      <a class="mono" style="float:right;font-size:10px;cursor:pointer"
-         onclick="gotoCard('quotes','quote-${esc(q.id)}')">Devis d'origine ›</a>
+      ${quoteLink}
     </div>
     <div class="grp-list-wrap">
       <table class="grp-list">
-        <thead><tr><th>Nom / réf.</th><th>Taille</th><th>Couleur</th><th>Floquage</th><th class="num">Qté</th></tr></thead>
+        <thead><tr><th>Nom floqué</th><th>Taille</th><th>Couleur</th><th class="num">Qté</th></tr></thead>
         <tbody>
           ${rows
             .map(
               (r) => `<tr>
-                <td>${esc(r.name || '—')}</td>
+                <td>${r.name ? esc(r.name) : '<span class="empty">—</span>'}</td>
                 <td>${esc(r.size || '')}</td>
                 <td>${colorCell(r.color || '')}</td>
-                <td>${r.flock ? esc(r.flock) : '<span class="empty">—</span>'}</td>
                 <td class="num">${esc(r.qty || 1)}</td>
               </tr>`,
             )
             .join('')}
         </tbody>
-        <tfoot><tr><td colspan="4">Total</td><td class="num">${total}</td></tr></tfoot>
+        <tfoot><tr><td colspan="3">Total</td><td class="num">${total}</td></tr></tfoot>
       </table>
     </div>`;
 }
@@ -1040,12 +1092,18 @@ function orderCard(o: Order, srcQuote?: Quote): string {
   const prod = o.productionStatus || 'to_produce';
   const id = esc(o.shopifyOrderId);
 
-  return `<div class="card" data-search="${search}" data-prod="${esc(prod)}" id="card-${id}">
+  // Un groupe est détecté si une ligne porte la propriété « Liste » (flux
+  // panier), ou via l'ancien devis source. Sert au filtre + badge.
+  const groupBlock = groupBlockForOrder(srcQuote, items);
+  const isGroup = !!groupBlock;
+
+  return `<div class="card" data-search="${search}" data-prod="${esc(prod)}" data-group="${isGroup}" id="card-${id}">
     <div class="head" onclick="toggleCard(this)">
       <div class="avatar">${esc(initials(o.customerName))}</div>
       <div>
         <div class="id mono">${esc(o.orderNumber || '#' + o.shopifyOrderId)}
           ${o.seen ? '' : '<span class="badge-new">nouveau</span>'}
+          ${isGroup ? '<span class="badge-group">Groupe</span>' : ''}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
       </div>
@@ -1057,7 +1115,7 @@ function orderCard(o: Order, srcQuote?: Quote): string {
     </div>
 
     <div class="body">
-      ${groupBlockForOrder(srcQuote)}
+      ${groupBlock}
       <!-- Suivi de production -->
       <div class="section-lbl lbl">Suivi de production</div>
       <div class="steps" id="steps-${id}">
@@ -1850,6 +1908,15 @@ export function dashboardPage(
     const k = o.productionStatus || 'to_produce';
     prodCounts[k] = (prodCounts[k] || 0) + 1;
   });
+  // Commandes de groupe (flux panier) : au moins une ligne porte « Liste ».
+  const orderIsGroup = (o: Order): boolean => {
+    const items = Array.isArray(o.lineItems) ? o.lineItems : [];
+    return items.some((li: any) => {
+      const props = Array.isArray(li?.properties) ? li.properties : [];
+      return props.some((p: any) => String(p.name).toLowerCase() === 'liste' && p.value);
+    });
+  };
+  const nbOrderGroup = orders.filter(orderIsGroup).length;
   // Commandes encore à fabriquer (indicateur du bandeau de stats).
   const nbToMake = orders.filter(
     (o) => (o.productionStatus || 'to_produce') !== 'shipped',
@@ -1868,7 +1935,7 @@ export function dashboardPage(
       <div class="bell-wrap">
         <button class="theme-btn" id="bell-btn" onclick="toggleNotifs(event)" title="Nouveautés depuis votre dernière visite">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
-          ${nbNew ? `<span class="bell-dot">${nbNew}</span>` : ''}
+          <span class="bell-dot" id="bell-dot"${nbNew ? '' : ' style="display:none"'}>${nbNew || ''}</span>
         </button>
         <div class="notif-pop" id="notif-pop">
           <div class="notif-head">
@@ -1977,6 +2044,7 @@ export function dashboardPage(
                          string,
                        ],
                    ),
+                   ['group', `🎯 Commandes de groupe (${nbOrderGroup})`] as [string, string],
                  ],
                  'all',
                  {
@@ -2327,13 +2395,39 @@ export function dashboardPage(
         if(!r.ok) return;
         var s=await r.json();
         if(!s||!s.ok) return;
-        if(dashChanged(s)) dashPending=true;
+        if(dashChanged(s)){
+          dashPending=true;
+          // Badge IMMÉDIAT (sans attendre le reload différé) : dès qu'une
+          // nouvelle commande/devis est détecté, la cloche se met à jour.
+          bumpBell(s);
+        }
       }catch(e){/* réseau indisponible : on réessaiera au prochain tick */}
 
-      // Recharge dès qu'un changement est en attente ET que l'utilisateur est libre.
+      // Recharge dès qu'un changement est en attente ET que l'utilisateur est
+      // libre (pour rafraîchir la liste complète des cartes).
       if(dashPending && !dashBusy()){
         location.reload();
       }
+    }
+
+    /* Met à jour la pastille de la cloche en direct, sans recharger la page.
+       Reflète le total (commandes + devis) non vus renvoyé par /status. */
+    function bumpBell(s){
+      var total=(Number(s.newOrders)||0)+(Number(s.newQuotes)||0);
+      var dot=document.getElementById('bell-dot');
+      if(!dot) return;
+      if(total>0){
+        dot.textContent=total;
+        dot.style.display='';
+        // Petit rappel visuel que quelque chose est arrivé.
+        var btn=document.getElementById('bell-btn');
+        if(btn){ btn.style.animation='none'; void btn.offsetWidth; btn.style.animation='bellRing .5s ease'; }
+      }else{
+        dot.style.display='none';
+      }
+      // Mémorise les nouveaux compteurs pour ne pas re-sonner au tick suivant.
+      DASH_STATE.newOrders=Number(s.newOrders)||0;
+      DASH_STATE.newQuotes=Number(s.newQuotes)||0;
     }
     setInterval(dashCheck, AUTO_REFRESH_MS);
     // Vérifie aussi quand l'utilisateur revient sur l'onglet.
@@ -2992,7 +3086,11 @@ export function dashboardPage(
           matchStatus = (quoteFilter==='group') ? isGrp : true;
         }
         if(isOrders && orderFilter!=='all'){
-          matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;
+          if(orderFilter==='group'){
+            matchStatus = c.getAttribute('data-group')==='true';
+          } else {
+            matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;
+          }
         }
         if(matchText && matchStatus) matched.push(c); else c.style.display='none';
       });
