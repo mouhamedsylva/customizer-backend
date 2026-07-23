@@ -217,6 +217,17 @@ body{
 .pg-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .pg-btn:disabled{opacity:.4;cursor:default}
 .pg-info{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+/* Numéros de page cliquables (pagination standard). */
+.pg-nums{display:flex;align-items:center;gap:6px}
+.pg-num{
+  min-width:34px;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  border-radius:8px;padding:7px 9px;font:inherit;font-size:13px;font-weight:600;
+  cursor:pointer;text-align:center;font-variant-numeric:tabular-nums;
+  transition:border-color .15s, color .15s, background .15s;
+}
+.pg-num:hover:not(.active){border-color:var(--accent);color:var(--accent)}
+.pg-num.active{background:var(--accent);border-color:var(--accent);color:#fff;cursor:default}
+.pg-ellipsis{color:var(--muted);padding:0 2px;font-size:13px;user-select:none}
 .avatar{
   width:38px;height:38px;border-radius:10px;flex-shrink:0;
   background:var(--accent-soft);color:var(--accent);
@@ -3123,17 +3134,33 @@ export function dashboardPage(
         pager.className='pager';
         panel.appendChild(pager);
       }
-      var from=(page-1)*PAGE_SIZE+1, to=Math.min(page*PAGE_SIZE, total);
-      // Boutons construits par le DOM (pas d'onclick inline avec apostrophes
-      // imbriquées, qui cassaient le script généré).
+      // Liste des numéros à afficher, avec ellipses si beaucoup de pages :
+      // toujours 1 et la dernière, + une fenêtre autour de la page courante.
+      var nums=[];
+      var win=1; // pages de part et d'autre de la courante
+      for(var p=1;p<=pages;p++){
+        if(p===1 || p===pages || (p>=page-win && p<=page+win)) nums.push(p);
+        else if(nums[nums.length-1]!=='…') nums.push('…');
+      }
+      var numsHtml=nums.map(function(n){
+        if(n==='…') return '<span class="pg-ellipsis">…</span>';
+        return '<button class="pg-num'+(n===page?' active':'')+'" data-page="'+n+'"'+
+               (n===page?' disabled':'')+'>'+n+'</button>';
+      }).join('');
+
+      // Flèches + numéros de page cliquables (pagination standard).
       pager.innerHTML=
         '<button class="pg-btn" data-pg="prev" '+(page<=1?'disabled':'')+'>‹ Précédent</button>'+
-        '<span class="pg-info">'+from+'–'+to+' sur '+total+'</span>'+
+        '<div class="pg-nums">'+numsHtml+'</div>'+
         '<button class="pg-btn" data-pg="next" '+(page>=pages?'disabled':'')+'>Suivant ›</button>';
+
       var prev=pager.querySelector('[data-pg="prev"]');
       var next=pager.querySelector('[data-pg="next"]');
       if(prev) prev.onclick=function(){ gotoPage(panelId, page-1); };
       if(next) next.onclick=function(){ gotoPage(panelId, page+1); };
+      pager.querySelectorAll('.pg-num[data-page]').forEach(function(b){
+        b.onclick=function(){ gotoPage(panelId, parseInt(b.getAttribute('data-page'),10)); };
+      });
     }
 
     function gotoPage(panelId, page){
