@@ -45,8 +45,10 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       void this.importFromShopify('démarrage');
     }, 8000);
 
-    // Synchro périodique toutes les 10 minutes.
-    const INTERVAL_MS = 10 * 60 * 1000;
+    // Synchro périodique = FILET DE SÉCURITÉ si un webhook orders/create est
+    // manqué. Le temps réel vient du webhook ; ce polling ne fait que rattraper.
+    // 2 min (au lieu de 10) : latence max acceptable même sans webhook.
+    const INTERVAL_MS = 2 * 60 * 1000;
     this.syncTimer = setInterval(() => {
       void this.importFromShopify('périodique');
     }, INTERVAL_MS);
