@@ -36,9 +36,9 @@ export type Pricing = Record<ProductKey, number>;
  * Servent de valeur initiale tant que l'admin n'a rien enregistré.
  */
 const DEFAULTS: Pricing = {
-  sweatshirt: 45,
-  tshirt: 25,
-  tshirt_polyester: 28,
+  sweatshirt: 60,
+  tshirt: 29.4,
+  tshirt_polyester: 29.4,
   coins: 2.45,
   drapeaux: 19.9,
   patches: 2.45,
