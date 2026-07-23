@@ -228,6 +228,22 @@ body{
 .pg-num:hover:not(.active){border-color:var(--accent);color:var(--accent)}
 .pg-num.active{background:var(--accent);border-color:var(--accent);color:#fff;cursor:default}
 .pg-ellipsis{color:var(--muted);padding:0 2px;font-size:13px;user-select:none}
+/* Loader de pagination : voile léger + spinner, sur la zone des cartes. */
+.panel{position:relative}
+.pg-loader{
+  position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter:blur(1.5px);opacity:0;pointer-events:none;
+  transition:opacity .18s ease;
+}
+.pg-loader.on{opacity:1;pointer-events:auto}
+.pg-spinner{
+  width:34px;height:34px;border-radius:50%;
+  border:3px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-top-color:var(--accent);
+  animation:pgspin .7s linear infinite;
+}
+@keyframes pgspin{to{transform:rotate(360deg)}}
 .avatar{
   width:38px;height:38px;border-radius:10px;flex-shrink:0;
   background:var(--accent-soft);color:var(--accent);
@@ -3163,12 +3179,41 @@ export function dashboardPage(
       });
     }
 
-    function gotoPage(panelId, page){
-      pageByPanel[panelId]=page;
-      filterCards();
-      // Remonte en haut de la liste pour le confort de lecture.
+    /* Affiche un loader (voile + spinner) sur le panel le temps du changement
+       de page, puis le retire une fois les cartes rendues. La pagination est
+       instantanée (côté client) : un court délai rend la transition fluide et
+       professionnelle plutôt qu'un saut brutal. */
+    function showPageLoader(panelId){
       var panel=document.getElementById(panelId);
-      if(panel) panel.scrollIntoView({behavior:'smooth', block:'start'});
+      if(!panel) return null;
+      var ld=panel.querySelector('.pg-loader');
+      if(!ld){
+        ld=document.createElement('div');
+        ld.className='pg-loader';
+        ld.innerHTML='<div class="pg-spinner"></div>';
+        panel.appendChild(ld);
+      }
+      // Force le reflow pour que la transition d'opacité s'applique.
+      void ld.offsetWidth;
+      ld.classList.add('on');
+      return ld;
+    }
+    function hidePageLoader(panelId){
+      var panel=document.getElementById(panelId);
+      var ld=panel && panel.querySelector('.pg-loader');
+      if(ld) ld.classList.remove('on');
+    }
+
+    function gotoPage(panelId, page){
+      showPageLoader(panelId);
+      // Laisse le voile apparaître (~220ms) avant de basculer les cartes.
+      setTimeout(function(){
+        pageByPanel[panelId]=page;
+        filterCards();
+        var panel=document.getElementById(panelId);
+        if(panel) panel.scrollIntoView({behavior:'smooth', block:'start'});
+        hidePageLoader(panelId);
+      }, 220);
     }
     /* Ouvre/ferme une carte. À l'OUVERTURE d'une carte encore marquée « nouveau »,
        on la marque IMMÉDIATEMENT comme lue (serveur + interface). */
