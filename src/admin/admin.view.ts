@@ -44,6 +44,99 @@ function daysSince(d: Date | string | null | undefined): number {
   return Math.max(0, Math.floor(ms / 86400000));
 }
 
+/**
+ * 🆕 Détecte si plusieurs line items partagent le même _sizeGroupSummary
+ * (commande groupée par tailles via le modal quantités)
+ */
+function getSizeGroupSummary(items: any[]): string | null {
+  if (!items || items.length === 0) return null;
+  
+  // Récupérer le _sizeGroupSummary du premier item
+  const firstItem = items[0];
+  const firstSummary = firstItem?.properties?.find?.(
+    (p: any) => p?.name === '_sizeGroupSummary'
+  )?.value;
+  
+  if (!firstSummary || typeof firstSummary !== 'string') return null;
+  
+  // Vérifier que plusieurs items ont le même summary
+  const matchingCount = items.filter((item: any) => {
+    const summary = item?.properties?.find?.(
+      (p: any) => p?.name === '_sizeGroupSummary'
+    )?.value;
+    return summary === firstSummary;
+  }).length;
+  
+  // Retourner le summary seulement si plusieurs items le partagent
+  return matchingCount > 1 ? firstSummary : null;
+}
+
+/**
+ * 🆕 Génère un tableau HTML récapitulatif des quantités par taille
+ * pour les commandes groupées
+ */
+function renderSizeGroupTable(items: any[], summary: string): string {
+  // Compter les quantités par taille
+  const sizeQtys: Record<string, number> = {};
+  
+  items.forEach((item: any) => {
+    const size = item?.properties?.find?.((p: any) => p?.name === 'Taille')?.value;
+    if (size && typeof size === 'string') {
+      sizeQtys[size] = (sizeQtys[size] || 0) + (item.quantity || 1);
+    }
+  });
+  
+  if (Object.keys(sizeQtys).length === 0) return '';
+  
+  // Ordre de tri des tailles
+  const sizeOrder = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
+  
+  const rows = Object.entries(sizeQtys)
+    .sort(([a], [b]) => {
+      const idxA = sizeOrder.indexOf(a);
+      const idxB = sizeOrder.indexOf(b);
+      // Si les deux sont dans l'ordre, trier normalement
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      // Sinon, mettre les inconnus à la fin
+      if (idxA === -1) return 1;
+      if (idxB === -1) return -1;
+      return 0;
+    })
+    .map(([size, qty]) => `
+      <tr>
+        <td><strong>${esc(size)}</strong></td>
+        <td class="num">${qty}</td>
+      </tr>
+    `).join('');
+  
+  const total = Object.values(sizeQtys).reduce((sum, qty) => sum + qty, 0);
+  
+  return `
+    <div class="size-group-recap">
+      <div class="lbl section-lbl">📦 COMMANDE GROUPÉE PAR TAILLES</div>
+      <div class="grp-list-wrap">
+        <table class="grp-list">
+          <thead>
+            <tr>
+              <th>TAILLE</th>
+              <th class="num">QUANTITÉ</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><strong>TOTAL</strong></td>
+              <td class="num"><strong>${total} pièce${total > 1 ? 's' : ''}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 const STYLE = `
 :root{
   --paper:#fbfaf8; --surface:#ffffff; --raise:#f6f4f0;
@@ -525,6 +618,9 @@ body{
 .grp-list .num{text-align:right;font-variant-numeric:tabular-nums}
 .grp-list tfoot td{font-weight:800;background:var(--raise)}
 .grp-list .empty{color:var(--faint)}
+/* 🆕 Récap commande groupée par tailles (modal quantités) */
+.size-group-recap{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:16px;margin:16px 0}
+.size-group-recap .lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin-bottom:10px}
 /* Pastille de couleur devant le nom de la teinte.
    Bordure semi-opaque : sans elle, White et Ash disparaissent sur fond clair. */
 .color-cell{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
@@ -1154,6 +1250,11 @@ function orderCard(o: Order, srcQuote?: Quote): string {
       </div>
 
       ${clientBlock(o)}
+
+      ${(() => {
+        const sizeGroupSummary = getSizeGroupSummary(items);
+        return sizeGroupSummary ? renderSizeGroupTable(items, sizeGroupSummary) : '';
+      })()}
 
       <div class="section-lbl lbl">Articles à produire</div>
       ${items.map(itemRow).join('') || '<div class="kv"><span class="empty">Aucun article.</span></div>'}
