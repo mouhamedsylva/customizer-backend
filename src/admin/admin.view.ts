@@ -698,6 +698,69 @@ body{
 .price-field .price-input{width:110px;text-align:right;font-size:14px}
 .price-cur{font-size:11.5px;color:var(--faint);font-weight:700;min-width:34px}
 
+/* ── Tarifs dégressifs ────────────────────────────────────────────
+   Bloc repliable sous chaque produit. La ligne de prix perd sa bordure
+   quand un bloc la suit : c'est le bloc qui ferme le groupe. */
+.price-line:has(+ .tier-block){border-bottom:none;padding-bottom:4px}
+.tier-block{
+  padding:0 0 12px;margin-bottom:2px;
+  border-bottom:1px solid var(--line-soft);
+}
+.tier-sum{
+  display:flex;align-items:center;gap:7px;
+  list-style:none;cursor:pointer;user-select:none;
+  font-size:11.5px;font-weight:700;color:var(--muted);
+  padding:5px 0;
+}
+.tier-sum::-webkit-details-marker{display:none}
+.tier-sum:hover{color:var(--ink)}
+.tier-caret{width:12px;height:12px;flex:none;transition:transform .18s}
+.tier-block[open] .tier-caret{transform:rotate(90deg);color:var(--accent)}
+/* Compteur : pousse à droite, sert de résumé quand le bloc est replié. */
+.tier-count{
+  margin-left:auto;font-weight:600;font-size:11px;color:var(--faint);
+  background:var(--raise);border-radius:20px;padding:2px 9px;
+}
+
+.tier-rows{display:flex;flex-direction:column;gap:6px;margin:8px 0 4px}
+.tier-row{
+  display:flex;align-items:center;gap:7px;
+  background:var(--raise);border-radius:9px;padding:6px 8px;
+}
+.tier-from,.tier-unit,.tier-cur{font-size:11px;color:var(--faint);font-weight:600;flex:none}
+.tier-row input{
+  border:1px solid var(--line);border-radius:7px;
+  background:var(--surface);color:var(--ink);
+  font:inherit;font-size:12.5px;padding:5px 8px;text-align:right;outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.tier-row input:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.tier-min{width:62px}
+.tier-price{width:76px}
+/* Le prix est poussé à droite : les colonnes s'alignent d'un palier à l'autre. */
+.tier-price{margin-left:auto}
+.tier-del{
+  width:24px;height:24px;flex:none;display:grid;place-items:center;
+  border:none;border-radius:6px;background:none;color:var(--faint);
+  cursor:pointer;transition:color .15s,background .15s;
+}
+.tier-del:hover{color:var(--danger);background:var(--danger-soft)}
+.tier-del svg{width:13px;height:13px}
+
+.tier-add{
+  border:1px dashed var(--line);border-radius:8px;background:none;
+  color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;
+  padding:6px 11px;cursor:pointer;transition:all .15s;
+}
+.tier-add:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+/* Écrans étroits : le palier passe sur deux lignes plutôt que de comprimer
+   les champs au point de les rendre illisibles. */
+@media (max-width:520px){
+  .tier-row{flex-wrap:wrap}
+  .tier-price{margin-left:0}
+}
+
 /* ── Modale Administrateurs ── */
 .adm-row{
   display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);
@@ -3151,6 +3214,7 @@ export function dashboardPage(
     /* ═══════════════════ Prix du configurateur ═══════════════════ */
 
     var PRICE_KEYS=[];   // ordre des produits, fourni par le serveur
+    var PRICE_TIERS={};  // grilles dégressives chargées, par produit
 
     function openPricing(){
       document.getElementById('price-modal').classList.add('open');
@@ -3289,6 +3353,7 @@ export function dashboardPage(
       if(!PRICE_KEYS.length) return;
 
       var body={};
+      var tiers={};
       for(var i=0;i<PRICE_KEYS.length;i++){
         var k=PRICE_KEYS[i];
         var el=document.getElementById('price-'+k);
@@ -3301,7 +3366,19 @@ export function dashboardPage(
           return;
         }
         body[k]=v;
+
+        // Paliers du produit. collectTiers() met le focus sur le champ fautif
+        // et renvoie null : on interrompt sans rien enregistrer.
+        var t=collectTiers(k);
+        if(t===null){
+          showAlert('Palier invalide',
+            'Chaque palier demande une quantité entière (≥ 1) et un prix positif.',
+            'error');
+          return;
+        }
+        tiers[k]=t;
       }
+      body.tiers=tiers;
 
       btn.disabled=true; st.className='hint'; st.textContent='Enregistrement…';
       try{

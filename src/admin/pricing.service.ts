@@ -58,7 +58,10 @@ const DEFAULTS: Pricing = {
   tshirt_polyester: 29.5,
   coins: 2.45,
   drapeaux: 19.9,
-  patches: 2.45,
+  /* 20 € = premier palier de la grille atelier (10 articles, le minimum de
+     commande). La valeur précédente (2,45 €) était celle des coins, restée là
+     par copie : elle contredisait la grille dégressive. */
+  patches: 20,
 };
 
 /**
