@@ -761,10 +761,12 @@ export class AdminController {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
-    const prices = await this.pricing.get();
+    const { prices, tiers } = await this.pricing.getPayload();
     res.json({
       ok: true,
       prices,
+      // Grilles dégressives par produit (voir PricingService.getTiers).
+      tiers,
       labels: PRODUCT_LABELS,
       keys: PRODUCT_KEYS,
       // Les coins passent par un devis : pas de produit à synchroniser.
@@ -791,7 +793,13 @@ export class AdminController {
     }
 
     // 1) Enregistrement local (source de vérité pour l'affichage).
+    //    Les grilles dégressives arrivent sous `tiers` : { sweatshirt: [...] }.
+    //    Le reste du corps porte les prix de base, clé par produit.
+    const tiersInput = (body.tiers as Record<string, unknown>) || null;
     const prices = await this.pricing.save(body);
+    if (tiersInput && typeof tiersInput === 'object') {
+      await this.pricing.saveTiers(tiersInput);
+    }
 
     // 2) Répercussion sur Shopify : TOUS les variants du produit (les textiles en
     //    ont un par couleur). Un échec n'annule pas l'enregistrement : on le
@@ -811,7 +819,10 @@ export class AdminController {
       }
     }
 
-    res.json({ ok: true, prices, warnings });
+    // Les grilles sont renvoyées normalisées (triées, doublons fusionnés) :
+    // le dashboard réaffiche exactement ce qui a été retenu.
+    const tiers = await this.pricing.getTiers();
+    res.json({ ok: true, prices, tiers, warnings });
   }
 
   /**

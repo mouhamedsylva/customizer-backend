@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { PricingService } from '../admin/pricing.service';
+import { PricingService, type PricingPayload } from '../admin/pricing.service';
 
 /**
  * Prix du configurateur, en LECTURE SEULE et PUBLIC.
@@ -12,10 +12,16 @@ import { PricingService } from '../admin/pricing.service';
 export class PricingController {
   constructor(private readonly pricing: PricingService) {}
 
-  /** GET /api/pricing — prix unitaires HT par produit. */
+  /**
+   * GET /api/pricing — prix unitaires HT par produit + grilles dégressives.
+   *
+   * `tiers` remplace la table qui était codée en dur dans le thème
+   * (conf-pricing-tiers.js) : elle y sert désormais de simple repli si le
+   * backend est injoignable.
+   */
   @Get()
-  async get(): Promise<{ ok: boolean; prices: Record<string, number> }> {
-    const prices = await this.pricing.get();
-    return { ok: true, prices };
+  async get(): Promise<{ ok: boolean } & PricingPayload> {
+    const { prices, tiers } = await this.pricing.getPayload();
+    return { ok: true, prices, tiers };
   }
 }

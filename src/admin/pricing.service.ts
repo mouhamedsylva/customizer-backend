@@ -32,6 +32,23 @@ export const PRODUCT_LABELS: Record<ProductKey, string> = {
 export type Pricing = Record<ProductKey, number>;
 
 /**
+ * Palier de tarif dégressif : à partir de `min` articles, l'unité vaut `price`.
+ */
+export interface Tier {
+  min: number;
+  price: number;
+}
+
+/** Grilles dégressives par produit. Un produit absent n'est pas dégressif. */
+export type Tiers = Partial<Record<ProductKey, Tier[]>>;
+
+/** Prix de base + grilles dégressives, tels que servis au configurateur. */
+export interface PricingPayload {
+  prices: Pricing;
+  tiers: Tiers;
+}
+
+/**
  * Prix par défaut : ceux qui étaient codés en dur dans le configurateur.
  * Servent de valeur initiale tant que l'admin n'a rien enregistré.
  */
@@ -44,8 +61,52 @@ const DEFAULTS: Pricing = {
   patches: 2.45,
 };
 
+/**
+ * Grilles dégressives par défaut.
+ *
+ * Reprises de conf-pricing-tiers.js (frontend), où elles étaient codées en
+ * dur : elles ne servent plus que de valeur initiale tant que l'admin n'a
+ * rien enregistré. Paliers triés du plus grand `min` au plus petit —
+ * tierUnitPrice() retient le premier atteint.
+ *
+ * Les produits absents (coins, drapeaux) ne sont pas dégressifs.
+ */
+const DEFAULT_TIERS: Tiers = {
+  sweatshirt: [
+    { min: 40, price: 52.0 },
+    { min: 15, price: 53.9 },
+    { min: 5, price: 56.5 },
+    { min: 1, price: 60.0 },
+  ],
+  tshirt: [
+    { min: 50, price: 24.5 },
+    { min: 20, price: 25.9 },
+    { min: 10, price: 26.5 },
+    { min: 5, price: 28.9 },
+    { min: 1, price: 29.5 },
+  ],
+  tshirt_polyester: [
+    { min: 50, price: 24.5 },
+    { min: 20, price: 25.9 },
+    { min: 10, price: 26.5 },
+    { min: 5, price: 28.9 },
+    { min: 1, price: 29.5 },
+  ],
+  // Grille atelier : au-delà de 100, le devis prend le relais (géré côté UI).
+  patches: [
+    { min: 100, price: 3.5 },
+    { min: 50, price: 5.0 },
+    { min: 30, price: 9.0 },
+    { min: 20, price: 12.5 },
+    { min: 10, price: 20.0 },
+  ],
+};
+
 /** Préfixe des clés dans la table `settings` (ex. `price_patches`). */
 const KEY_PREFIX = 'price_';
+
+/** Préfixe des grilles dégressives (ex. `tiers_sweatshirt`), stockées en JSON. */
+const TIERS_PREFIX = 'tiers_';
 
 /**
  * PRODUIT Shopify de chaque type du configurateur.
@@ -120,5 +181,88 @@ export class PricingService {
       await this.repo.save({ key: KEY_PREFIX + key, value });
     }
     return this.get();
+  }
+
+  /**
+   * Grilles dégressives de tous les produits.
+   * Une grille enregistrée remplace entièrement celle par défaut ; une grille
+   * vide (`[]`) signifie « ce produit n'est plus dégressif ».
+   */
+  async getTiers(): Promise<Tiers> {
+    const rows = await this.repo.find();
+    const map = new Map(rows.map((r) => [r.key, r.value]));
+    const out: Tiers = {};
+
+    for (const key of PRODUCT_KEYS) {
+      const raw = map.get(TIERS_PREFIX + key);
+      if (raw == null) {
+        // Rien en base : on retombe sur la grille d'origine, s'il y en a une.
+        if (DEFAULT_TIERS[key]) out[key] = DEFAULT_TIERS[key]!.map((t) => ({ ...t }));
+        continue;
+      }
+      const parsed = this.parseTiers(raw);
+      // Grille vide volontaire : le produit cesse d'être dégressif.
+      if (parsed.length) out[key] = parsed;
+    }
+    return out;
+  }
+
+  /**
+   * Enregistre les grilles fournies (partiel accepté).
+   *
+   * Chaque grille est nettoyée avant écriture : paliers invalides écartés,
+   * doublons de `min` fusionnés, tri décroissant. Le frontend peut ainsi
+   * consommer la table telle quelle, sans la retrier.
+   */
+  async saveTiers(input: Record<string, unknown>): Promise<Tiers> {
+    for (const key of PRODUCT_KEYS) {
+      if (!(key in input)) continue;
+      const clean = this.normalizeTiers(input[key]);
+      await this.repo.save({
+        key: TIERS_PREFIX + key,
+        value: JSON.stringify(clean),
+      });
+    }
+    return this.getTiers();
+  }
+
+  /** Prix de base + grilles, en une seule lecture pour le configurateur. */
+  async getPayload(): Promise<PricingPayload> {
+    const [prices, tiers] = await Promise.all([this.get(), this.getTiers()]);
+    return { prices, tiers };
+  }
+
+  /** Lit une grille stockée en JSON. Tolère une valeur corrompue. */
+  private parseTiers(raw: string): Tier[] {
+    try {
+      return this.normalizeTiers(JSON.parse(raw));
+    } catch {
+      this.logger.warn(`Grille de prix illisible, ignorée : ${raw.slice(0, 60)}`);
+      return [];
+    }
+  }
+
+  /**
+   * Valide et ordonne une grille.
+   * - `min` : entier ≥ 1 ; `price` : nombre ≥ 0, arrondi au centime.
+   * - un même `min` ne peut apparaître deux fois (le dernier gagne) ;
+   * - tri décroissant sur `min`, comme attendu par tierUnitPrice().
+   */
+  private normalizeTiers(value: unknown): Tier[] {
+    if (!Array.isArray(value)) return [];
+    const byMin = new Map<number, number>();
+
+    for (const row of value) {
+      if (!row || typeof row !== 'object') continue;
+      const min = Math.floor(Number((row as Tier).min));
+      const price = Number((row as Tier).price);
+      if (!Number.isFinite(min) || min < 1) continue;
+      if (!Number.isFinite(price) || price < 0) continue;
+      byMin.set(min, Math.round(price * 100) / 100);
+    }
+
+    return [...byMin.entries()]
+      .map(([min, price]) => ({ min, price }))
+      .sort((a, b) => b.min - a.min);
   }
 }

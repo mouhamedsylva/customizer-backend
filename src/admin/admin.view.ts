@@ -344,21 +344,32 @@ body{
 }
 .head .id{font-size:15px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:7px}
 .head .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
-.head .right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
-.amount{font-size:15px;font-weight:800;letter-spacing:-.01em}
-.when{color:var(--faint);font-size:11.5px}
+/* Colonne droite : montant, statuts, date — dans cet ordre de lecture.
+   Largeur bornée pour que les trois pastilles ne repoussent pas le titre
+   de la commande, et que la date ne vienne pas chevaucher le montant. */
+.head .right{
+  text-align:right;display:flex;flex-direction:column;align-items:flex-end;
+  gap:7px;max-width:340px;flex:none;
+}
+.amount{font-size:16px;font-weight:800;letter-spacing:-.015em;line-height:1.1}
+.when{color:var(--faint);font-size:11px;white-space:nowrap}
 .caret{color:var(--faint);transition:transform .2s;flex-shrink:0;margin-left:2px}
 .card.open .caret{transform:rotate(90deg);color:var(--accent)}
 
-/* Status pill */
+/* Status pill.
+   Une bordure de la même teinte que le texte (transparence) remplace
+   l'aplat seul : les trois pastilles côte à côte se distinguent mieux,
+   y compris la neutre qui se confondait avec le fond de la carte. */
 .pill{
   display:inline-flex;align-items:center;gap:5px;
-  font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.01em;
+  font-size:10.5px;font-weight:700;padding:3.5px 9px;
+  border-radius:20px;letter-spacing:.01em;line-height:1.35;
+  white-space:nowrap;border:1px solid transparent;
 }
-.pill::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
-.pill.ok{background:var(--ok-soft);color:var(--ok)}
-.pill.warn{background:var(--warn-soft);color:var(--warn)}
-.pill.neutral{background:var(--raise);color:var(--muted)}
+.pill::before{content:'';width:5.5px;height:5.5px;border-radius:50%;background:currentColor;flex:none}
+.pill.ok{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 22%,transparent)}
+.pill.warn{background:var(--warn-soft);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 22%,transparent)}
+.pill.neutral{background:var(--raise);color:var(--muted);border-color:var(--line)}
 
 /* Detail body */
 .body{display:none;padding:0 18px 18px;border-top:1px solid var(--line-soft)}
@@ -411,14 +422,20 @@ body{
 .empty-state p{font-size:14px}
 .empty-state small{display:block;margin-top:6px;color:var(--faint);font-size:12px}
 
-/* Suivi de production */
-.pills{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.pill.prod::before{width:6px;height:6px}
-.pill.prod.todo{background:var(--raise);color:var(--muted)}
-.pill.prod.doing{background:var(--warn-soft);color:var(--warn)}
-.pill.prod.ready{background:#e6eefc;color:#2b57c4}
-.pill.prod.done{background:var(--ok-soft);color:var(--ok)}
-:root[data-theme="dark"] .pill.prod.ready{background:#12314f;color:#82aaff}
+/* Suivi de production.
+   Les pastilles restent sur UNE ligne et ne se replient jamais : trois
+   éléments qui passent à la ligne déséquilibraient la hauteur des cartes
+   d'une commande à l'autre. Elles défilent plutôt que de déborder. */
+.pills{
+  display:flex;gap:5px;justify-content:flex-end;align-items:center;
+  flex-wrap:nowrap;max-width:100%;
+}
+.pill.prod::before{width:5.5px;height:5.5px}
+.pill.prod.todo{background:var(--raise);color:var(--muted);border-color:var(--line)}
+.pill.prod.doing{background:var(--warn-soft);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 22%,transparent)}
+.pill.prod.ready{background:#e6eefc;color:#2b57c4;border-color:rgba(43,87,196,.22)}
+.pill.prod.done{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 22%,transparent)}
+:root[data-theme="dark"] .pill.prod.ready{background:#12314f;color:#82aaff;border-color:rgba(130,170,255,.28)}
 
 .steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .step{
@@ -834,7 +851,7 @@ body{
   /* Flex + wrap plutôt qu'une grille : les cartes COMMANDE ont un conteneur
      .pills, les cartes DEVIS une pastille directe. Le flex gère les deux. */
   .head .right{
-    grid-column:1/-1;width:100%;text-align:left;
+    grid-column:1/-1;width:100%;max-width:none;text-align:left;
     flex-direction:row;flex-wrap:wrap;align-items:center;
     justify-content:flex-start;gap:8px;
   }
@@ -854,6 +871,10 @@ body{
   .head .right .amount{white-space:nowrap}
   .head .right .when{white-space:nowrap}
   .head .right .amount ~ .when:first-of-type{margin-left:auto;text-align:right}
+  /* En colonne étroite, les pastilles reprennent la 1re ligne : le DOM les
+     place désormais APRÈS le montant (ordre de lecture du bureau), on
+     rétablit ici la disposition mobile d'origine. */
+  .head .right .pills{order:-1}
 }
 
 /* ══════════════════ MOBILE ══════════════════ */
@@ -932,6 +953,159 @@ body{
   .stat .num{font-size:22px}
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   PAGE DE CONNEXION
+   Écran isolé (pas de nav, pas de contenu) : la carte porte seule
+   la hiérarchie. Fond travaillé pour éviter l'aplat de gris.
+   ═══════════════════════════════════════════════════════════════ */
+.lg-wrap{
+  min-height:100vh; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:18px; padding:24px;
+  position:relative;
+  /* Deux halos très doux teintés de l'accent : donne de la profondeur
+     sans image, et suit automatiquement le thème. */
+  background:
+    radial-gradient(60ch 40ch at 50% -10%, var(--accent-soft), transparent 70%),
+    radial-gradient(50ch 34ch at 50% 110%, var(--raise), transparent 70%);
+}
+.lg-theme{
+  position:absolute; top:20px; right:20px;
+  width:38px; height:38px; display:grid; place-items:center;
+  border:1px solid var(--line); border-radius:11px;
+  background:var(--surface); color:var(--muted);
+  cursor:pointer; transition:color .15s, border-color .15s, transform .15s;
+}
+.lg-theme:hover{color:var(--ink); border-color:var(--faint); transform:translateY(-1px)}
+.lg-theme svg{width:17px;height:17px}
+
+.lg-card{
+  width:100%; max-width:400px;
+  background:var(--surface); border:1px solid var(--line);
+  border-radius:20px; padding:34px 32px 32px;
+  box-shadow:var(--shadow);
+}
+
+/* Marque : le logo passe en pastille pleine — c'est le seul élément
+   coloré avec le bouton, il ancre le regard en haut de carte. */
+.lg-brand{display:flex; align-items:center; gap:11px; margin-bottom:26px}
+.lg-mark{
+  width:40px; height:40px; flex:none; display:grid; place-items:center;
+  border-radius:12px; background:var(--accent); color:#fff;
+  font-size:17px; line-height:1;
+  box-shadow:0 4px 12px rgba(194,65,12,.28);
+}
+:root[data-theme="dark"] .lg-mark{
+  color:#05202b; box-shadow:0 4px 14px rgba(127,219,202,.22);
+}
+.lg-brand-txt{display:flex; flex-direction:column; gap:1px; min-width:0}
+.lg-brand-txt b{font-size:14.5px; font-weight:800; letter-spacing:-.01em}
+.lg-brand-txt span{font-size:11.5px; color:var(--muted)}
+
+.lg-title{font-size:21px; font-weight:800; letter-spacing:-.025em; margin-bottom:5px}
+.lg-sub{font-size:13px; color:var(--muted); margin-bottom:22px}
+
+/* Messages d'erreur : barre latérale colorée plutôt qu'un aplat, plus
+   lisible et moins agressif que le bloc plein d'origine. */
+.lg-alert{
+  display:flex; align-items:flex-start; gap:9px;
+  padding:11px 13px; border-radius:10px; margin-bottom:18px;
+  font-size:12.5px; line-height:1.45;
+}
+.lg-alert svg{width:16px; height:16px; flex:none; margin-top:1px}
+.lg-alert.is-error{
+  background:var(--accent-soft); color:var(--accent);
+  border-left:3px solid var(--accent);
+}
+.lg-alert.is-blocked{
+  background:var(--danger-soft); color:var(--danger);
+  border-left:3px solid var(--danger);
+}
+
+.lg-form{display:flex; flex-direction:column; gap:15px}
+.lg-field{display:flex; flex-direction:column; gap:7px}
+.lg-lbl{
+  font-size:10.5px; font-weight:700; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--muted);
+}
+
+/* Champ + icône : l'icône est posée DANS le champ, d'où le padding
+   gauche de l'input et le positionnement absolu. */
+.lg-input-wrap{position:relative; display:flex; align-items:center}
+.lg-icon{
+  position:absolute; left:13px; width:16px; height:16px;
+  color:var(--faint); pointer-events:none; transition:color .15s;
+}
+.lg-input-wrap input{
+  width:100%; padding:13px 14px 13px 40px;
+  border:1px solid var(--line); border-radius:11px;
+  background:var(--paper); color:var(--ink);
+  font:inherit; font-size:14px; outline:none;
+  transition:border-color .15s, box-shadow .15s, background .15s;
+}
+.lg-input-wrap input::placeholder{color:var(--faint)}
+.lg-input-wrap input:hover{border-color:var(--faint)}
+.lg-input-wrap input:focus{
+  border-color:var(--accent); background:var(--surface);
+  box-shadow:0 0 0 3px var(--accent-soft);
+}
+.lg-input-wrap input:focus + .lg-icon,
+.lg-input-wrap:focus-within .lg-icon{color:var(--accent)}
+
+/* Le champ mot de passe réserve la place du bouton « œil ». */
+#lg-pass{padding-right:44px}
+.lg-eye{
+  position:absolute; right:6px;
+  width:32px; height:32px; display:grid; place-items:center;
+  border:none; border-radius:8px; background:none;
+  color:var(--faint); cursor:pointer; transition:color .15s, background .15s;
+}
+.lg-eye:hover{color:var(--ink); background:var(--raise)}
+.lg-eye svg{width:16px; height:16px}
+/* Mot de passe visible : l'œil est barré et prend la couleur d'accent. */
+.lg-eye.is-on{color:var(--accent)}
+.lg-eye.is-on::after{
+  content:''; position:absolute; left:7px; right:7px; top:50%;
+  height:1.6px; background:currentColor; border-radius:2px;
+  transform:rotate(-45deg);
+}
+
+/* Autofill : Chrome impose son bleu et écrase le fond du champ. On le
+   neutralise par une ombre interne de la taille du champ (seul moyen
+   fiable), et on force la couleur du texte. */
+.lg-input-wrap input:-webkit-autofill,
+.lg-input-wrap input:-webkit-autofill:hover,
+.lg-input-wrap input:-webkit-autofill:focus{
+  -webkit-box-shadow:0 0 0 100px var(--paper) inset;
+  box-shadow:0 0 0 100px var(--paper) inset;
+  -webkit-text-fill-color:var(--ink);
+  caret-color:var(--ink);
+}
+
+.lg-submit{
+  margin-top:4px; width:100%; padding:13px;
+  border:none; border-radius:11px;
+  background:var(--accent); color:#fff;
+  font:inherit; font-size:14px; font-weight:700; letter-spacing:.01em;
+  cursor:pointer; transition:filter .15s, transform .12s, box-shadow .15s;
+  box-shadow:0 4px 14px rgba(194,65,12,.24);
+}
+.lg-submit:hover{filter:brightness(1.06); transform:translateY(-1px);
+  box-shadow:0 6px 18px rgba(194,65,12,.3)}
+.lg-submit:active{transform:translateY(0)}
+:root[data-theme="dark"] .lg-submit{
+  color:#05202b; box-shadow:0 4px 14px rgba(127,219,202,.2);
+}
+:root[data-theme="dark"] .lg-submit:hover{box-shadow:0 6px 18px rgba(127,219,202,.26)}
+
+.lg-foot{font-size:11px; color:var(--faint); text-align:center}
+
+/* Écrans étroits : la carte occupe la largeur, sans marge inutile. */
+@media (max-width:430px){
+  .lg-wrap{padding:16px}
+  .lg-card{padding:26px 20px 24px; border-radius:16px}
+  .lg-theme{top:12px; right:12px}
+}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
 
@@ -965,29 +1139,96 @@ function shell(body: string): string {
  *               d'où un message dédié plutôt qu'un écran de login muet.
  */
 export function loginPage(error?: boolean, reason?: 'blocked'): string {
+  const alert = error
+    ? `<div class="lg-alert is-error" role="alert">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+           <circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><circle cx="12" cy="16.5" r=".9" fill="currentColor" stroke="none"/>
+         </svg>
+         <span>E-mail ou mot de passe incorrect, ou compte bloqué.</span>
+       </div>`
+    : reason === 'blocked'
+      ? `<div class="lg-alert is-blocked" role="alert">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+             <rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>
+           </svg>
+           <span>Votre session a pris fin : votre accès a été suspendu. Contactez l’administrateur principal.</span>
+         </div>`
+      : '';
+
   return shell(`
-  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
-    <div style="width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:32px;box-shadow:var(--shadow)">
-      <div class="brand" style="margin-bottom:22px">
-        <div class="brand-mark">✦</div>
-        <div class="brand-txt"><b>Custom Textile</b><span>Espace de production</span></div>
+  <div class="lg-wrap">
+    <!-- Bascule de thème : la page de connexion précède le dashboard, elle
+         doit pouvoir passer en sombre sans s'authentifier d'abord. -->
+    <button type="button" class="lg-theme" onclick="toggleTheme()" title="Changer de thème" aria-label="Changer de thème">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+      </svg>
+    </button>
+
+    <main class="lg-card">
+      <div class="lg-brand">
+        <div class="lg-mark">✦</div>
+        <div class="lg-brand-txt">
+          <b>Custom Textile</b>
+          <span>Espace de production</span>
+        </div>
       </div>
-      <h1 style="font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Connexion</h1>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Accès réservé à l'équipe.</p>
-      ${error ? '<p style="color:var(--accent);font-size:12.5px;background:var(--accent-soft);padding:9px 12px;border-radius:9px;margin-bottom:14px">E-mail ou mot de passe incorrect, ou compte bloqué.</p>' : ''}
-      ${reason === 'blocked' ? '<p style="color:var(--danger);font-size:12.5px;background:var(--danger-soft);padding:9px 12px;border-radius:9px;margin-bottom:14px">Votre session a pris fin : votre accès a été suspendu. Contactez l’administrateur principal.</p>' : ''}
-      <form method="post" action="/api/admin/login">
-        <label class="lbl" style="display:block;margin-bottom:6px">E-mail</label>
-        <input name="email" type="email" autocomplete="username" required autofocus
-          style="width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--ink);font:inherit;font-size:14px;outline:none;margin-bottom:14px">
-        <label class="lbl" style="display:block;margin-bottom:6px">Mot de passe</label>
-        <input name="password" type="password" autocomplete="current-password" required
-          style="width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--ink);font:inherit;font-size:14px;outline:none;margin-bottom:16px">
-        <button type="submit"
-          style="width:100%;padding:12px;border:none;border-radius:11px;background:var(--accent);color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer">Se connecter</button>
+
+      <h1 class="lg-title">Connexion</h1>
+      <p class="lg-sub">Accès réservé à l'équipe.</p>
+
+      ${alert}
+
+      <form method="post" action="/api/admin/login" class="lg-form">
+        <div class="lg-field">
+          <label class="lg-lbl" for="lg-email">E-mail</label>
+          <div class="lg-input-wrap">
+            <svg class="lg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>
+            </svg>
+            <input id="lg-email" name="email" type="email" autocomplete="username"
+                   placeholder="vous@exemple.com" required autofocus>
+          </div>
+        </div>
+
+        <div class="lg-field">
+          <label class="lg-lbl" for="lg-pass">Mot de passe</label>
+          <div class="lg-input-wrap">
+            <svg class="lg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>
+            </svg>
+            <input id="lg-pass" name="password" type="password" autocomplete="current-password"
+                   placeholder="••••••••" required>
+            <!-- Révéler le mot de passe : une saisie masquée à l'aveugle est
+                 la première cause d'échec de connexion. -->
+            <button type="button" class="lg-eye" onclick="lgToggle(this)" aria-label="Afficher le mot de passe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="lg-submit">Se connecter</button>
       </form>
-    </div>
-  </div>`);
+    </main>
+
+    <p class="lg-foot">Custom Textile · Espace de production</p>
+  </div>
+
+  <script>
+    /* Bascule masqué/visible du mot de passe. L'icône passe en « œil barré »
+       quand le texte est lisible, pour que l'état soit explicite. */
+    function lgToggle(btn){
+      var i = document.getElementById('lg-pass');
+      if(!i) return;
+      var show = i.type === 'password';
+      i.type = show ? 'text' : 'password';
+      btn.classList.toggle('is-on', show);
+      btn.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+      i.focus();
+    }
+  </script>`);
 }
 
 /**
@@ -1231,8 +1472,11 @@ function orderCard(o: Order, srcQuote?: Quote): string {
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
       </div>
       <div class="right">
-        <div class="pills">${prodPill(prod)}${shipPill(o)}${statusPill(o.financialStatus)}</div>
+        <!-- Montant en tête : c'est l'information qu'on scanne en premier
+             dans une liste de commandes. Les statuts viennent ensuite, la
+             date en dernier. -->
         <div class="amount mono">${money(o.totalPrice)}</div>
+        <div class="pills">${prodPill(prod)}${shipPill(o)}${statusPill(o.financialStatus)}</div>
         <div class="when mono">${fdate(o.shopifyCreatedAt)} · ${ftime(o.shopifyCreatedAt)}</div>
       </div>
     </div>
@@ -2305,9 +2549,9 @@ export function dashboardPage(
 
   <!-- Modale : prix du configurateur -->
   <div class="modal" id="price-modal" onclick="if(event.target===this)closePricing()">
-    <div class="modal-box" style="max-width:540px">
+    <div class="modal-box" style="max-width:620px">
       <h3>Prix du configurateur</h3>
-      <p class="sub">Prix unitaires HT affichés aux clients.</p>
+      <p class="sub">Prix unitaires HT et tarifs dégressifs par quantité.</p>
 
       <div class="set-block">
         <div id="price-list"><p class="hint">Chargement…</p></div>
@@ -2316,9 +2560,16 @@ export function dashboardPage(
           tailles</strong> : un seul prix par article.
         </p>
         <p class="hint" style="margin-top:6px">
-          À l'enregistrement, le prix est aussi mis à jour dans Shopify : le client
-          paiera bien le nouveau prix au checkout. Les <strong>Coins</strong>
-          passent par un devis chiffré à la main, leur prix ici n'est qu'indicatif.
+          <strong>Tarifs dégressifs</strong> : chaque palier indique la quantité
+          minimale et le prix unitaire appliqué à partir de celle-ci. Le premier
+          palier devrait commencer à 1 pour couvrir les petites commandes.
+        </p>
+        <p class="hint" style="margin-top:6px">
+          À l'enregistrement, le prix de base est aussi mis à jour dans Shopify.
+          Les remises par quantité restent à créer côté Shopify
+          (« réductions automatiques ») pour être <em>facturées</em> : ici, elles
+          pilotent l'affichage du configurateur. Les <strong>Coins</strong>
+          passent par un devis chiffré à la main, leur prix n'est qu'indicatif.
         </p>
       </div>
 
@@ -2919,6 +3170,7 @@ export function dashboardPage(
         var d=await r.json();
         if(!d.ok){ box.innerHTML='<p class="hint">'+admEsc(d.error||'Erreur')+'</p>'; return; }
         PRICE_KEYS=d.keys||[];
+        PRICE_TIERS=d.tiers||{};
         var multi=d.multiVariant||[];
         box.innerHTML=PRICE_KEYS.map(function(k){
           var noVariant=!d.variants||!d.variants[k];
@@ -2927,6 +3179,7 @@ export function dashboardPage(
           var note = multi.indexOf(k)!==-1
             ? '<span class="price-note">toutes couleurs et tailles</span>'
             : (noVariant ? '<span class="price-note">devis — indicatif</span>' : '');
+          var tiers = PRICE_TIERS[k]||[];
           return '<div class="price-line">'+
                    '<div class="price-lbl">'+
                      '<label for="price-'+k+'">'+admEsc(d.labels[k]||k)+'</label>'+
@@ -2937,11 +3190,97 @@ export function dashboardPage(
                        'step="0.01" min="0" value="'+Number(d.prices[k]).toFixed(2)+'">'+
                      '<span class="price-cur">€ HT</span>'+
                    '</div>'+
-                 '</div>';
+                 '</div>'+
+                 tierBlock(k, tiers);
         }).join('');
       }catch(e){
         box.innerHTML='<p class="hint">Erreur de chargement.</p>';
       }
+    }
+
+    /* Bloc « tarifs dégressifs » d'un produit : liste repliable des paliers.
+       Replié par défaut — la modale afficherait sinon six grilles ouvertes. */
+    function tierBlock(key, tiers){
+      var n = tiers.length;
+      var summary = n
+        ? n+' palier'+(n>1?'s':'')
+        : 'aucun palier';
+      return '<details class="tier-block" id="tier-block-'+key+'"'+(n?'':'')+'>'+
+               '<summary class="tier-sum">'+
+                 '<svg class="tier-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>'+
+                 '<span>Tarifs dégressifs</span>'+
+                 '<span class="tier-count">'+summary+'</span>'+
+               '</summary>'+
+               '<div class="tier-rows" id="tier-rows-'+key+'">'+
+                 tiers.map(function(t){ return tierRow(t.min, t.price); }).join('')+
+               '</div>'+
+               '<button type="button" class="tier-add" onclick="addTier(\\''+key+'\\')">+ Ajouter un palier</button>'+
+             '</details>';
+    }
+
+    /* Une ligne de palier. Les valeurs sont lues au moment d'enregistrer :
+       pas d'état JS intermédiaire à tenir synchronisé avec le DOM. */
+    function tierRow(min, price){
+      return '<div class="tier-row">'+
+               '<span class="tier-from">à partir de</span>'+
+               '<input type="number" class="tier-min mono" min="1" step="1" value="'+(min||1)+'">'+
+               '<span class="tier-unit">art.</span>'+
+               '<input type="number" class="tier-price mono" min="0" step="0.01" value="'+Number(price||0).toFixed(2)+'">'+
+               '<span class="tier-cur">€ HT</span>'+
+               '<button type="button" class="tier-del" onclick="delTier(this)" aria-label="Supprimer ce palier">'+
+                 '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>'+
+               '</button>'+
+             '</div>';
+    }
+
+    /** Ajoute un palier vide au produit. */
+    function addTier(key){
+      var rows=document.getElementById('tier-rows-'+key);
+      if(!rows) return;
+      var d=document.createElement('div');
+      d.innerHTML=tierRow(1,0);
+      rows.appendChild(d.firstChild);
+      refreshTierCount(key);
+      var last=rows.querySelector('.tier-row:last-child .tier-min');
+      if(last) last.focus();
+    }
+
+    /** Retire un palier. */
+    function delTier(btn){
+      var row=btn.closest('.tier-row');
+      var block=btn.closest('.tier-block');
+      if(row) row.remove();
+      if(block) refreshTierCount(block.id.replace('tier-block-',''));
+    }
+
+    /** Met à jour le compteur affiché dans l'en-tête repliable. */
+    function refreshTierCount(key){
+      var rows=document.getElementById('tier-rows-'+key);
+      var block=document.getElementById('tier-block-'+key);
+      if(!rows||!block) return;
+      var n=rows.querySelectorAll('.tier-row').length;
+      var el=block.querySelector('.tier-count');
+      if(el) el.textContent = n ? n+' palier'+(n>1?'s':'') : 'aucun palier';
+    }
+
+    /* Lit les paliers saisis pour un produit.
+       @returns {Array|null} null si une valeur est invalide (l'appelant
+       interrompt alors l'enregistrement et signale le champ fautif). */
+    function collectTiers(key){
+      var rows=document.getElementById('tier-rows-'+key);
+      if(!rows) return [];
+      var out=[];
+      var els=rows.querySelectorAll('.tier-row');
+      for(var i=0;i<els.length;i++){
+        var minEl=els[i].querySelector('.tier-min');
+        var prEl=els[i].querySelector('.tier-price');
+        var min=parseInt(minEl.value,10);
+        var pr=parseFloat(prEl.value);
+        if(isNaN(min)||min<1){ minEl.focus(); return null; }
+        if(isNaN(pr)||pr<0){ prEl.focus(); return null; }
+        out.push({min:min, price:pr});
+      }
+      return out;
     }
 
     async function savePricing(){
