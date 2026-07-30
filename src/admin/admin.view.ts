@@ -262,6 +262,12 @@ body{
 }
 .search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .search input::placeholder{color:var(--faint)}
+/* type="search" (choisi pour bloquer l'autocomplétion d'identifiants) ajoute
+   une croix et une apparence natives : on les neutralise pour garder le style
+   du dashboard. */
+.search input{-webkit-appearance:none;appearance:none}
+.search input::-webkit-search-cancel-button,
+.search input::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
 .btn{
   padding:11px 15px;border:1px solid var(--line);background:var(--surface);color:var(--ink);
   border-radius:10px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
@@ -2428,12 +2434,20 @@ export function dashboardPage(
     <div class="toolbar">
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <!-- type=text + autocomplete=off + readonly temporaire : empêche le 
-             navigateur de pré-remplir le champ avec l'e-mail de connexion.
-             Le readonly est retiré après 1 seconde en JS. -->
-        <input id="search" type="text" name="search-${Date.now()}" readonly
-               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <!-- Chrome ignore autocomplete="off" sur un champ texte isolé et y
+             réinjecte l'e-mail de connexion (il le prend pour un identifiant).
+             Trois protections se cumulent :
+               1. type="search" — un champ de recherche n'est pas candidat au
+                  remplissage d'identifiants ;
+               2. autocomplete="new-password" — valeur que Chrome respecte, à
+                  l'inverse de "off", et qui exclut les identifiants mémorisés ;
+               3. name aléatoire — aucun historique ne peut s'y rattacher.
+             Le readonly initial (levé en JS) couvre le tout premier rendu, et
+             une surveillance nettoie ce qui passerait malgré tout. -->
+        <input id="search" type="search" name="q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}" readonly
+               autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
                data-form-type="other" data-lpignore="true" data-1p-ignore="true"
+               aria-label="Rechercher une commande, un client, un produit"
                placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
       </div>
 
@@ -3959,11 +3973,26 @@ export function dashboardPage(
       }, 1000);
       
       /* Vrai seulement quand l'utilisateur a tapé : tant qu'il n'a pas touché au
-         champ, toute valeur qui apparaît vient du remplissage automatique. */
+         champ, toute valeur qui apparaît vient du remplissage automatique.
+
+         PAS d'écouteur 'input' ici : Chrome le déclenche AUSSI pour son
+         autocomplétion. Il passait donc typed=true tout seul, ce qui
+         désactivait les nettoyages — le champ gardait l'e-mail de connexion.
+         Seuls une frappe réelle, un collage ou une saisie composée (mobile,
+         IME) marquent une intention de l'utilisateur. */
       var typed=false;
-      s.addEventListener('keydown', function(){ typed=true; });
-      s.addEventListener('paste',   function(){ typed=true; });
-      s.addEventListener('input', function(){ typed=true; });
+      s.addEventListener('keydown', function(e){
+        // On ignore les touches qui ne produisent pas de texte (Tab, Alt…),
+        // sans quoi un simple passage au clavier suffirait à débloquer.
+        if(e.key && e.key.length === 1) typed=true;
+        else if(e.key === 'Backspace' || e.key === 'Delete') typed=true;
+      });
+      s.addEventListener('paste',            function(){ typed=true; });
+      s.addEventListener('compositionstart', function(){ typed=true; });
+      s.addEventListener('beforeinput',      function(e){
+        // insertReplacementText = valeur poussée par le navigateur : pas l'utilisateur.
+        if(e.inputType && e.inputType !== 'insertReplacementText') typed=true;
+      });
 
       var clear=function(){
         if(!typed && s.value){ 
@@ -3975,6 +4004,30 @@ export function dashboardPage(
       // Nettoyage immédiat et répété
       clear();
       [100,300,600,1200].forEach(function(d){ setTimeout(clear, d); });
+
+      /* Surveillance continue jusqu'à la première frappe.
+         Les setTimeout ci-dessus s'arrêtaient à 1,2 s alors que le readonly
+         n'est levé qu'à 1 s : Chrome pouvait remplir juste après et rien ne
+         le rattrapait. On observe donc l'attribut value tant que
+         l'utilisateur n'a pas saisi, puis on arrête (pas de surveillance
+         inutile en fond). */
+      var stop = function(){};
+      if(window.MutationObserver){
+        var obs = new MutationObserver(function(){
+          if(typed){ obs.disconnect(); return; }
+          clear();
+        });
+        obs.observe(s, { attributes:true, attributeFilter:['value'] });
+        stop = function(){ obs.disconnect(); };
+      }
+      /* Filet supplémentaire : un intervalle court, borné à 5 s. Chrome remplit
+         parfois sans muter l'attribut (il écrit la propriété directement), ce
+         qu'aucun observateur ne voit. */
+      var ticks = 0;
+      var iv = setInterval(function(){
+        if(typed || ++ticks > 25){ clearInterval(iv); stop(); return; }
+        clear();
+      }, 200);
 
       /* Chrome remplit parfois APRÈS le premier clic dans la page (ou au retour
          d'onglet) : on surveille tant que l'utilisateur n'a rien saisi. */
