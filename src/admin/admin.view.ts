@@ -50,25 +50,22 @@ function daysSince(d: Date | string | null | undefined): number {
  */
 function getSizeGroupSummary(items: any[]): string | null {
   if (!items || items.length === 0) return null;
-  
-  // Récupérer le _sizeGroupSummary du premier item
-  const firstItem = items[0];
-  const firstSummary = firstItem?.properties?.find?.(
-    (p: any) => p?.name === '_sizeGroupSummary'
-  )?.value;
-  
-  if (!firstSummary || typeof firstSummary !== 'string') return null;
-  
-  // Vérifier que plusieurs items ont le même summary
-  const matchingCount = items.filter((item: any) => {
-    const summary = item?.properties?.find?.(
-      (p: any) => p?.name === '_sizeGroupSummary'
+
+  /* On balaie TOUS les articles, pas seulement le premier.
+     Deux cas échappaient à l'ancienne version :
+       - un article hors groupe placé en tête (ajout unitaire) faisait
+         retourner null, et le groupe n'était pas détecté du tout ;
+       - une commande groupée sur UNE seule taille (une ligne, quantité 3)
+         était écartée par le test « plusieurs articles le partagent ».
+     La présence de la propriété suffit : elle n'est posée que par la modale
+     de commande groupée. */
+  for (const it of items) {
+    const summary = it?.properties?.find?.(
+      (p: any) => p?.name === '_sizeGroupSummary',
     )?.value;
-    return summary === firstSummary;
-  }).length;
-  
-  // Retourner le summary seulement si plusieurs items le partagent
-  return matchingCount > 1 ? firstSummary : null;
+    if (typeof summary === 'string' && summary.trim()) return summary;
+  }
+  return null;
 }
 
 /**
@@ -78,8 +75,15 @@ function getSizeGroupSummary(items: any[]): string | null {
 function renderSizeGroupTable(items: any[], summary: string): string {
   // Compter les quantités par taille
   const sizeQtys: Record<string, number> = {};
-  
+
   items.forEach((item: any) => {
+    /* Seules les lignes DU GROUPE comptent : un article ajouté à l'unité dans
+       la même commande porte aussi une taille, et l'inclure ici gonflerait le
+       total du groupe. */
+    const inGroup =
+      item?.properties?.find?.((p: any) => p?.name === '_sizeGroupSummary')?.value === summary;
+    if (!inGroup) return;
+
     const size = item?.properties?.find?.((p: any) => p?.name === 'Taille')?.value;
     if (size && typeof size === 'string') {
       sizeQtys[size] = (sizeQtys[size] || 0) + (item.quantity || 1);
@@ -135,6 +139,150 @@ function renderSizeGroupTable(items: any[], summary: string): string {
       </div>
     </div>
   `;
+}
+
+/**
+ * Tableau COULEUR × TAILLE pour la FICHE DE PRODUCTION.
+ *
+ * La fiche est une page autonome (styles en dur, pensée pour l'impression) :
+ * elle ne peut pas réutiliser renderSizeGroupTable(), qui dépend des classes
+ * et des variables du dashboard. Même donnée, présentation adaptée au papier.
+ *
+ * @returns '' si la commande n'est pas groupée par tailles.
+ */
+function sheetSizeTable(items: any[]): string {
+  const summary = getSizeGroupSummary(items);
+  if (!summary) return '';
+
+  const prop = (it: any, name: string) =>
+    it?.properties?.find?.((p: any) => p?.name === name)?.value;
+
+  const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
+  const byColor = new Map<string, Record<string, number>>();
+  const sizeSet = new Set<string>();
+
+  for (const it of items || []) {
+    // Comme dans renderSizeGroupTable : on n'agrège que les lignes du groupe.
+    if (prop(it, '_sizeGroupSummary') !== summary) continue;
+
+    const size = String(prop(it, 'Taille') || '?').trim();
+    /* La couleur arrive dans la propriété « Détails » (voir la construction du
+       panier dans recapitulatif.liquid), sous la forme « Couleur : Black ».
+       Replis : « Couleur » si le nom change un jour, puis la variante Shopify,
+       qui porte aussi la teinte. */
+    const rawColor = String(
+      prop(it, 'Détails') || prop(it, 'Couleur') || it?.variantTitle || '—',
+    ).trim();
+    // On ne garde que la valeur : « Couleur : Black » -> « Black ».
+    const color = rawColor.replace(/^couleur\s*:\s*/i, '').trim() || '—';
+    const qty = Number(it?.quantity) || 0;
+    if (qty < 1) continue;
+    sizeSet.add(size);
+    if (!byColor.has(color)) byColor.set(color, {});
+    const row = byColor.get(color)!;
+    row[size] = (row[size] || 0) + qty;
+  }
+
+  if (!sizeSet.size) return '';
+
+  const sizes = [...sizeSet].sort((a, b) => {
+    const ia = SIZE_ORDER.indexOf(a);
+    const ib = SIZE_ORDER.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+
+  const colTotals: Record<string, number> = {};
+  let grand = 0;
+
+  const body = [...byColor.entries()]
+    .map(([color, counts]) => {
+      const cells = sizes
+        .map((sz) => {
+          const n = counts[sz] || 0;
+          colTotals[sz] = (colTotals[sz] || 0) + n;
+          grand += n;
+          // Un zéro plein alourdit la lecture : on le laisse en gris pâle.
+          return `<td class="num${n ? '' : ' zero'}">${n || '·'}</td>`;
+        })
+        .join('');
+      const rowTotal = sizes.reduce((s, sz) => s + (counts[sz] || 0), 0);
+      return `<tr><th scope="row">${esc(color)}</th>${cells}<td class="num tot">${rowTotal}</td></tr>`;
+    })
+    .join('');
+
+  return `
+    <div class="ps-block">
+      <div class="ps-lbl">Répartition par taille</div>
+      <table class="ps-grid">
+        <thead>
+          <tr>
+            <th scope="col">Couleur</th>
+            ${sizes.map((sz) => `<th scope="col" class="num">${esc(sz)}</th>`).join('')}
+            <th scope="col" class="num tot">Total</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total</th>
+            ${sizes.map((sz) => `<td class="num">${colTotals[sz] || 0}</td>`).join('')}
+            <td class="num tot">${grand}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+}
+
+/**
+ * Réduit une commande groupée par tailles à UNE ligne par design.
+ *
+ * Shopify crée une ligne par taille (même produit, même visuel) : les lister
+ * toutes affichait quatre fois le même sweatshirt. Le détail par taille est
+ * déjà porté par renderSizeGroupTable().
+ *
+ * Les lignes conservées cumulent la quantité du groupe et perdent leurs
+ * propriétés propres à une taille (Taille, Ligne n/N), qui n'auraient plus de
+ * sens sur une ligne agrégée.
+ *
+ * @returns les articles à afficher — inchangés si la commande n'est pas groupée.
+ */
+function collapseSizeGroup(items: any[]): any[] {
+  if (!getSizeGroupSummary(items)) return items || [];
+
+  const prop = (it: any, name: string) =>
+    it?.properties?.find?.((p: any) => p?.name === name)?.value;
+
+  // Regroupement par design : un même visuel peut couvrir plusieurs tailles.
+  // À défaut de visuel identifiable, le titre + la variante font la clé.
+  const groups = new Map<string, any>();
+
+  for (const it of items || []) {
+    const summary = prop(it, '_sizeGroupSummary');
+    if (!summary) {
+      // Article hors groupe (ex. ajout unitaire) : conservé tel quel.
+      groups.set(`solo:${groups.size}`, it);
+      continue;
+    }
+    const key = [it?.title, it?.variantTitle, summary].join('|');
+    const seen = groups.get(key);
+    if (!seen) {
+      groups.set(key, {
+        ...it,
+        quantity: Number(it?.quantity) || 1,
+        // On retire ce qui ne vaut que pour une taille précise.
+        properties: (it?.properties || []).filter(
+          (p: any) => p?.name !== 'Taille' && !/^Ligne\b/i.test(String(p?.name || '')),
+        ),
+      });
+    } else {
+      seen.quantity = (Number(seen.quantity) || 0) + (Number(it?.quantity) || 1);
+    }
+  }
+
+  return [...groups.values()];
 }
 
 const STYLE = `
@@ -1175,6 +1323,51 @@ body{
   .lg-theme{top:12px; right:12px}
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   BANDEAU « NOUVELLES DONNÉES »
+   Remplace le rechargement automatique, qui coupait la lecture et la
+   saisie. L'utilisateur actualise quand il le décide.
+   ═══════════════════════════════════════════════════════════════ */
+.refresh-bar{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  z-index:4000;display:flex;align-items:center;gap:10px;
+  padding:10px 12px 10px 14px;border-radius:999px;
+  background:var(--ink);color:var(--paper);
+  box-shadow:0 8px 28px rgba(0,0,0,.28);
+  font-size:12.5px;font-weight:600;
+  max-width:calc(100vw - 24px);
+  animation:refreshIn .22s ease;
+}
+@keyframes refreshIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}}
+.refresh-bar>svg{width:15px;height:15px;flex:none;opacity:.8}
+.refresh-bar>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.refresh-bar button{
+  flex:none;border:none;border-radius:999px;cursor:pointer;
+  font:inherit;font-size:12px;font-weight:700;
+  padding:6px 13px;background:var(--accent);color:#fff;
+  transition:filter .15s;
+}
+.refresh-bar button:hover{filter:brightness(1.08)}
+:root[data-theme="dark"] .refresh-bar button{color:#05202b}
+/* Croix « ignorer » : discrète, elle ne concurrence pas l'action principale. */
+.refresh-bar .refresh-bar-x{
+  background:none;color:var(--paper);opacity:.55;
+  padding:0;width:24px;height:24px;display:grid;place-items:center;
+}
+.refresh-bar .refresh-bar-x:hover{opacity:1;filter:none}
+.refresh-bar .refresh-bar-x svg{width:13px;height:13px}
+
+/* Étroit : le bandeau occupe la largeur. Pas de redéfinition de refreshIn ici —
+   une @keyframes dans un @media écrase la règle globale selon l'ordre de
+   cascade, ce qui casserait l'animation sur grand écran. L'animation part
+   simplement de l'état translaté du bandeau plein format. */
+@media (max-width:520px){
+  .refresh-bar{
+    left:12px;right:12px;bottom:12px;border-radius:12px;
+    transform:none;animation:none;
+  }
+}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
 
@@ -1570,7 +1763,18 @@ function orderCard(o: Order, srcQuote?: Quote): string {
       })()}
 
       <div class="section-lbl lbl">Articles à produire</div>
-      ${items.map(itemRow).join('') || '<div class="kv"><span class="empty">Aucun article.</span></div>'}
+      ${(() => {
+        /* Commande groupée par tailles : Shopify crée une ligne par taille,
+           toutes portant le MÊME design. Les afficher toutes répétait quatre
+           fois le même article — le détail des tailles est déjà donné par le
+           tableau récapitulatif juste au-dessus. On n'en montre donc qu'une,
+           avec la quantité totale. */
+        const rows = collapseSizeGroup(items);
+        return (
+          rows.map(itemRow).join('') ||
+          '<div class="kv"><span class="empty">Aucun article.</span></div>'
+        );
+      })()}
 
       <!-- Note interne -->
       <div class="section-lbl lbl">Note interne</div>
@@ -1874,7 +2078,13 @@ export function productionSheetPage(o: Order): string {
     .map(esc)
     .join(', ');
 
-  const itemsHtml = items
+  /* Commande groupée : une seule ligne par design, comme dans le dashboard.
+     Le détail par taille est donné par le tableau ci-dessous — répéter le même
+     sweatshirt une fois par taille allongeait la fiche sans rien apporter à
+     l'atelier. */
+  const sheetItems = collapseSizeGroup(items);
+
+  const itemsHtml = sheetItems
     .map((li: any, idx: number) => {
       const props: Array<{ name: string; value: string }> = Array.isArray(li.properties) ? li.properties : [];
       const imgs = props.filter((p) => isImg(p.value));
@@ -1943,11 +2153,25 @@ export function productionSheetPage(o: Order): string {
     border-radius:8px;background:#faf9f7}
   .ps-visuals figcaption{font-size:10.5px;color:#8b8478;text-align:center;margin-top:5px;font-weight:600}
   .ps-none{font-size:12.5px;color:#a29a8e}
+  /* Tableau couleur × taille. Bordures franches : la fiche est imprimée, un
+     simple fond gris ne ressort pas toujours au noir et blanc. */
+  .ps-grid{width:100%;border-collapse:collapse;font-size:12.5px}
+  .ps-grid th,.ps-grid td{border:1px solid #ddd8d0;padding:7px 9px;text-align:left}
+  .ps-grid thead th{background:#f6f4f0;font-size:10.5px;font-weight:800;
+    letter-spacing:.05em;text-transform:uppercase;color:#6b665e}
+  .ps-grid tbody th{font-weight:700}
+  .ps-grid .num{text-align:center;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-variant-numeric:tabular-nums}
+  .ps-grid .zero{color:#c8c2b8}
+  .ps-grid .tot{font-weight:800;background:#faf9f7}
+  .ps-grid tfoot th,.ps-grid tfoot td{background:#f6f4f0;font-weight:800}
   footer.ps-foot{margin-top:22px;padding-top:12px;border-top:1px solid #e4e0d9;
     font-size:11px;color:#a29a8e;display:flex;justify-content:space-between}
   @media print{
     body{background:#fff;padding:0}
     .toolbar{display:none}
+    /* Le tableau ne doit pas se couper entre deux pages. */
+    .ps-grid{page-break-inside:avoid}
     .sheet{box-shadow:none;max-width:none;padding:0}
     .ps-visuals img{height:150px}
   }
@@ -1987,6 +2211,10 @@ export function productionSheetPage(o: Order): string {
            <div class="ps-note">${esc(o.internalNote)}</div></div>`
         : ''
     }
+
+    <!-- Répartition par taille : placée AVANT les articles, c'est ce que
+         l'atelier lit en premier pour préparer les pièces. -->
+    ${sheetSizeTable(items)}
 
     <div class="ps-block">
       <div class="ps-lbl">À produire</div>
@@ -2814,23 +3042,10 @@ export function dashboardPage(
     })};
     var AUTO_REFRESH_MS=20000;   // fréquence de vérification (20 s)
 
-    // L'utilisateur est-il en train de faire quelque chose qu'il ne faut pas
-    // interrompre ? (saisie dans un champ, ou une modale/overlay visible)
-    function dashBusy(){
-      var ae=document.activeElement;
-      if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'||ae.isContentEditable)){
-        return true;
-      }
-      // Un menu déroulant ouvert : recharger le fermerait sous le doigt.
-      if(document.querySelector('.dd.open')) return true;
-      // Modales/overlays ouverts (id ou classe contenant "modal"/"overlay"/"invoice"/"drawer").
-      var open=document.querySelectorAll('.modal,.overlay,[class*="modal"],[class*="overlay"],[class*="drawer"]');
-      for(var i=0;i<open.length;i++){
-        var el=open[i];var st=window.getComputedStyle(el);
-        if(st.display!=='none'&&st.visibility!=='hidden'&&el.offsetParent!==null){return true;}
-      }
-      return false;
-    }
+    /* dashBusy() a été retiré avec le rechargement automatique : il servait à
+       repérer les moments « occupés » (champ focalisé, modale ouverte) pour
+       différer un reload. La page ne se recharge plus d'elle-même — voir
+       showRefreshBanner(). */
 
     function dashChanged(s){
       return s.orders!==DASH_STATE.orders || s.quotes!==DASH_STATE.quotes ||
@@ -2838,7 +3053,7 @@ export function dashboardPage(
              s.newQuotes!==DASH_STATE.newQuotes;
     }
 
-    var dashPending=false;   // un changement a été détecté mais on attend d'être libre
+    var dashPending=false;   // un changement a été détecté (bandeau affiché)
     async function dashCheck(){
       // Ne vérifie pas si l'onglet est en arrière-plan (économie).
       if(document.hidden) return;
@@ -2853,17 +3068,37 @@ export function dashboardPage(
         if(!s||!s.ok) return;
         if(dashChanged(s)){
           dashPending=true;
-          // Badge IMMÉDIAT (sans attendre le reload différé) : dès qu'une
-          // nouvelle commande/devis est détecté, la cloche se met à jour.
+          // Badge IMMÉDIAT : dès qu'une nouvelle commande/devis est détecté,
+          // la cloche se met à jour.
           bumpBell(s);
+          /* PAS de location.reload() ici.
+             Le rechargement automatique coupait la lecture d'une commande, la
+             saisie d'une note ou un simple défilement : dashBusy() ne couvrait
+             que les champs focalisés et les modales, pas le fait de consulter
+             la page. On signale la nouveauté et l'utilisateur rafraîchit quand
+             il le décide. */
+          showRefreshBanner();
         }
       }catch(e){/* réseau indisponible : on réessaiera au prochain tick */}
+    }
 
-      // Recharge dès qu'un changement est en attente ET que l'utilisateur est
-      // libre (pour rafraîchir la liste complète des cartes).
-      if(dashPending && !dashBusy()){
-        location.reload();
-      }
+    /* Bandeau « nouvelles données » : invite à rafraîchir, sans l'imposer.
+       Affiché une seule fois, il reste jusqu'au clic ou au rechargement. */
+    function showRefreshBanner(){
+      if(document.getElementById('dash-refresh-bar')) return;
+      var bar=document.createElement('div');
+      bar.id='dash-refresh-bar';
+      bar.className='refresh-bar';
+      bar.innerHTML=
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">'+
+          '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>'+
+        '</svg>'+
+        '<span>De nouvelles données sont disponibles.</span>'+
+        '<button type="button" onclick="location.reload()">Actualiser</button>'+
+        '<button type="button" class="refresh-bar-x" onclick="this.parentNode.remove()" aria-label="Ignorer">'+
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>'+
+        '</button>';
+      document.body.appendChild(bar);
     }
 
     /* Met à jour la pastille de la cloche en direct, sans recharger la page.
