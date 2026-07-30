@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -15,6 +16,7 @@ import {
   CloudinaryService,
   UploadResult,
 } from '../shared/cloudinary.service';
+import { AdminSessionGuard } from '../admin/admin-session.guard';
 
 // Type minimal du fichier multer (evite la dependance forte a @types/multer dans la signature).
 interface UploadedMulterFile {

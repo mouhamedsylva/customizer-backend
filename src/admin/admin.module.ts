@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { AdminAuthService } from './admin-auth.service';
+import { AdminSessionGuard } from './admin-session.guard';
 import { SettingsModule } from './settings.module';
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
@@ -15,6 +16,9 @@ import { Admin } from '../database/entities/admin.entity';
     SettingsModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService, AdminAuthService],
+  providers: [AdminService, AdminAuthService, AdminSessionGuard],
+  /* Exportés pour que les autres modules (quotes, orders, uploads) puissent
+     protéger leurs routes sensibles avec AdminSessionGuard. */
+  exports: [AdminAuthService, AdminSessionGuard],
 })
 export class AdminModule {}
