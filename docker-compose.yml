@@ -1,0 +1,34 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    # Exposé uniquement en local sur le VPS : c'est Nginx qui sert le public
+    # en HTTPS et proxifie vers ce port.
+    ports:
+      - '127.0.0.1:3000:3000'
+    env_file: .env
+    environment:
+      PORT: 3000
+      MYSQL_URL: mysql://customizer:${MYSQL_PASSWORD}@db:3306/customizer
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: customizer
+      MYSQL_USER: customizer
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u root -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  db_data:
