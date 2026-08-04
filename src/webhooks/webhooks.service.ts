@@ -71,7 +71,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         'SHOPIFY_WEBHOOK_SECRET absent : signature webhook NON vérifiée.',
       );
-      return false; // tolérant tant que le secret n'est pas configuré
+      return true; // tolérant tant que le secret n'est pas configuré
     }
     if (!hmacHeader || !rawBody) return false;
 
