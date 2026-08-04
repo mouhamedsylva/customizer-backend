@@ -153,7 +153,11 @@ export class AdminService {
    *   est déjà listée dans l'onglet Commandes : l'y laisser ferait compter
    *   la même vente deux fois.
    */
-  async getQuotes(period?: string, includePaid = true): Promise<Quote[]> {
+  async getQuotes(
+    period?: string,
+    includePaid = true,
+    limit = 500,
+  ): Promise<Quote[]> {
     const qb = this.quotes.createQueryBuilder('q').select('q.id', 'id');
     const since = periodStart(period);
     if (since) qb.andWhere('q.createdAt >= :since', { since });
@@ -165,7 +169,7 @@ export class AdminService {
 
     const ids = await qb
       .orderBy('q.createdAt', 'DESC')
-      .limit(500)
+      .limit(limit)
       .getRawMany<{ id: string }>();
     if (!ids.length) return [];
     const rows = await this.quotes.find({

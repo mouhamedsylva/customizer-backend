@@ -34,15 +34,23 @@ export class SettingsService {
     const rows = await this.repo.find();
     const map = new Map(rows.map((r) => [r.key, r.value ?? '']));
 
-    const days = (map.get('reminder_days') || '')
-      .split(',')
-      .map((d) => parseInt(d.trim(), 10))
-      .filter((d) => Number.isFinite(d) && d > 0)
-      .sort((a, b) => a - b);
+    // `undefined` = jamais configuré -> valeurs par défaut.
+    // `''` = paliers volontairement supprimés -> aucune relance.
+    // Ces deux cas retombaient tous les deux sur [3, 7, 14] : vider le champ
+    // était sans effet, et l'admin voyait sa saisie annulée sans explication.
+    const rawDays = map.get('reminder_days');
+    const days =
+      rawDays === undefined
+        ? DEFAULTS.reminderDays
+        : rawDays
+            .split(',')
+            .map((d) => parseInt(d.trim(), 10))
+            .filter((d) => Number.isFinite(d) && d > 0)
+            .sort((a, b) => a - b);
 
     return {
       reminderEnabled: map.get('reminder_enabled') === '1',
-      reminderDays: days.length ? days : DEFAULTS.reminderDays,
+      reminderDays: days,
       notifyEmailEnabled: map.get('notify_email_enabled') === '1',
       notifyEmail: map.get('notify_email') || '',
     };

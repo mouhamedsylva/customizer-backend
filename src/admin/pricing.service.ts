@@ -203,9 +203,12 @@ export class PricingService {
         if (DEFAULT_TIERS[key]) out[key] = DEFAULT_TIERS[key]!.map((t) => ({ ...t }));
         continue;
       }
-      const parsed = this.parseTiers(raw);
-      // Grille vide volontaire : le produit cesse d'être dégressif.
-      if (parsed.length) out[key] = parsed;
+      // Grille vide volontaire : le produit cesse d'être dégressif. On pose la
+      // clé avec un tableau vide plutôt que de l'omettre — l'omission était
+      // indiscernable de « jamais configuré », si bien que le thème retombait
+      // sur sa grille codée en dur et l'admin ne pouvait PAS désactiver la
+      // dégressivité d'un produit.
+      out[key] = this.parseTiers(raw);
     }
     return out;
   }

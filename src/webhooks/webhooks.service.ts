@@ -11,6 +11,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { Order } from '../database/entities/order.entity';
 import { ShopifyService } from '../shared/shopify.service';
 import { EmailService } from '../shared/email.service';
+import { escapeHtml as esc } from '../shared/html.util';
 import { SettingsService } from '../admin/settings.service';
 import {
   fromShopify,
@@ -24,6 +25,33 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   private syncTimer?: NodeJS.Timeout;
   /** Vrai jusqu'à la première synchro : celle-ci rattrape l'historique en silence. */
   private firstSync = true;
+  /**
+   * Verrou anti-chevauchement : une passe complète (jusqu'à 250 upserts puis
+   * 60 appels Shopify séquentiels) peut dépasser l'intervalle du timer. Sans
+   * ce garde-fou, deux passes écriraient les mêmes lignes en parallèle et la
+   * charge sur l'API Shopify doublerait à chaque tour de retard.
+   */
+  private syncing = false;
+  /**
+   * Fin de la dernière synchro réussie, en ISO 8601. Sert de `updated_at_min`
+   * au passage suivant : en régime normal la synchro ne ramène plus que les
+   * commandes réellement modifiées, au lieu des 250 dernières à chaque fois.
+   */
+  private lastSyncAt?: string;
+  /**
+   * Âge au-delà duquel une commande découverte par la synchro est considérée
+   * comme de l'historique et n'alerte plus l'équipe. 24 h laisse largement de
+   * quoi rattraper un webhook manqué sans réveiller tout l'historique.
+   */
+  private static readonly NOTIFY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+  /**
+   * Fenêtre à rejouer quand la pagination a été tronquée.
+   *
+   * Enveloppée dans un objet pour distinguer « pas de reprise en cours »
+   * (`undefined`) de « reprise sur tout l'historique » (`{value: undefined}`) :
+   * ces deux cas produisent le même `since` mais n'ont pas le même sens.
+   */
+  private pendingSince?: { value: string | undefined };
 
   constructor(
     private readonly config: ConfigService,
@@ -60,18 +88,33 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Vérifie la signature HMAC d'un webhook Shopify.
-   * @param rawBody corps BRUT de la requête (Buffer), tel que reçu.
+   *
+   * Prouve deux choses à la fois : que l'appel vient bien de Shopify (seul
+   * détenteur du secret partagé), et que le corps n'a pas été modifié en
+   * route. Sans elle, l'URL du webhook est une porte ouverte : elle est
+   * publique par nature, et l'enregistrement est un upsert sur l'id Shopify.
+   *
+   * @param rawBody corps BRUT de la requête (Buffer), tel que reçu — la
+   *   signature porte sur les octets exacts, un JSON re-sérialisé ne
+   *   correspondrait plus.
    * @param hmacHeader valeur de l'en-tête X-Shopify-Hmac-Sha256.
-   * Retourne true si la signature est valide (ou si aucun secret n'est
-   * configuré — mode tolérant pour ne pas bloquer en dev).
+   * @returns true uniquement si la signature correspond. Secret absent =>
+   *   false (l'ancien « mode tolérant » renvoyait true, ce qui acceptait
+   *   n'importe quel appel non authentifié).
    */
   verifyHmac(rawBody: Buffer, hmacHeader?: string): boolean {
     const secret = this.config.get<string>('SHOPIFY_WEBHOOK_SECRET');
     if (!secret) {
-      this.logger.warn(
-        'SHOPIFY_WEBHOOK_SECRET absent : signature webhook NON vérifiée.',
+      // Cette branche retournait `true` (« mode tolérant »). Le secret n'étant
+      // documenté dans aucun `.env.example`, la tolérance était le chemin
+      // NOMINAL en production : n'importe qui pouvait POSTer un webhook, et
+      // comme l'enregistrement est un upsert sur l'id Shopify, écraser le
+      // montant et le statut de paiement d'une vraie commande.
+      this.logger.error(
+        'SHOPIFY_WEBHOOK_SECRET absent : webhook REJETÉ. Renseignez la ' +
+          'variable avec la clé de signature fournie par Shopify.',
       );
-      return true; // tolérant tant que le secret n'est pas configuré
+      return false;
     }
     if (!hmacHeader || !rawBody) return false;
 
@@ -269,14 +312,16 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
         this.config.get<string>('BACKEND_URL') ||
         this.config.get<string>('PUBLIC_URL') ||
         '';
+      // Données client échappées : un nom/e-mail saisi au checkout peut
+      // contenir du HTML. Les libellés `<strong>` sont, eux, volontaires.
       await this.email.sendInternalAlert(
         cfg.notifyEmail,
         `Nouvelle commande ${order.orderNumber || ''}`.trim(),
         [
-          `<strong>Client :</strong> ${order.customerName || '—'}`,
-          `<strong>E-mail :</strong> ${order.customerEmail || '—'}`,
-          `<strong>Total :</strong> ${order.totalPrice || '—'} ${order.currency || ''}`,
-          `<strong>Articles :</strong> ${itemCount}`,
+          `<strong>Client :</strong> ${esc(order.customerName || '—')}`,
+          `<strong>E-mail :</strong> ${esc(order.customerEmail || '—')}`,
+          `<strong>Total :</strong> ${esc(order.totalPrice || '—')} ${esc(order.currency || '')}`,
+          `<strong>Articles :</strong> ${esc(itemCount)}`,
         ],
         backendUrl ? `${backendUrl}/api/admin` : undefined,
       );
@@ -301,41 +346,148 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
    * passage se tait — sinon il enverrait un e-mail par commande de
    * l'historique.
    */
+  /**
+   * Faut-il alerter l'équipe pour cette commande ?
+   *
+   * Le seul flag `backfill` ne suffit pas : quand la pagination a été tronquée,
+   * des commandes d'historique arrivent lors de passes ultérieures où
+   * `backfill` est déjà faux. Sans garde d'âge, chacune déclencherait un
+   * e-mail « nouvelle commande » — exactement ce que le rattrapage silencieux
+   * cherche à éviter. On se fie donc à la date réelle de la commande.
+   */
+  private shouldNotify(
+    payload: Record<string, any>,
+    backfill: boolean,
+  ): boolean {
+    if (backfill) return false;
+
+    const created = payload?.created_at
+      ? new Date(payload.created_at).getTime()
+      : NaN;
+    // Date absente ou illisible : on alerte (une vraie nouvelle commande ne
+    // doit pas passer inaperçue à cause d'un payload inhabituel).
+    if (Number.isNaN(created)) return true;
+
+    return Date.now() - created <= WebhooksService.NOTIFY_MAX_AGE_MS;
+  }
+
+  /**
+   * Date de création de la commande connue la plus récente, en ISO 8601.
+   *
+   * Sert de borne au rattrapage après un redémarrage. On recule d'une minute
+   * pour absorber le décalage d'horloge entre Shopify et la base : mieux vaut
+   * réimporter une commande déjà connue (l'upsert est idempotent) que d'en
+   * manquer une arrivée pile pendant la coupure.
+   */
+  private async lastKnownOrderDate(): Promise<string | null> {
+    const latest = await this.orders.findOne({
+      where: {},
+      order: { shopifyCreatedAt: 'DESC' },
+      select: { shopifyOrderId: true, shopifyCreatedAt: true },
+    });
+    if (!latest?.shopifyCreatedAt) return null;
+    return new Date(
+      new Date(latest.shopifyCreatedAt).getTime() - 60_000,
+    ).toISOString();
+  }
+
   async importFromShopify(reason = 'manuel'): Promise<{ imported: number }> {
-    let orders: Record<string, any>[] = [];
-    try {
-      orders = await this.shopify.listOrders(250);
-    } catch (e) {
+    if (this.syncing) {
       this.logger.warn(
-        `Synchro Shopify (${reason}) impossible : ${(e as Error).message}. ` +
-          `Le token a-t-il le scope read_orders ?`,
+        `Synchro Shopify (${reason}) ignorée : une passe est déjà en cours.`,
       );
       return { imported: 0 };
     }
+    this.syncing = true;
 
-    // Rattrapage initial : base vide, ou toute première synchro de ce process.
-    const known = await this.orders.count();
-    const backfill = this.firstSync || known === 0;
-    this.firstSync = false;
+    // Horodaté AVANT l'appel : une commande modifiée pendant la passe sera
+    // reprise au tour suivant plutôt que manquée.
+    const startedAt = new Date().toISOString();
 
-    let imported = 0;
-    for (const o of orders) {
+    try {
+      // Rattrapage initial : base vide, ou toute première synchro de ce process.
+      // Décidé avant l'appel Shopify, car il conditionne la fenêtre demandée.
+      const known = await this.orders.count();
+      const backfill = this.firstSync || known === 0;
+
+      // Fenêtre demandée à Shopify :
+      //  - reprise après troncature -> on rejoue LA MÊME fenêtre, sinon on
+      //    repartirait de zéro à chaque passage sans jamais progresser ;
+      //  - base vide          -> tout l'historique (vrai premier démarrage) ;
+      //  - redémarrage        -> depuis la commande connue la plus récente. En
+      //    Docker les redémarrages sont fréquents et `firstSync` repart à true
+      //    à chaque fois : sans cette borne, chaque `docker compose up`
+      //    repaginerait tout l'historique pour ne rien changer ;
+      //  - régime normal      -> depuis la dernière passe réussie.
+      let since: string | undefined;
+      if (this.pendingSince !== undefined) {
+        since = this.pendingSince.value;
+      } else if (!backfill) {
+        since = this.lastSyncAt;
+      } else if (known > 0) {
+        since = (await this.lastKnownOrderDate()) ?? undefined;
+      }
+
+      let orders: Record<string, any>[] = [];
+      let truncated = false;
       try {
-        await this.saveOrder(o, !backfill);
-        imported++;
+        const res = await this.shopify.listOrders(250, since);
+        orders = res.orders;
+        truncated = res.truncated;
       } catch (e) {
         this.logger.warn(
-          `Import commande ${o?.id} échoué: ${(e as Error).message}`,
+          `Synchro Shopify (${reason}) impossible : ${(e as Error).message}. ` +
+            `Le token a-t-il le scope read_orders ?`,
         );
+        return { imported: 0 };
       }
-    }
-    this.logger.log(
-      `Synchro Shopify (${reason}) : ${imported}/${orders.length} commande(s)` +
-        (backfill ? ' — rattrapage initial, aucune alerte envoyée.' : '.'),
-    );
 
-    await this.syncShippingStates(orders);
-    return { imported };
+      // Marqué seulement une fois l'appel Shopify passé : un échec réseau au
+      // premier tour ne doit pas faire perdre le rattrapage initial.
+      this.firstSync = false;
+
+      let imported = 0;
+      for (const o of orders) {
+        try {
+          await this.saveOrder(o, this.shouldNotify(o, backfill));
+          imported++;
+        } catch (e) {
+          this.logger.warn(
+            `Import commande ${o?.id} échoué: ${(e as Error).message}`,
+          );
+        }
+      }
+      this.logger.log(
+        `Synchro Shopify (${reason}) : ${imported}/${orders.length} commande(s)` +
+          (backfill ? ' — rattrapage initial, aucune alerte envoyée.' : '.'),
+      );
+
+      await this.syncShippingStates(orders);
+
+      if (truncated) {
+        // Passe incomplète : on mémorise la fenêtre pour la rejouer À
+        // L'IDENTIQUE au tour suivant, et on n'avance surtout pas
+        // `lastSyncAt` — les commandes non lues sortiraient de la plage
+        // `updated_at_min` et ne seraient jamais importées.
+        //
+        // La reprise n'est pas incrémentale : Shopify renvoie les mêmes
+        // premières pages. Elle sert de filet, pas de mécanisme de rattrapage
+        // — au-delà de 5 000 commandes dans la fenêtre, un import manuel par
+        // tranches de dates reste nécessaire.
+        this.pendingSince = { value: since };
+        this.logger.warn(
+          `Synchro (${reason}) incomplète : la fenêtre reste ouverte. ` +
+            `Au-delà de ${orders.length} commandes, prévoyez un import manuel ` +
+            `par tranches de dates.`,
+        );
+      } else {
+        this.pendingSince = undefined;
+        this.lastSyncAt = startedAt;
+      }
+      return { imported };
+    } finally {
+      this.syncing = false;
+    }
   }
 
   /**
@@ -363,11 +515,20 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       try {
         if (await this.alignOne(String(o.id))) aligned++;
       } catch (e) {
-        // Scope manquant, ou API indisponible : on n'interrompt pas la synchro.
+        const message = (e as Error).message;
         this.logger.warn(
-          `État d'expédition ${o?.id} illisible : ${(e as Error).message}`,
+          `État d'expédition ${o?.id} illisible : ${message}`,
         );
-        return; // inutile d'insister sur les suivantes si le scope manque
+        // Un scope manquant vaut pour toutes les commandes : inutile
+        // d'insister. Une panne ponctuelle, elle, ne doit pas priver les
+        // suivantes de leur alignement.
+        if (/\b(401|403)\b/.test(message)) {
+          this.logger.warn(
+            'Alignement interrompu : le token semble manquer un scope ' +
+              '(read_merchant_managed_fulfillment_orders).',
+          );
+          return;
+        }
       }
     }
     if (aligned) {
@@ -392,10 +553,18 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     const next = fromShopify(state, current);
     if (!next) return false;
 
+    // On n'écrit QUE le suivi de production. `fulfillmentStatus` appartient à
+    // `saveOrder`, qui le copie depuis `payload.fulfillment_status` — la
+    // source de vérité Shopify (cf. order.entity.ts).
+    //
+    // Cette méthode le réécrivait à partir de `getShippingState()`, qui lit
+    // les *fulfillment orders* : une autre source, désynchronisée. Une
+    // commande partiellement expédiée dont les FO restent `in_progress` voyait
+    // son `'partial'` écrasé par `null`, et s'affichait « Non traitée » au
+    // dashboard alors qu'un colis était parti.
     await this.orders.update(shopifyOrderId, {
       productionStatus: next,
       productionUpdatedAt: new Date(),
-      fulfillmentStatus: state === 'fulfilled' ? 'fulfilled' : null,
     });
     this.logger.log(
       `Commande ${shopifyOrderId} : suivi aligné sur Shopify (${current} -> ${next}).`,

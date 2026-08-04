@@ -1,8 +1,9 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import {
   ShopifyLineItem,
   ShopifyService,
 } from '../shared/shopify.service';
+import { throwUpstream } from '../shared/upstream-error';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 
 /**
@@ -67,11 +68,7 @@ export class CartService {
         newLine,
       ]);
     } catch (error) {
-      this.logger.error(`Erreur ajout panier: ${(error as Error).message}`);
-      throw new HttpException(
-        `Impossible d'ajouter au panier: ${(error as Error).message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
+      throwUpstream(this.logger, "Impossible d'ajouter au panier.", error);
     }
   }
 
@@ -80,8 +77,11 @@ export class CartService {
     try {
       return await this.shopify.getDraftOrder(draftOrderId);
     } catch (error) {
-      throw new HttpException(
-        `Panier introuvable: ${(error as Error).message}`,
+      // 404 : le panier demandé est introuvable côté Shopify.
+      throwUpstream(
+        this.logger,
+        'Panier introuvable.',
+        error,
         HttpStatus.NOT_FOUND,
       );
     }
@@ -95,10 +95,7 @@ export class CartService {
     try {
       return await this.shopify.deleteDraftOrderLine(draftOrderId, lineId);
     } catch (error) {
-      throw new HttpException(
-        `Impossible de retirer l'article: ${(error as Error).message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
+      throwUpstream(this.logger, "Impossible de retirer l'article.", error);
     }
   }
 }

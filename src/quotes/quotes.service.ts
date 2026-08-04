@@ -5,7 +5,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, IsNull } from 'typeorm';
+import { Repository, Not, IsNull, LessThan } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { EmailService, QuoteEmailData } from '../shared/email.service';
 import {
@@ -39,6 +39,7 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
 
     this.syncTimer = setInterval(() => {
       void this.syncStatuses('périodique');
+      void this.retryOrphanQuotes();
     }, 10 * 60 * 1000);
   }
 
@@ -72,16 +73,23 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
         const orderId = draft?.order_id ? String(draft.order_id) : null;
         const total = draft?.total_price ? String(draft.total_price) : null;
 
-        if (
-          status !== q.draftStatus ||
-          orderId !== q.paidOrderId ||
-          total !== q.totalPrice
-        ) {
-          await this.quotes.update(q.id, {
-            draftStatus: status,
-            paidOrderId: orderId,
-            totalPrice: total,
-          });
+        // Une réponse Shopify partielle (champ absent) ne doit JAMAIS effacer
+        // une valeur déjà acquise : on ne remplace un champ que si la nouvelle
+        // valeur est réellement renseignée. Sans cette garde, un draft renvoyé
+        // sans `total_price`/`status` remettait `totalPrice`/`draftStatus` à
+        // null → le devis sortait du périmètre des relances (filtre
+        // draftStatus='invoice_sent') et n'était plus jamais relancé.
+        const patch: {
+          draftStatus?: string;
+          paidOrderId?: string;
+          totalPrice?: string;
+        } = {};
+        if (status !== null && status !== q.draftStatus) patch.draftStatus = status;
+        if (orderId !== null && orderId !== q.paidOrderId) patch.paidOrderId = orderId;
+        if (total !== null && total !== q.totalPrice) patch.totalPrice = total;
+
+        if (Object.keys(patch).length > 0) {
+          await this.quotes.update(q.id, patch);
           updated++;
         }
       } catch (e) {
@@ -160,13 +168,72 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
         `Devis ${quoteId} -> draft order Shopify #${draftOrder.id}`,
       );
     } catch (error) {
+      // Marque le devis en échec : sans `draftOrderId`, il n'entrerait jamais
+      // dans le flux de facturation/relance. `retryOrphanQuotes()` le rattrape
+      // au prochain passage du cron ; le statut le rend aussi visible au
+      // dashboard au lieu d'un simple log perdu.
+      await this.quotes
+        .update(quoteId, { draftStatus: 'failed' })
+        .catch(() => undefined);
       this.logger.warn(
-        `Devis ${quoteId} : draft order Shopify non créé: ${(error as Error).message}`,
+        `Devis ${quoteId} : draft order Shopify non créé: ${(error as Error).message}. ` +
+          `Sera réessayé automatiquement.`,
       );
     }
 
     // 2) Emails (équipe + accusé client)
     await this.sendEmailsBestEffort(dto.customer.email, emailData);
+  }
+
+  /**
+   * Rattrape les devis restés sans brouillon Shopify (Shopify en panne au
+   * moment de la création). On rejoue `createDraftOrder` à partir du DTO
+   * original conservé dans `quoteData`.
+   *
+   * Ne prend que les devis de plus de 5 min, pour ne pas entrer en collision
+   * avec le traitement `setImmediate` d'un devis qui vient d'être créé.
+   */
+  async retryOrphanQuotes(): Promise<{ retried: number }> {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000);
+    let orphans: Quote[] = [];
+    try {
+      orphans = await this.quotes.find({
+        where: { draftOrderId: IsNull(), createdAt: LessThan(cutoff) },
+        take: 25, // borne : on rattrape par lots, pas tout d'un coup
+      });
+    } catch (e) {
+      this.logger.warn(
+        `Lecture des devis orphelins impossible : ${(e as Error).message}`,
+      );
+      return { retried: 0 };
+    }
+
+    let retried = 0;
+    for (const q of orphans) {
+      try {
+        const dto = q.quoteData as unknown as CreateQuoteDto;
+        const draftOrder = await this.shopify.createDraftOrder(
+          this.buildDraftPayload(dto, q.id),
+        );
+        // Draft créé : on repart d'un statut neutre, syncStatuses fera le reste.
+        await this.quotes.update(q.id, {
+          draftOrderId: String(draftOrder.id),
+          draftStatus: null,
+        });
+        this.logger.log(
+          `Devis orphelin ${q.id} rattrapé -> draft order #${draftOrder.id}`,
+        );
+        retried++;
+      } catch (e) {
+        this.logger.warn(
+          `Devis orphelin ${q.id} : nouvel échec de création, réessai plus tard : ${(e as Error).message}`,
+        );
+      }
+    }
+    if (retried) {
+      this.logger.log(`Devis orphelins rattrapés : ${retried}.`);
+    }
+    return { retried };
   }
 
   /** Construit le payload du draft order Shopify à partir du devis. */
@@ -209,7 +276,19 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
     let tags = 'devis, coins, configurateur';
 
     if (group && Array.isArray(group.rows) && group.rows.length) {
-      lineItems = group.rows.map((r) => {
+      // URLs des aperçus/logos du design : communes à tout le groupe. Sans les
+      // rattacher, une commande de groupe ne portait AUCUNE URL d'aperçu — ni
+      // dans le brouillon Shopify, ni dans le ZIP de production de l'atelier
+      // (buildAndSendZip ne collecte que les propriétés en http(s)). On les
+      // met sur la première ligne, seul endroit nécessaire pour que le ZIP les
+      // retrouve.
+      const previewProps: Array<{ name: string; value: string }> = [];
+      coin.previews.forEach((p) => {
+        if (p.base) previewProps.push({ name: `Aperçu ${p.label}`, value: p.base });
+        if (p.logo) previewProps.push({ name: `Logo ${p.label}`, value: p.logo });
+      });
+
+      lineItems = group.rows.map((r, i) => {
         const props: Array<{ name: string; value: string }> = [
           { name: 'Taille', value: r.size },
           { name: 'Couleur', value: r.color },
@@ -217,6 +296,7 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
         if (r.name) props.push({ name: 'Nom / réf.', value: r.name });
         if (r.flock) props.push({ name: 'Floquage', value: r.flock });
         props.push({ name: 'Référence devis', value: quoteId });
+        if (i === 0) props.push(...previewProps);
         return {
           title: `${group.productLabel || 'Textile'} — ${r.size} / ${r.color}`,
           price: '0.00', // devis : prix défini par l'équipe

@@ -8,6 +8,7 @@ import {
   Param,
   Logger,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AdminAuthService } from './admin-auth.service';
@@ -115,6 +116,9 @@ export class AdminController {
   }
 
   /** POST /api/admin/login — vérifie e-mail + mot de passe, pose le cookie. */
+  // Plafond strict : 5 tentatives/minute/IP. scryptSync est déjà lent (~50 ms),
+  // mais ceci bloque net le bruteforce en ligne et le déni de service par login.
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   async login(
     @Body('email') email: string,
@@ -264,8 +268,22 @@ export class AdminController {
           notifyCustomer: true,
         });
         await this.data.setProductionStatus(orderId, status);
+
+        // Relit l'état réel plutôt que d'écrire 'fulfilled' en dur : quand une
+        // commande a plusieurs fulfillment orders et qu'un seul reste ouvert,
+        // Shopify la considère « partiellement traitée ». La valeur en dur
+        // affichait « Traitée » pour une commande à moitié expédiée, et rien
+        // ne la corrigeait ensuite (alignOne n'écrit plus cette colonne).
+        let real: string | null = 'fulfilled';
+        try {
+          const state = await this.shopify.getShippingState(orderId);
+          real = state === 'fulfilled' ? 'fulfilled' : state === 'partial' ? 'partial' : null;
+        } catch {
+          // Relecture impossible : on garde 'fulfilled', la synchro corrigera.
+        }
+
         await this.data.setFulfillment(orderId, {
-          fulfillmentStatus: 'fulfilled',
+          fulfillmentStatus: real,
           trackingNumber: tracking || null,
         });
         res.json({
@@ -529,6 +547,17 @@ export class AdminController {
           `N'hésitez pas à nous écrire si vous avez la moindre question.\n\n` +
           `Bien cordialement,\nL'équipe Custom Textile`,
       });
+
+      // Compte la relance manuelle comme une relance à part entière.
+      //
+      // Sans ça, le cron horaire voyait `lastReminderAt` toujours nul, sautait
+      // son garde-fou anti-doublon et pouvait renvoyer le MÊME message une
+      // heure plus tard — deux e-mails au libellé identique chez le client.
+      await this.data.updateQuoteStatus(quoteId, {
+        remindersSent: (quote.remindersSent || 0) + 1,
+        lastReminderAt: new Date(),
+      });
+
       res.json({ ok: true, to: customer.email });
     } catch (err) {
       res.status(502).json({ ok: false, error: (err as Error).message });
@@ -551,8 +580,20 @@ export class AdminController {
     const period = String(req.query.period || 'all');
     const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
+    /**
+     * Plafond des exports.
+     *
+     * Les listes du dashboard sont bornées à 300 (commandes) et 500 (devis)
+     * pour rester légères à l'affichage. L'export héritait de ces plafonds
+     * SANS le dire : au-delà, le CSV comptable perdait silencieusement les
+     * lignes les plus anciennes de la période — un exercice incomplet remis
+     * au comptable sans le moindre signal.
+     */
+    const EXPORT_LIMIT = 50000;
+
     let rows: string[] = [];
     let filename = 'export.csv';
+    let truncated = false;
 
     if (type === 'quotes') {
       // ── Devis ──
@@ -560,7 +601,8 @@ export class AdminController {
       rows = [
         'reference,client,email,telephone,entreprise,produit,quantite,total,statut,relances,date',
       ];
-      const quotes = await this.data.getQuotes(period);
+      const quotes = await this.data.getQuotes(period, true, EXPORT_LIMIT);
+      truncated = quotes.length >= EXPORT_LIMIT;
       for (const qt of quotes) {
         const d = (qt.quoteData || {}) as Record<string, any>;
         const c = d.customer || {};
@@ -585,7 +627,12 @@ export class AdminController {
       // ── Export comptable : une ligne par commande payée, montants nets ──
       filename = `comptabilite-${period}.csv`;
       rows = ['date,commande,client,email,total_ttc,devise,statut_paiement'];
-      const orders = await this.data.getOrders({ period, payment: 'paid' });
+      const orders = await this.data.getOrders({
+        period,
+        payment: 'paid',
+        limit: EXPORT_LIMIT,
+      });
+      truncated = orders.length >= EXPORT_LIMIT;
       for (const o of orders) {
         rows.push(
           [
@@ -607,10 +654,12 @@ export class AdminController {
       ];
       const orders = await this.data.getOrders({
         period,
+        limit: EXPORT_LIMIT,
         production: String(req.query.production || 'all'),
         payment: String(req.query.payment || 'all'),
         sort: String(req.query.sort || 'date_desc'),
       });
+      truncated = orders.length >= EXPORT_LIMIT;
       for (const o of orders) {
         const items = Array.isArray(o.lineItems) ? o.lineItems : [];
         const summary = items
@@ -634,6 +683,23 @@ export class AdminController {
       }
     }
 
+    if (truncated) {
+      // Une troncature silencieuse se lit comme un export complet. On la rend
+      // visible dans le fichier lui-même, pas seulement dans les logs : c'est
+      // le CSV qui part chez le comptable, pas la console.
+      this.logger.warn(
+        `Export ${type} (${period}) tronqué à ${EXPORT_LIMIT} lignes.`,
+      );
+      rows.push('');
+      rows.push(
+        q(
+          `ATTENTION : export limité à ${EXPORT_LIMIT} lignes — des données ` +
+            `plus anciennes de la période sont absentes. Exportez par ` +
+            `tranches de dates plus courtes pour obtenir la totalité.`,
+        ),
+      );
+    }
+
     res.type('text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send('﻿' + rows.join('\n')); // BOM : Excel lit correctement l'UTF-8
@@ -650,18 +716,26 @@ export class AdminController {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
-    const days = String(body.reminderDays || '')
-      .split(',')
-      .map((d) => parseInt(d.trim(), 10))
-      .filter((d) => Number.isFinite(d) && d > 0);
-
-    const saved = await this.settings.save({
+    // `reminderDays` n'est transmis QUE s'il figure dans le corps reçu.
+    // Le transmettre systématiquement écrivait une liste vide en base dès
+    // qu'un appel partiel ne le mentionnait pas — et depuis que « vide » est
+    // distingué de « absent », cela revenait à désactiver les paliers à
+    // l'insu de l'admin.
+    const patch: Parameters<SettingsService['save']>[0] = {
       reminderEnabled: body.reminderEnabled === true || body.reminderEnabled === '1',
-      reminderDays: days,
       notifyEmailEnabled:
         body.notifyEmailEnabled === true || body.notifyEmailEnabled === '1',
       notifyEmail: String(body.notifyEmail || ''),
-    });
+    };
+
+    if (body.reminderDays !== undefined) {
+      patch.reminderDays = String(body.reminderDays || '')
+        .split(',')
+        .map((d) => parseInt(d.trim(), 10))
+        .filter((d) => Number.isFinite(d) && d > 0);
+    }
+
+    const saved = await this.settings.save(patch);
     res.json({ ok: true, settings: saved });
   }
 

@@ -57,6 +57,37 @@ export class ShopifyService {
     };
   }
 
+  /** Délai au-delà duquel un appel Shopify est abandonné. */
+  private static readonly TIMEOUT_MS = 20000;
+
+  /**
+   * `fetch` borné dans le temps.
+   *
+   * Le `fetch` natif de Node n'a AUCUN timeout par défaut : un appel qui pend
+   * bloque son appelant indéfiniment. Côté synchro périodique, cela gèle le
+   * verrou anti-chevauchement et fige toutes les passes suivantes.
+   */
+  private async fetchShopify(
+    url: string,
+    init: RequestInit = {},
+  ): Promise<Response> {
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(ShopifyService.TIMEOUT_MS),
+      });
+    } catch (e) {
+      // `AbortSignal.timeout` lève une TimeoutError peu parlante : on la
+      // reformule pour que le message loggué désigne la cause réelle.
+      if ((e as Error)?.name === 'TimeoutError') {
+        throw new Error(
+          `Shopify n'a pas répondu en ${ShopifyService.TIMEOUT_MS / 1000}s : ${url}`,
+        );
+      }
+      throw e;
+    }
+  }
+
   /**
    * Cree un draft order Shopify.
    * Retourne l'objet draft_order tel que renvoye par Shopify.
@@ -66,7 +97,7 @@ export class ShopifyService {
   ): Promise<Record<string, any>> {
     const body = { draft_order: payload };
 
-    const response = await fetch(`${this.getBaseUrl()}/draft_orders.json`, {
+    const response = await this.fetchShopify(`${this.getBaseUrl()}/draft_orders.json`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
@@ -88,7 +119,7 @@ export class ShopifyService {
    * Recupere un draft order par son id.
    */
   async getDraftOrder(draftOrderId: string | number): Promise<Record<string, any>> {
-    const response = await fetch(
+    const response = await this.fetchShopify(
       `${this.getBaseUrl()}/draft_orders/${draftOrderId}.json`,
       { method: 'GET', headers: this.getHeaders() },
     );
@@ -117,7 +148,7 @@ export class ShopifyService {
       bcc?: string[];
     } = {},
   ): Promise<Record<string, any>> {
-    const response = await fetch(
+    const response = await this.fetchShopify(
       `${this.getBaseUrl()}/draft_orders/${draftOrderId}/send_invoice.json`,
       {
         method: 'POST',
@@ -146,7 +177,7 @@ export class ShopifyService {
    * Liste les draft orders (limite configurable).
    */
   async listDraftOrders(limit = 50): Promise<Record<string, any>[]> {
-    const response = await fetch(
+    const response = await this.fetchShopify(
       `${this.getBaseUrl()}/draft_orders.json?limit=${limit}`,
       { method: 'GET', headers: this.getHeaders() },
     );
@@ -164,27 +195,85 @@ export class ShopifyService {
   }
 
   /**
+   * URL de la page suivante, extraite de l'en-tête `Link` renvoyé par Shopify.
+   *
+   * Format : `<https://…/orders.json?page_info=xyz>; rel="next"` — parfois
+   * précédé d'un `rel="previous"`. Le `page_info` est opaque et porte déjà
+   * tous les filtres de la requête initiale : Shopify REFUSE qu'on les
+   * répète, d'où l'usage de l'URL telle quelle.
+   */
+  private nextPageUrl(linkHeader: string | null): string | null {
+    if (!linkHeader) return null;
+    for (const part of linkHeader.split(',')) {
+      const match = part.match(/<([^>]+)>\s*;\s*rel="?next"?/);
+      if (match) return match[1];
+    }
+    return null;
+  }
+
+  /**
    * Liste les VRAIES commandes (payées/passées) — pour l'import historique.
    * Nécessite le scope read_orders sur le token d'accès.
    * status=any inclut les commandes ouvertes, fermées et annulées.
+   *
+   * `updatedAtMin` (ISO 8601) restreint aux commandes modifiées depuis cette
+   * date : la synchro périodique s'en sert pour ne pas rejouer les mêmes
+   * commandes à chaque passage.
+   *
+   * Suit la pagination `Link` de Shopify — sans quoi l'historique s'arrêtait
+   * aux `limit` dernières commandes et les plus anciennes n'étaient jamais
+   * rattrapées. `maxPages` borne la durée d'une passe (250 × 20 = 5 000
+   * commandes).
+   *
+   * `truncated` signale qu'il restait des pages : l'appelant DOIT alors
+   * s'abstenir d'avancer sa fenêtre de synchro, sinon les commandes non lues
+   * sortent définitivement de la plage demandée au tour suivant.
    */
-  async listOrders(limit = 250): Promise<Record<string, any>[]> {
-    const response = await fetch(
-      `${this.getBaseUrl()}/orders.json?status=any&limit=${limit}`,
-      { method: 'GET', headers: this.getHeaders() },
-    );
+  async listOrders(
+    limit = 250,
+    updatedAtMin?: string,
+    maxPages = 20,
+  ): Promise<{ orders: Record<string, any>[]; truncated: boolean }> {
+    const params = new URLSearchParams({
+      status: 'any',
+      limit: String(limit),
+    });
+    if (updatedAtMin) params.set('updated_at_min', updatedAtMin);
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(
-        `Erreur Shopify (${response.status}) sur /orders : ${response.statusText}. ${text}`,
-      );
+    let url: string | null = `${this.getBaseUrl()}/orders.json?${params.toString()}`;
+    const all: Record<string, any>[] = [];
+    let truncated = false;
+
+    for (let page = 0; url && page < maxPages; page++) {
+      const response: Response = await this.fetchShopify(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(
+          `Erreur Shopify (${response.status}) sur /orders : ${response.statusText}. ${text}`,
+        );
+      }
+
+      const result = (await response.json()) as {
+        orders?: Record<string, any>[];
+      };
+      all.push(...(result.orders || []));
+
+      url = this.nextPageUrl(response.headers.get('link'));
+      if (url && page === maxPages - 1) {
+        truncated = true;
+        this.logger.warn(
+          `Pagination /orders interrompue après ${maxPages} pages ` +
+            `(${all.length} commandes) : la fenêtre de synchro reste ouverte ` +
+            `pour reprendre les plus anciennes au prochain passage.`,
+        );
+      }
     }
 
-    const result = (await response.json()) as {
-      orders: Record<string, any>[];
-    };
-    return result.orders || [];
+    return { orders: all, truncated };
   }
 
   /**
@@ -197,7 +286,7 @@ export class ShopifyService {
   async getFulfillmentOrders(
     orderId: string | number,
   ): Promise<Record<string, any>[]> {
-    const response = await fetch(
+    const response = await this.fetchShopify(
       `${this.getBaseUrl()}/orders/${orderId}/fulfillment_orders.json`,
       { method: 'GET', headers: this.getHeaders() },
     );
@@ -230,7 +319,7 @@ export class ShopifyService {
     let moved = 0;
 
     for (const fo of open) {
-      const response = await fetch(
+      const response = await this.fetchShopify(
         `${this.getBaseUrl()}/fulfillment_orders/${fo.id}/move.json`,
         {
           method: 'POST',
@@ -320,7 +409,7 @@ export class ShopifyService {
       };
       if (tracking) body.fulfillment.tracking_info = tracking;
 
-      const response = await fetch(`${this.getBaseUrl()}/fulfillments.json`, {
+      const response = await this.fetchShopify(`${this.getBaseUrl()}/fulfillments.json`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(body),
@@ -352,7 +441,7 @@ export class ShopifyService {
     draftOrderId: string | number,
     lineItems: ShopifyLineItem[],
   ): Promise<Record<string, any>> {
-    const response = await fetch(
+    const response = await this.fetchShopify(
       `${this.getBaseUrl()}/draft_orders/${draftOrderId}.json`,
       {
         method: 'PUT',
@@ -389,14 +478,33 @@ export class ShopifyService {
       throw new Error('Ce brouillon ne contient aucune ligne.');
     }
 
-    // Reconstruit les lignes : seule la 1re (la ligne du devis) change de prix.
-    const rebuilt: ShopifyLineItem[] = items.map((li, i) => ({
-      title: li.title,
-      price: i === 0 ? unitPrice.toFixed(2) : String(li.price),
-      quantity: li.quantity,
-      custom: true,
-      properties: li.properties,
-    }));
+    // Le prix unitaire saisi par l'équipe s'applique à TOUTES les lignes.
+    //
+    // Il n'était appliqué qu'à la ligne 0, sous l'hypothèse « un devis = une
+    // ligne ». Les commandes de GROUPE ont invalidé cette hypothèse : elles
+    // génèrent une ligne par taille/couleur (voir quotes.service.ts), toutes
+    // créées à 0,00 €. Un groupe de 20 pièces réparti en 4 lignes n'était donc
+    // facturé que sur 5 pièces — 75 % du montant perdu, sur une facture que le
+    // client paie légitimement.
+    //
+    // `variant_id` est préservé quand il existe : le forcer en ligne `custom`
+    // romprait le lien produit et le stock ne serait plus décrémenté.
+    const rebuilt: ShopifyLineItem[] = items.map((li) =>
+      li.variant_id
+        ? {
+            variant_id: li.variant_id as number | string,
+            price: unitPrice.toFixed(2),
+            quantity: li.quantity as number,
+            properties: li.properties as Array<{ name: string; value: string }>,
+          }
+        : {
+            title: li.title as string,
+            price: unitPrice.toFixed(2),
+            quantity: li.quantity as number,
+            custom: true,
+            properties: li.properties as Array<{ name: string; value: string }>,
+          },
+    );
 
     return this.updateDraftOrderLineItems(draftOrderId, rebuilt);
   }
@@ -449,7 +557,7 @@ export class ShopifyService {
     title: string;
     variants: Array<{ id: number; title: string; price: string; sku?: string }>;
   }> {
-    const response = await fetch(
+    const response = await this.fetchShopify(
       `${this.getBaseUrl()}/products/${productId}.json`,
       { method: 'GET', headers: this.getHeaders() },
     );
@@ -493,7 +601,7 @@ export class ShopifyService {
     message: string;
   }> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/shop.json`, {
+      const response = await this.fetchShopify(`${this.getBaseUrl()}/shop.json`, {
         method: 'GET',
         headers: this.getHeaders(),
       });
@@ -537,7 +645,7 @@ export class ShopifyService {
     variables: Record<string, any> = {},
   ): Promise<{ data?: any; error?: string }> {
     try {
-      const response = await fetch(this.getGraphqlUrl(), {
+      const response = await this.fetchShopify(this.getGraphqlUrl(), {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ query, variables }),

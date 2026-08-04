@@ -10,6 +10,7 @@ import {
   timingSafeEqual,
 } from 'crypto';
 import { Admin } from '../database/entities/admin.entity';
+import { Setting } from '../database/entities/setting.entity';
 
 /** Admin connecté, tel que reconstitué depuis le cookie de session. */
 export interface SessionAdmin {
@@ -35,10 +36,14 @@ export class AdminAuthService implements OnModuleInit {
   constructor(
     private readonly config: ConfigService,
     @InjectRepository(Admin) private readonly admins: Repository<Admin>,
+    @InjectRepository(Setting) private readonly settings: Repository<Setting>,
   ) {}
 
-  /** Au démarrage : crée l'admin par défaut si la table est vide. */
+  /** Au démarrage : résout le secret de session, puis crée l'admin par défaut. */
   async onModuleInit(): Promise<void> {
+    // Résolu MAINTENANT et mis en cache : `secret()` est synchrone (appelé
+    // depuis issueToken/parseToken) alors que la lecture en base ne l'est pas.
+    await this.resolveSecret();
     await this.seedOwner();
   }
 
@@ -91,25 +96,34 @@ export class AdminAuthService implements OnModuleInit {
   /**
    * Crée l'admin « owner » par défaut s'il n'existe aucun compte.
    *
-   * Identifiants FIXES, écrits ici et connus à l'avance : ce premier compte
-   * sert à se connecter la première fois, puis à inviter les autres admins.
+   * L'e-mail est fixe (il faut bien un identifiant connu pour la première
+   * connexion), mais le MOT DE PASSE est tiré au hasard à chaque seed et
+   * affiché une seule fois dans les logs de démarrage.
    *
-   * Volontairement indépendants des variables d'environnement, pour rester
-   * prévisibles (l'ancienne variable ADMIN_PASSWORD ne les écrase pas).
+   * Il était auparavant écrit en dur dans ce fichier, donc dans Git : toute
+   * personne ayant lu le dépôt pouvait se connecter au dashboard d'une
+   * instance dont l'exploitant n'avait pas changé le mot de passe — et rien
+   * ne l'y obligeait.
    *
-   * ⚠ Ce mot de passe est écrit dans le code : changez-le après la première
-   *   connexion (bouton « Admins » → « Nouveau mot de passe »).
+   * `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD` permettent de fixer les deux
+   * en déploiement automatisé.
    */
   private static readonly DEFAULT_EMAIL = 'admin@customizer.com';
-  private static readonly DEFAULT_PASSWORD = 'Admin2026!';
 
   private async seedOwner(): Promise<void> {
     try {
       const count = await this.admins.count();
       if (count > 0) return;
 
-      const email = AdminAuthService.DEFAULT_EMAIL;
-      const password = AdminAuthService.DEFAULT_PASSWORD;
+      const email = (
+        this.config.get<string>('ADMIN_SEED_EMAIL') ||
+        AdminAuthService.DEFAULT_EMAIL
+      )
+        .trim()
+        .toLowerCase();
+
+      const provided = this.config.get<string>('ADMIN_SEED_PASSWORD');
+      const password = provided || this.generatePassword(16);
 
       await this.admins.save(
         this.admins.create({
@@ -124,7 +138,20 @@ export class AdminAuthService implements OnModuleInit {
         }),
       );
 
-      this.logger.log(`Admin par défaut créé : ${email}`);
+      if (provided) {
+        this.logger.log(`Admin par défaut créé : ${email}`);
+      } else {
+        // Seule et unique occasion de lire ce mot de passe : il n'est stocké
+        // que haché. En Docker : `docker compose logs api | grep MOT DE PASSE`.
+        this.logger.warn(
+          `\n${'='.repeat(64)}\n` +
+            `ADMIN CRÉÉ — notez ces identifiants, ils ne seront plus affichés\n` +
+            `  E-mail       : ${email}\n` +
+            `  MOT DE PASSE : ${password}\n` +
+            `Changez-le après connexion (Admins → Nouveau mot de passe).\n` +
+            `${'='.repeat(64)}`,
+        );
+      }
     } catch (e) {
       // La table n'existe peut-être pas encore au tout premier démarrage.
       this.logger.error(`Seed admin impossible : ${(e as Error).message}`);
@@ -155,12 +182,92 @@ export class AdminAuthService implements OnModuleInit {
 
   // ──────────────────────────────── Session ────────────────────────────────
 
-  private secret(): string {
-    return (
+  /** Clé de signature des cookies de session, résolue au démarrage. */
+  private cachedSecret?: string;
+
+  /** Clé de stockage du secret auto-généré. */
+  private static readonly SECRET_KEY = 'admin_session_secret';
+
+  /**
+   * Détermine la clé de signature des sessions, par ordre de priorité :
+   *
+   *   1. `ADMIN_SESSION_SECRET` (ou l'ancien `ADMIN_PASSWORD`) ;
+   *   2. le secret déjà généré et stocké en base ;
+   *   3. un nouveau secret aléatoire, écrit en base pour les prochains boots.
+   *
+   * Le repli était auparavant la chaîne littérale `'change-me'` : comme la
+   * variable n'était documentée nulle part, toute installation signait ses
+   * cookies avec une constante publique, donc forgeable.
+   *
+   * La persistance en base plutôt qu'un simple tirage en mémoire est ce qui
+   * rend l'auto-génération utilisable : un secret regénéré à chaque
+   * redémarrage déconnecterait tout le monde à chaque `docker compose up`.
+   */
+  private async resolveSecret(): Promise<string> {
+    if (this.cachedSecret) return this.cachedSecret;
+
+    const configured =
       this.config.get<string>('ADMIN_SESSION_SECRET') ||
-      this.config.get<string>('ADMIN_PASSWORD') ||
-      'change-me'
-    );
+      this.config.get<string>('ADMIN_PASSWORD');
+    if (configured) {
+      this.cachedSecret = configured;
+      return configured;
+    }
+
+    try {
+      const row = await this.settings.findOne({
+        where: { key: AdminAuthService.SECRET_KEY },
+      });
+      if (row?.value) {
+        this.cachedSecret = row.value;
+        return row.value;
+      }
+
+      const generated = randomBytes(32).toString('hex');
+      await this.settings.save(
+        this.settings.create({
+          key: AdminAuthService.SECRET_KEY,
+          value: generated,
+        }),
+      );
+      this.cachedSecret = generated;
+      this.logger.warn(
+        'ADMIN_SESSION_SECRET absent : un secret aléatoire a été généré et ' +
+          'enregistré en base. Pour le maîtriser vous-même, définissez ' +
+          'ADMIN_SESSION_SECRET (openssl rand -hex 32) — cela invalidera les ' +
+          'sessions en cours.',
+      );
+      return generated;
+    } catch (e) {
+      // Base indisponible : on ne bloque pas le démarrage. Le secret vaut pour
+      // la durée du process ; les sessions ne survivront pas au redémarrage,
+      // mais l'application reste utilisable et rien n'est signé avec une
+      // valeur prévisible.
+      this.cachedSecret = randomBytes(32).toString('hex');
+      this.logger.error(
+        `Secret de session non persisté (${(e as Error).message}) : ` +
+          'secret éphémère utilisé, les sessions tomberont au prochain ' +
+          'redémarrage.',
+      );
+      return this.cachedSecret;
+    }
+  }
+
+  /**
+   * Clé de signature. Synchrone car appelée depuis `issueToken`/`parseToken` ;
+   * elle s'appuie sur le cache rempli par `resolveSecret()` au démarrage.
+   */
+  private secret(): string {
+    if (!this.cachedSecret) {
+      // Ne devrait pas arriver : `onModuleInit` résout le secret avant que la
+      // moindre requête ne soit servie. Filet de sécurité pour ne jamais
+      // signer avec une valeur vide.
+      throw new Error(
+        'Secret de session non initialisé — le démarrage ne s’est pas ' +
+          'déroulé normalement.',
+      );
+    }
+    return this.cachedSecret;
   }
 
   /** Token de session signé : `<adminId>.<expiration>.<signature>`. */

@@ -1,9 +1,10 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import {
   ShopifyLineItem,
   ShopifyService,
 } from '../shared/shopify.service';
 import { EmailService, OrderConfirmationData } from '../shared/email.service';
+import { throwUpstream } from '../shared/upstream-error';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 
 @Injectable()
@@ -62,11 +63,7 @@ export class OrdersService {
     try {
       draftOrder = await this.shopify.createDraftOrder(draftPayload);
     } catch (error) {
-      this.logger.error(`Echec creation commande Shopify: ${(error as Error).message}`);
-      throw new HttpException(
-        `Impossible de creer la commande: ${(error as Error).message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
+      throwUpstream(this.logger, 'Impossible de créer la commande.', error);
     }
 
     // Email de confirmation détaché de la requête : la réponse HTTP part sans
@@ -107,10 +104,7 @@ export class OrdersService {
     try {
       return await this.shopify.listDraftOrders(50);
     } catch (error) {
-      throw new HttpException(
-        `Impossible de recuperer les commandes: ${(error as Error).message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
+      throwUpstream(this.logger, 'Impossible de récupérer les commandes.', error);
     }
   }
 
@@ -119,8 +113,10 @@ export class OrdersService {
     try {
       return await this.shopify.getDraftOrder(id);
     } catch (error) {
-      throw new HttpException(
-        `Commande introuvable: ${(error as Error).message}`,
+      throwUpstream(
+        this.logger,
+        'Commande introuvable.',
+        error,
         HttpStatus.NOT_FOUND,
       );
     }

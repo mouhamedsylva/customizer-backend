@@ -16,6 +16,9 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Surcharge docker compose propre à la machine de dev (ports, montages)
+docker-compose.override.yml
+
 # OS
 .DS_Store
 

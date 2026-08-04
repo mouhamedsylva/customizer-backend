@@ -1507,9 +1507,19 @@ function shipPill(o: Order): string {
     ready: ['En préparation', 'warn'],
     shipped: ['Traitée', 'ok'],
   };
-  const [label, cls] = map[prod] || map.to_produce;
+  let [label, cls] = map[prod] || map.to_produce;
+
+  // Expédition partielle : Shopify a traité une partie des articles. Le suivi
+  // de production ne sait pas l'exprimer (`fromShopify` laisse volontairement
+  // l'atelier décider), donc sans ce cas la commande s'affichait « Non
+  // traitée » alors qu'un colis est déjà parti.
+  if (o.fulfillmentStatus === 'partial' && prod !== 'shipped') {
+    label = 'Partiellement traitée';
+    cls = 'warn';
+  }
+
   const t = o.trackingNumber ? ` title="Suivi : ${esc(o.trackingNumber)}"` : '';
-  return `<span class="pill ${cls}"${t}>Shopify : ${label}</span>`;
+  return `<span class="pill ${cls}"${t}>Shopify : ${esc(label)}</span>`;
 }
 
 function statusPill(status: string | null): string {

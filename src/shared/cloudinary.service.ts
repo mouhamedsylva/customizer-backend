@@ -153,6 +153,60 @@ export class CloudinaryService implements OnModuleInit {
   }
 
   /**
+   * Un hostname pointe-t-il vers une adresse interne (privée, loopback,
+   * link-local) ? Bloque la forme littérale-IP la plus courante d'une SSRF.
+   *
+   * Ne résout pas le DNS (un nom public peut pointer vers une IP privée) : la
+   * défense principale reste la liste blanche d'hôtes ci-dessous. Ce test
+   * attrape les cas où l'attaquant met directement une IP interne dans l'URL,
+   * dont le classique 169.254.169.254 (métadonnées cloud).
+   */
+  private isInternalHost(hostname: string): boolean {
+    const h = hostname.toLowerCase();
+    if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal'))
+      return true;
+    // IPv6 loopback / adresses locales uniques / link-local.
+    if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80'))
+      return true;
+    const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return false;
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    return (
+      a === 127 || // loopback
+      a === 10 || // privé
+      a === 0 ||
+      (a === 169 && b === 254) || // link-local + métadonnées cloud
+      (a === 192 && b === 168) || // privé
+      (a === 172 && b >= 16 && b <= 31) // privé
+    );
+  }
+
+  /**
+   * Une URL est-elle une cible externe autorisée ?
+   *
+   * Ces buffers proviennent des endpoints PUBLICS /api/export/preview-* : sans
+   * garde, `fetch()` sur une URL attaquant-contrôlée permettait un SSRF (scan
+   * du réseau interne, accès aux métadonnées cloud). On restreint donc aux
+   * CDN d'images légitimes.
+   */
+  private isAllowedImageUrl(url: URL): boolean {
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+    if (this.isInternalHost(url.hostname)) return false;
+
+    const host = url.hostname.toLowerCase();
+    const store = (this.config.get<string>('SHOPIFY_STORE_URL') || '').toLowerCase();
+    const allowedSuffixes = [
+      '.cloudinary.com',
+      'res.cloudinary.com',
+      '.shopify.com', // cdn.shopify.com
+      '.shopifycdn.com',
+      '.myshopify.com',
+    ];
+    if (store && host === store) return true;
+    return allowedSuffixes.some((s) => host === s.replace(/^\./, '') || host.endsWith(s));
+  }
+
+  /**
    * Charge un buffer image depuis une URL http(s) ou une data-URL base64.
    */
   private async loadImageBuffer(src: string): Promise<Buffer> {
@@ -162,15 +216,35 @@ export class CloudinaryService implements OnModuleInit {
     }
     // Les asset_url Shopify sont souvent protocole-relatifs (//cdn.shopify...).
     // fetch() de Node ne sait pas les parser -> on force https://.
-    let url = src;
-    if (url.startsWith('//')) url = 'https:' + url;
-    else if (url.startsWith('/')) {
+    let raw = src;
+    if (raw.startsWith('//')) raw = 'https:' + raw;
+    else if (raw.startsWith('/')) {
       const store = this.config.get<string>('SHOPIFY_STORE_URL');
-      if (store) url = `https://${store}${url}`;
+      if (store) raw = `https://${store}${raw}`;
     }
-    const res = await fetch(url);
+
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new Error('URL d’image invalide.');
+    }
+    if (!this.isAllowedImageUrl(url)) {
+      // On ne renvoie PAS l'URL : l'endpoint est public et le message ne doit
+      // pas confirmer à un attaquant ce qui a été atteint (oracle SSRF).
+      this.logger.warn(`Chargement image refusé (hôte non autorisé) : ${url.hostname}`);
+      throw new Error('Source d’image non autorisée.');
+    }
+
+    // `redirect: 'manual'` : une cible autorisée ne doit pas pouvoir rediriger
+    // vers une IP interne (contournement classique de la liste blanche).
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
+    });
     if (!res.ok) {
-      throw new Error(`Impossible de charger l'image (${res.status}): ${url}`);
+      // Message générique + code, sans l'URL.
+      throw new Error(`Impossible de charger l'image (${res.status}).`);
     }
     const arrayBuffer = await res.arrayBuffer();
     return Buffer.from(arrayBuffer);

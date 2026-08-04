@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { escapeHtml as esc } from './html.util';
 
 export interface OrderItemData {
   name: string;
@@ -196,10 +197,10 @@ export class EmailService {
         (it) => `
           <tr>
             <td style="padding:8px;border-bottom:1px solid #eee;">
-              ${it.name}${it.color ? ` - ${it.color}` : ''}${it.size ? ` / ${it.size}` : ''}
+              ${esc(it.name)}${it.color ? ` - ${esc(it.color)}` : ''}${it.size ? ` / ${esc(it.size)}` : ''}
             </td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${it.qty}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${it.price} EUR</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${esc(it.qty)}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${esc(it.price)} EUR</td>
           </tr>`,
       )
       .join('');
@@ -224,9 +225,9 @@ export class EmailService {
             <h1>Commande Confirmee</h1>
           </div>
           <div class="content">
-            <p>Bonjour ${data.customerName},</p>
+            <p>Bonjour ${esc(data.customerName)},</p>
             <p>Votre commande a bien ete enregistree !</p>
-            <p><strong>Numero de commande :</strong> ${data.orderId}</p>
+            <p><strong>Numero de commande :</strong> ${esc(data.orderId)}</p>
             <table>
               <thead>
                 <tr>
@@ -237,7 +238,7 @@ export class EmailService {
               </thead>
               <tbody>${rows}</tbody>
             </table>
-            <div class="total">Total : ${data.total} EUR</div>
+            <div class="total">Total : ${esc(data.total)} EUR</div>
             <p style="margin-top:30px;">Nous allons traiter votre commande dans les plus brefs delais.</p>
             <p style="font-size:14px;color:#666;">Merci pour votre confiance !<br>L'equipe Custom Products</p>
           </div>
@@ -248,14 +249,14 @@ export class EmailService {
 
   /** HTML de la demande de devis envoyee a l'equipe. */
   private generateQuoteTeamHTML(data: QuoteEmailData): string {
-    const details = data.details.map((d) => `<li>${d}</li>`).join('');
+    const details = data.details.map((d) => `<li>${esc(d)}</li>`).join('');
     const previews = data.previews
       .map(
         (p) => `
           <div style="margin:10px 0;">
-            <strong>${p.label}</strong><br>
-            <img src="${p.base}" alt="${p.label}" style="max-width:250px;border:1px solid #ddd;border-radius:6px;" />
-            ${p.logo ? `<br><small>Logo: ${p.logo}</small>` : ''}
+            <strong>${esc(p.label)}</strong><br>
+            <img src="${esc(p.base)}" alt="${esc(p.label)}" style="max-width:250px;border:1px solid #ddd;border-radius:6px;" />
+            ${p.logo ? `<br><small>Logo: ${esc(p.logo)}</small>` : ''}
           </div>`,
       )
       .join('');
@@ -267,17 +268,17 @@ export class EmailService {
       <body style="font-family:Arial,sans-serif;color:#333;">
         <div style="max-width:600px;margin:0 auto;padding:20px;">
           <h1 style="color:#2c5aa0;">Nouvelle demande de devis</h1>
-          <p><strong>Reference devis :</strong> ${data.quoteId}</p>
+          <p><strong>Reference devis :</strong> ${esc(data.quoteId)}</p>
           <h2>Client</h2>
           <ul>
-            <li><strong>Nom :</strong> ${data.customerName}</li>
-            <li><strong>Email :</strong> ${data.email}</li>
-            ${data.telephone ? `<li><strong>Telephone :</strong> ${data.telephone}</li>` : ''}
-            ${data.entreprise ? `<li><strong>Entreprise :</strong> ${data.entreprise}</li>` : ''}
+            <li><strong>Nom :</strong> ${esc(data.customerName)}</li>
+            <li><strong>Email :</strong> ${esc(data.email)}</li>
+            ${data.telephone ? `<li><strong>Telephone :</strong> ${esc(data.telephone)}</li>` : ''}
+            ${data.entreprise ? `<li><strong>Entreprise :</strong> ${esc(data.entreprise)}</li>` : ''}
           </ul>
-          ${data.message ? `<p><strong>Message :</strong> ${data.message}</p>` : ''}
-          <h2>Produit : ${data.coinName}</h2>
-          <p><strong>Quantite :</strong> ${data.qty}</p>
+          ${data.message ? `<p><strong>Message :</strong> ${esc(data.message)}</p>` : ''}
+          <h2>Produit : ${esc(data.coinName)}</h2>
+          <p><strong>Quantite :</strong> ${esc(data.qty)}</p>
           <ul>${details}</ul>
           <h2>Apercus</h2>
           ${previews}
@@ -298,9 +299,9 @@ export class EmailService {
             <h1>Demande de devis recue</h1>
           </div>
           <div style="background:#f9f9f9;padding:30px;">
-            <p>Bonjour ${data.customerName},</p>
-            <p>Nous avons bien recu votre demande de devis pour <strong>${data.coinName}</strong> (${data.qty} pieces).</p>
-            <p>Votre reference : <strong>${data.quoteId}</strong></p>
+            <p>Bonjour ${esc(data.customerName)},</p>
+            <p>Nous avons bien recu votre demande de devis pour <strong>${esc(data.coinName)}</strong> (${esc(data.qty)} pieces).</p>
+            <p>Votre reference : <strong>${esc(data.quoteId)}</strong></p>
             <p>Notre equipe reviendra vers vous dans les plus brefs delais avec une proposition detaillee.</p>
             <p style="font-size:14px;color:#666;">Cordialement,<br>L'equipe Custom Products</p>
           </div>

@@ -9,10 +9,13 @@ import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
 import { Admin } from '../database/entities/admin.entity';
+import { Setting } from '../database/entities/setting.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, Quote, Design, Admin]),
+    /* Setting : AdminAuthService y persiste le secret de session auto-généré
+       quand ADMIN_SESSION_SECRET n'est pas fourni. */
+    TypeOrmModule.forFeature([Order, Quote, Design, Admin, Setting]),
     SettingsModule,
   ],
   controllers: [AdminController],

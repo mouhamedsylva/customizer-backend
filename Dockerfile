@@ -26,4 +26,11 @@ COPY package.json ./
 
 USER node
 EXPOSE 3000
+
+# Sonde de vivacité : interroge /api/health (route publique, sans effet de
+# bord). Node natif, pas de curl à installer. Docker/compose peut ainsi savoir
+# quand l'API est réellement prête (et non juste « conteneur démarré »).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+
 CMD ["node", "dist/main"]

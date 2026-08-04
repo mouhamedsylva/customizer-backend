@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsNotEmpty,
@@ -41,6 +42,7 @@ export class PreviewViewDto {
 /** Body de POST /api/export/preview-multi. */
 export class PreviewMultiDto {
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => PreviewViewDto)
   views!: PreviewViewDto[];

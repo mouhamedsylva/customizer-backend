@@ -81,10 +81,17 @@ export class UploadsController {
   }
 
   /**
-   * DELETE /api/uploads/:publicId
-   * Supprime une image de Cloudinary.
+   * DELETE /api/uploads/:publicId — RÉSERVÉ AUX ADMINS.
+   *
+   * Supprime définitivement une image de Cloudinary. Cette route était
+   * publique : le publicId n'est pas un secret (il est renvoyé par les
+   * endpoints d'upload et figure dans les URLs affichées sur le thème), donc
+   * n'importe qui pouvait détruire les logos et aperçus de commandes en
+   * production.
+   *
    * Le publicId peut contenir des '/', on utilise donc un wildcard.
    */
+  @UseGuards(AdminSessionGuard)
   @Delete(':publicId(*)')
   async remove(
     @Param('publicId') publicId: string,

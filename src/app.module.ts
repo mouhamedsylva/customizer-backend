@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SharedModule } from './shared/shared.module';
 import { CartModule } from './cart/cart.module';
@@ -21,6 +23,11 @@ import { Admin } from './database/entities/admin.entity';
   imports: [
     // Chargement des variables d'environnement, disponible globalement.
     ConfigModule.forRoot({ isGlobal: true }),
+
+    // Rate limiting global : plafond généreux par IP sur toutes les routes.
+    // Les routes sensibles (login) posent un plafond plus strict via @Throttle.
+    // Empêche le bruteforce et le spam de devis/uploads (endpoints publics).
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
 
     // Connexion MySQL (Railway fournit la variable MYSQL_URL).
     // Si MYSQL_URL est absente (dev local sans BDD), la connexion échoue au
@@ -59,6 +66,10 @@ import { Admin } from './database/entities/admin.entity';
     WebhooksModule,
     AdminModule,
     PricingModule,
+  ],
+  providers: [
+    // Applique le rate limiting à toutes les routes.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}
