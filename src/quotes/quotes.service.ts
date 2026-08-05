@@ -7,7 +7,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull, LessThan } from 'typeorm';
 import { randomUUID } from 'crypto';
-import { EmailService, QuoteEmailData } from '../shared/email.service';
 import {
   CreateDraftOrderPayload,
   ShopifyService,
@@ -21,7 +20,6 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
   private syncTimer?: NodeJS.Timeout;
 
   constructor(
-    private readonly email: EmailService,
     private readonly shopify: ShopifyService,
     @InjectRepository(Quote)
     private readonly quotes: Repository<Quote>,
@@ -110,29 +108,20 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
   /**
    * Cree une demande de devis :
    *  - draft order Shopify (visible dans Admin > Commandes > Brouillons)
-   *  - email a l'equipe + accuse de reception au client
-   * Le draft et les emails sont "best effort" : la demande est toujours
-   * enregistree et la reponse HTTP part immediatement.
+   *
+   * Le draft est "best effort" : la demande est toujours enregistree et la
+   * reponse HTTP part immediatement.
+   *
+   * Aucun e-mail n'est emis ici : toute la correspondance client passe
+   * desormais par Shopify (facture du draft order, relances, expedition).
+   * L'equipe suit les nouveaux devis via le dashboard (compteurs « nouveau »).
    */
   async create(
     dto: CreateQuoteDto,
   ): Promise<{ success: boolean; quoteId: string }> {
     const quoteId = randomUUID();
 
-    const emailData: QuoteEmailData = {
-      customerName: dto.customer.nom,
-      email: dto.customer.email,
-      telephone: dto.customer.telephone,
-      entreprise: dto.customer.entreprise,
-      message: dto.customer.message,
-      coinName: dto.coin.name,
-      details: dto.coin.details,
-      qty: dto.coin.qty,
-      previews: dto.coin.previews,
-      quoteId,
-    };
-
-    // On enregistre TOUJOURS la demande en base, même si l'email/Shopify échoue.
+    // On enregistre TOUJOURS la demande en base, même si Shopify échoue.
     await this.quotes.save(
       this.quotes.create({
         id: quoteId,
@@ -140,20 +129,19 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
       }),
     );
 
-    // Draft order Shopify puis emails, APRÈS avoir répondu au client
+    // Draft order Shopify APRÈS avoir répondu au client
     // (setImmediate détache le traitement de la requête HTTP courante).
     setImmediate(() => {
-      void this.processQuoteBestEffort(dto, quoteId, emailData);
+      void this.processQuoteBestEffort(dto, quoteId);
     });
 
     return { success: true, quoteId };
   }
 
-  /** Crée le draft order Shopify puis envoie les emails, sans bloquer la réponse. */
+  /** Crée le draft order Shopify sans bloquer la réponse. */
   private async processQuoteBestEffort(
     dto: CreateQuoteDto,
     quoteId: string,
-    emailData: QuoteEmailData,
   ): Promise<void> {
     // 1) Draft order Shopify (devis visible dans l'admin)
     try {
@@ -180,9 +168,6 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
           `Sera réessayé automatiquement.`,
       );
     }
-
-    // 2) Emails (équipe + accusé client)
-    await this.sendEmailsBestEffort(dto.customer.email, emailData);
   }
 
   /**
@@ -339,23 +324,6 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
       note: noteLines.join('\n'),
       tags,
     };
-  }
-
-  /** Envoie l'email équipe + accusé client sans bloquer la réponse HTTP. */
-  private async sendEmailsBestEffort(
-    clientEmail: string,
-    emailData: QuoteEmailData,
-  ): Promise<void> {
-    try {
-      await this.email.sendQuoteEmail(emailData);
-    } catch (error) {
-      this.logger.warn(`Email équipe non envoyé: ${(error as Error).message}`);
-    }
-    try {
-      await this.email.sendQuoteAck(clientEmail, emailData);
-    } catch (error) {
-      this.logger.warn(`Accusé de réception non envoyé: ${(error as Error).message}`);
-    }
   }
 
   /** Liste des devis en base (pour le futur dashboard admin — étape 3). */

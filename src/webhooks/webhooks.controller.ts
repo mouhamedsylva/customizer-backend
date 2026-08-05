@@ -60,8 +60,7 @@ export class WebhooksController {
     }
 
     const payload = (req.body || {}) as Record<string, any>;
-    // Pas de notification : ce n'est pas une nouvelle commande.
-    await this.webhooks.saveOrder(payload, false);
+    await this.webhooks.saveOrder(payload);
     // Puis on aligne le suivi sur l'état réel (« en préparation » n'est pas
     // dans le payload : il faut le lire sur les fulfillment orders).
     await this.webhooks.alignOne(String(payload.id));

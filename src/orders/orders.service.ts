@@ -3,7 +3,6 @@ import {
   ShopifyLineItem,
   ShopifyService,
 } from '../shared/shopify.service';
-import { EmailService, OrderConfirmationData } from '../shared/email.service';
 import { throwUpstream } from '../shared/upstream-error';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 
@@ -11,10 +10,7 @@ import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
-  constructor(
-    private readonly shopify: ShopifyService,
-    private readonly email: EmailService,
-  ) {}
+  constructor(private readonly shopify: ShopifyService) {}
 
   /** Convertit un item de commande en ligne Shopify (produit custom). */
   private toLineItem(item: OrderItemDto): ShopifyLineItem {
@@ -37,7 +33,10 @@ export class OrdersService {
   }
 
   /**
-   * Cree une commande : draft order Shopify + email de confirmation client.
+   * Cree une commande : draft order Shopify.
+   *
+   * Aucun e-mail n'est emis ici : Shopify envoie sa propre confirmation au
+   * client, ainsi que la facture du brouillon et l'avis d'expedition.
    */
   async create(
     dto: CreateOrderDto,
@@ -66,37 +65,7 @@ export class OrdersService {
       throwUpstream(this.logger, 'Impossible de créer la commande.', error);
     }
 
-    // Email de confirmation détaché de la requête : la réponse HTTP part sans
-    // attendre le SMTP ni échouer si l'email ne part pas.
-    setImmediate(() => {
-      void this.sendConfirmationBestEffort(customer.email, {
-        customerName: `${customer.prenom} ${customer.nom}`,
-        orderId: draftOrder.id,
-        items: items.map((it) => ({
-          name: it.name,
-          color: it.color,
-          size: it.size,
-          qty: it.qty,
-          price: it.price,
-          img: it.img,
-        })),
-        total: dto.total,
-      });
-    });
-
     return { orderId: draftOrder.id, status: draftOrder.status || 'open' };
-  }
-
-  /** Envoie l'email de confirmation sans bloquer la réponse HTTP. */
-  private async sendConfirmationBestEffort(
-    email: string,
-    data: OrderConfirmationData,
-  ): Promise<void> {
-    try {
-      await this.email.sendOrderConfirmation(email, data);
-    } catch (error) {
-      this.logger.warn(`Commande creee mais email non envoye: ${(error as Error).message}`);
-    }
   }
 
   /** Liste des commandes (draft orders Shopify). */

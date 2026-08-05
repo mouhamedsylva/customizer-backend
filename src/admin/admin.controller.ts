@@ -22,7 +22,6 @@ import {
   MULTI_VARIANT_KEYS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
-import { EmailService } from '../shared/email.service';
 import {
   loginPage,
   dashboardPage,
@@ -44,7 +43,6 @@ export class AdminController {
     private readonly settings: SettingsService,
     private readonly pricing: PricingService,
     private readonly shopify: ShopifyService,
-    private readonly email: EmailService,
     private readonly config: ConfigService,
   ) {}
 
@@ -705,7 +703,12 @@ export class AdminController {
     res.send('﻿' + rows.join('\n')); // BOM : Excel lit correctement l'UTF-8
   }
 
-  /** POST /api/admin/settings — enregistre les réglages (relances, notifications). */
+  /**
+   * POST /api/admin/settings — enregistre les réglages des relances.
+   *
+   * Les relances elles-mêmes partent de Shopify (renvoi de la facture du
+   * brouillon) : ces réglages n'en pilotent que le déclenchement.
+   */
   @Post('settings')
   async saveSettings(
     @Req() req: Request,
@@ -723,9 +726,6 @@ export class AdminController {
     // l'insu de l'admin.
     const patch: Parameters<SettingsService['save']>[0] = {
       reminderEnabled: body.reminderEnabled === true || body.reminderEnabled === '1',
-      notifyEmailEnabled:
-        body.notifyEmailEnabled === true || body.notifyEmailEnabled === '1',
-      notifyEmail: String(body.notifyEmail || ''),
     };
 
     if (body.reminderDays !== undefined) {
@@ -737,58 +737,6 @@ export class AdminController {
 
     const saved = await this.settings.save(patch);
     res.json({ ok: true, settings: saved });
-  }
-
-  /**
-   * POST /api/admin/settings/test-email — envoie un e-mail de test.
-   * Sans cela, on ne sait pas si le SMTP fonctionne avant qu'une vraie
-   * commande n'arrive (et l'échec serait alors silencieux).
-   */
-  @Post('settings/test-email')
-  async testEmail(
-    @Req() req: Request,
-    @Body('email') email: string,
-    @Res() res: Response,
-  ): Promise<void> {
-    if (!(await this.isAuthed(req))) {
-      res.status(401).json({ ok: false, error: 'Non authentifié.' });
-      return;
-    }
-    const to = String(email || '').trim();
-    if (!to) {
-      res.json({ ok: false, error: "Renseignez d'abord une adresse." });
-      return;
-    }
-
-    // 1. Le serveur SMTP est-il seulement joignable ?
-    const conn = await this.email.verifyConnection();
-    if (!conn.success) {
-      res.json({
-        ok: false,
-        error: `SMTP injoignable : ${conn.message}. Vérifiez EMAIL_HOST, EMAIL_PORT, EMAIL_USER et EMAIL_PASSWORD sur Railway.`,
-      });
-      return;
-    }
-
-    // 2. L'envoi passe-t-il vraiment ?
-    const sent = await this.email.sendInternalAlert(
-      to,
-      'Test — alertes Custom Textile',
-      [
-        'Cet e-mail confirme que les alertes de nouvelle commande fonctionnent.',
-        'Vous recevrez désormais un message à chaque nouvelle commande.',
-      ],
-      `${this.config.get<string>('BACKEND_URL') || ''}/api/admin`,
-    );
-    res.json(
-      sent
-        ? { ok: true, to }
-        : {
-            ok: false,
-            error:
-              "Le serveur SMTP répond, mais l'envoi a échoué. Consultez les logs Railway.",
-          },
-    );
   }
 
   /**

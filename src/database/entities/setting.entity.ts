@@ -7,8 +7,13 @@ import { Column, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
  * Clés utilisées :
  *  - reminder_enabled    : '1' | '0'      relances automatiques actives
  *  - reminder_days       : '3,7,14'       jours après l'envoi de la facture
- *  - notify_email_enabled: '1' | '0'      e-mail à l'équipe sur nouvelle activité
- *  - notify_email        : adresse de l'équipe
+ *  - price_<produit>     : prix unitaire du configurateur
+ *  - tiers_<produit>     : grille dégressive (JSON)
+ *  - admin_session_secret: clé de signature des cookies de session
+ *
+ * Les anciennes clés `notify_email_enabled` / `notify_email` ne sont plus
+ * lues : le backend n'émet aucun e-mail, toute la correspondance passe par
+ * Shopify. Les lignes résiduelles en base sont simplement ignorées.
  */
 @Entity('settings')
 export class Setting {
