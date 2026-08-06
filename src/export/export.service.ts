@@ -24,10 +24,21 @@ export class ExportService {
     const shareId = randomUUID();
 
     // On tente d'extraire le type de produit pour faciliter le filtrage admin.
+    //
+    // `designData` n'est validé que par `@IsObject()` : son contenu est
+    // entièrement libre. Le `as string` d'origine était un mensonge au
+    // compilateur — un objet donnait « [object Object] » en base, et une chaîne
+    // de plus de 64 caractères dépassait la colonne, provoquant une 500 non
+    // gérée sur un endpoint PUBLIC. On ne retient donc qu'une vraie chaîne,
+    // tronquée à la taille de la colonne.
+    // `||` et non `??` : le repli doit aussi jouer sur une CHAÎNE VIDE. Avec
+    // `??`, un `product: ''` (select non renseigné, champ effacé) bloquait le
+    // repli vers `productType`, qui portait pourtant la bonne valeur.
+    const rawType = designData?.product || designData?.productType;
     const productType =
-      (designData?.product as string) ||
-      (designData?.productType as string) ||
-      null;
+      typeof rawType === 'string' && rawType.trim()
+        ? rawType.trim().slice(0, 64)
+        : null;
 
     await this.designs.save(
       this.designs.create({
@@ -53,8 +64,4 @@ export class ExportService {
     return stored.designData;
   }
 
-  /** Liste tous les designs (pour le futur dashboard admin — étape 3). */
-  async findAll(): Promise<Design[]> {
-    return this.designs.find({ order: { createdAt: 'DESC' } });
-  }
 }

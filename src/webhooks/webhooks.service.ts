@@ -20,6 +20,8 @@ import {
 export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhooksService.name);
   private syncTimer?: NodeJS.Timeout;
+  /** Première synchro différée : annulée si l'app s'arrête avant son échéance. */
+  private startTimer?: NodeJS.Timeout;
   /** Vrai jusqu'à la première synchro : celle-ci rattrape l'historique en silence. */
   private firstSync = true;
   /**
@@ -43,6 +45,23 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
    * ces deux cas produisent le même `since` mais n'ont pas le même sens.
    */
   private pendingSince?: { value: string | undefined };
+  /**
+   * Passes consécutives où des commandes n'ont pas pu être enregistrées.
+   *
+   * Garder la fenêtre ouverte est le bon réflexe pour un échec PASSAGER (base
+   * momentanément indisponible). Mais un échec PERMANENT — une commande dont
+   * une valeur dépasse la taille de sa colonne — se reproduit à chaque passe :
+   * sans ce compteur, la fenêtre ne se refermait jamais, la même page Shopify
+   * était repaginée toutes les 2 minutes, et surtout PLUS AUCUNE commande
+   * postérieure n'était importée. Le remède était pire que le mal.
+   */
+  private failedPasses = 0;
+  /**
+   * Au-delà, on avance malgré tout et on abandonne les commandes fautives, en
+   * les journalisant en `error`. Perdre une commande identifiée et signalée
+   * vaut mieux que geler toute la synchro en silence.
+   */
+  private static readonly MAX_FAILED_PASSES = 3;
 
   constructor(
     private readonly config: ConfigService,
@@ -58,7 +77,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
    */
   onModuleInit(): void {
     // Première synchro peu après le démarrage (laisse la BDD s'initialiser).
-    setTimeout(() => {
+    this.startTimer = setTimeout(() => {
       void this.importFromShopify('démarrage');
     }, 8000);
 
@@ -71,7 +90,14 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     }, INTERVAL_MS);
   }
 
+  /**
+   * Le `setTimeout` initial est annulé, pas seulement l'intervalle : son handle
+   * n'était pas conservé, si bien qu'un arrêt survenant dans les 8 premières
+   * secondes — le cas courant d'un `docker compose restart` — le laissait se
+   * déclencher après la fermeture du pool TypeORM, sur une app déjà détruite.
+   */
   onModuleDestroy(): void {
+    if (this.startTimer) clearTimeout(this.startTimer);
     if (this.syncTimer) clearInterval(this.syncTimer);
   }
 
@@ -283,10 +309,6 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     return 'unfulfilled';
   }
 
-  /** Liste des commandes en base (pour le dashboard admin — étape 3). */
-  async findAll(): Promise<Order[]> {
-    return this.orders.find({ order: { receivedAt: 'DESC' } });
-  }
 
 
   /**
@@ -370,11 +392,13 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       this.firstSync = false;
 
       let imported = 0;
+      const failedIds: string[] = [];
       for (const o of orders) {
         try {
           await this.saveOrder(o);
           imported++;
         } catch (e) {
+          failedIds.push(String(o?.id));
           this.logger.warn(
             `Import commande ${o?.id} échoué: ${(e as Error).message}`,
           );
@@ -387,11 +411,34 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
 
       await this.syncShippingStates(orders);
 
+      // Une commande non enregistrée est aussi grave qu'une page non lue : dans
+      // les deux cas la fenêtre doit rester ouverte.
+      //
+      // Le `catch` de la boucle ci-dessus n'interrompt pas l'import (une
+      // commande illisible ne doit pas bloquer les 199 autres), mais il
+      // laissait `lastSyncAt` avancer quand même : au tour suivant,
+      // `updated_at_min` excluait les commandes échouées, qui n'étaient PLUS
+      // JAMAIS reprises. Une commande payée absente du dashboard n'est ni
+      // produite ni expédiée — le client a payé et ne reçoit rien.
+      const failed = failedIds.length;
+
+      // Le compteur suit les échecs d'enregistrement, INDÉPENDAMMENT de la
+      // troncature. Il était remis à zéro dans la branche `truncated` : sur un
+      // rattrapage de plus de 5 000 commandes, où `truncated` est vrai à chaque
+      // passe, il n'atteignait donc jamais son plafond et le garde-fou était
+      // inopérant précisément là où le volume rend une donnée corrompue la
+      // plus probable.
+      if (failed > 0) this.failedPasses++;
+      else this.failedPasses = 0;
+
+      const abandon =
+        failed > 0 && this.failedPasses > WebhooksService.MAX_FAILED_PASSES;
+
       if (truncated) {
-        // Passe incomplète : on mémorise la fenêtre pour la rejouer À
-        // L'IDENTIQUE au tour suivant, et on n'avance surtout pas
-        // `lastSyncAt` — les commandes non lues sortiraient de la plage
-        // `updated_at_min` et ne seraient jamais importées.
+        // Pagination interrompue : on rejoue LA MÊME fenêtre au tour suivant,
+        // et on n'avance surtout pas `lastSyncAt` — les commandes non lues
+        // sortiraient de la plage `updated_at_min` et ne seraient jamais
+        // importées.
         //
         // La reprise n'est pas incrémentale : Shopify renvoie les mêmes
         // premières pages. Elle sert de filet, pas de mécanisme de rattrapage
@@ -401,10 +448,38 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           `Synchro (${reason}) incomplète : la fenêtre reste ouverte. ` +
             `Au-delà de ${orders.length} commandes, prévoyez un import manuel ` +
-            `par tranches de dates.`,
+            `par tranches de dates.` +
+            (failed > 0
+              ? ` ${failed} commande(s) en échec d'enregistrement : ${failedIds.join(', ')}`
+              : ''),
+        );
+      } else if (failed > 0 && !abandon) {
+        // Des commandes n'ont pas pu être enregistrées : on garde la fenêtre
+        // ouverte pour réessayer. Sans cela, `updated_at_min` les excluait dès
+        // la passe suivante et elles étaient perdues définitivement — une
+        // commande payée absente du dashboard n'est ni produite ni expédiée.
+        this.pendingSince = { value: since };
+        this.logger.warn(
+          `Synchro (${reason}) : ${failed} commande(s) non enregistrée(s) ` +
+            `(tentative ${this.failedPasses}/${WebhooksService.MAX_FAILED_PASSES}). ` +
+            `La fenêtre reste ouverte : ${failedIds.join(', ')}`,
         );
       } else {
+        if (failed > 0) {
+          // Échec PERSISTANT : ces commandes échouent à chaque passe (donnée
+          // trop longue pour sa colonne, payload inattendu). Insister
+          // bloquerait toute la synchro en aval — plus aucune commande
+          // postérieure ne serait importée. On avance donc, en signalant
+          // clairement ce qui est abandonné pour reprise manuelle.
+          this.logger.error(
+            `Synchro (${reason}) : ${failed} commande(s) en échec après ` +
+              `${WebhooksService.MAX_FAILED_PASSES} tentatives — ABANDONNÉE(S) ` +
+              `pour ne pas bloquer la synchro. Reprise manuelle nécessaire : ` +
+              `${failedIds.join(', ')}`,
+          );
+        }
         this.pendingSince = undefined;
+        this.failedPasses = 0;
         this.lastSyncAt = startedAt;
       }
       return { imported };

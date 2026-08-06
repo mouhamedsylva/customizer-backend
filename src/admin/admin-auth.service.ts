@@ -6,7 +6,7 @@ import {
   createHmac,
   randomBytes,
   randomUUID,
-  scryptSync,
+  scrypt,
   timingSafeEqual,
 } from 'crypto';
 import { Admin } from '../database/entities/admin.entity';
@@ -53,22 +53,46 @@ export class AdminAuthService implements OnModuleInit {
 
   // ───────────────────────── Hachage des mots de passe ─────────────────────────
 
+  /**
+   * scrypt ASYNCHRONE.
+   *
+   * `scryptSync` coûte ~50 ms et bloque l'ENTIER event loop pendant ce temps :
+   * aucune requête, aucun webhook, aucun timer n'est servi. Une vingtaine de
+   * tentatives de connexion par seconde suffisaient donc à figer le serveur.
+   * La version asynchrone s'exécute sur le threadpool libuv et laisse le
+   * process répondre.
+   */
+  private scrypt(
+    password: string,
+    salt: Buffer,
+    keylen: number,
+  ): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      scrypt(password, salt, keylen, (err, derived) =>
+        err ? reject(err) : resolve(derived),
+      );
+    });
+  }
+
   /** Hash scrypt au format `scrypt$<salt hex>$<hash hex>`. */
-  private hashPassword(password: string): string {
+  private async hashPassword(password: string): Promise<string> {
     const salt = randomBytes(16);
-    const hash = scryptSync(password, salt, 64);
+    const hash = await this.scrypt(password, salt, 64);
     return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
   }
 
   /** Vérifie un mot de passe contre un hash stocké (comparaison constante). */
-  private verifyPassword(password: string, stored: string): boolean {
+  private async verifyPassword(
+    password: string,
+    stored: string,
+  ): Promise<boolean> {
     if (!password || !stored) return false;
     const parts = stored.split('$');
     if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
     try {
       const salt = Buffer.from(parts[1], 'hex');
       const expected = Buffer.from(parts[2], 'hex');
-      const actual = scryptSync(password, salt, expected.length);
+      const actual = await this.scrypt(password, salt, expected.length);
       return (
         actual.length === expected.length && timingSafeEqual(actual, expected)
       );
@@ -125,16 +149,18 @@ export class AdminAuthService implements OnModuleInit {
       const provided = this.config.get<string>('ADMIN_SEED_PASSWORD');
       const password = provided || this.generatePassword(16);
 
+      const passwordHash = await this.hashPassword(password);
       await this.admins.save(
         this.admins.create({
           id: randomUUID(),
           email,
-          passwordHash: this.hashPassword(password),
+          passwordHash,
           role: 'owner',
           blocked: false,
           invitedBy: null,
           shopifyCustomerId: null,
           lastLoginAt: null,
+          passwordChangedAt: null,
         }),
       );
 
@@ -161,6 +187,20 @@ export class AdminAuthService implements OnModuleInit {
   // ──────────────────────────────── Connexion ────────────────────────────────
 
   /**
+   * Hash factice, utilisé quand aucun compte ne correspond.
+   *
+   * Il est vérifié pour rien, uniquement pour consommer le MÊME temps qu'une
+   * vérification réelle. Sans cela, un e-mail inconnu renvoyait en ~2 ms là où
+   * un e-mail valide prenait ~50 ms : un écart d'un facteur 25, mesurable en
+   * une seule requête, qui révélait quels comptes existent et transformait un
+   * bruteforce aveugle en attaque ciblée.
+   */
+  private static readonly DUMMY_HASH =
+    'scrypt$' +
+    '00000000000000000000000000000000$' +
+    '0'.repeat(128);
+
+  /**
    * Vérifie e-mail + mot de passe. Renvoie l'admin si OK, sinon null.
    * Un compte bloqué ne peut pas se connecter.
    */
@@ -171,9 +211,14 @@ export class AdminAuthService implements OnModuleInit {
     if (!mail || !password) return null;
 
     const admin = await this.admins.findOne({ where: { email: mail } });
-    if (!admin) return null;
-    if (admin.blocked) return null;
-    if (!this.verifyPassword(password, admin.passwordHash)) return null;
+
+    // Le hachage est TOUJOURS exécuté, même sans compte correspondant : c'est
+    // ce qui égalise les temps de réponse (cf. DUMMY_HASH).
+    const ok = await this.verifyPassword(
+      password,
+      admin?.passwordHash || AdminAuthService.DUMMY_HASH,
+    );
+    if (!admin || admin.blocked || !ok) return null;
 
     admin.lastLoginAt = new Date();
     await this.admins.save(admin);
@@ -191,7 +236,7 @@ export class AdminAuthService implements OnModuleInit {
   /**
    * Détermine la clé de signature des sessions, par ordre de priorité :
    *
-   *   1. `ADMIN_SESSION_SECRET` (ou l'ancien `ADMIN_PASSWORD`) ;
+   *   1. `ADMIN_SESSION_SECRET` (32 caractères minimum) ;
    *   2. le secret déjà généré et stocké en base ;
    *   3. un nouveau secret aléatoire, écrit en base pour les prochains boots.
    *
@@ -206,10 +251,22 @@ export class AdminAuthService implements OnModuleInit {
   private async resolveSecret(): Promise<string> {
     if (this.cachedSecret) return this.cachedSecret;
 
-    const configured =
-      this.config.get<string>('ADMIN_SESSION_SECRET') ||
-      this.config.get<string>('ADMIN_PASSWORD');
+    // Le repli sur `ADMIN_PASSWORD` a été RETIRÉ.
+    //
+    // C'était un vestige de l'ancien système d'authentification, documenté dans
+    // aucun `.env.example`. Une installation qui l'avait encore signait ses
+    // cookies avec un mot de passe humain (~40 bits) là où 256 sont attendus :
+    // un secret devinable permet de FORGER un cookie de session admin valide.
+    // Et le supprimer en croyant nettoyer faisait tomber toutes les sessions,
+    // sans que rien n'explique pourquoi.
+    const configured = this.config.get<string>('ADMIN_SESSION_SECRET');
     if (configured) {
+      if (configured.length < 32) {
+        throw new Error(
+          'ADMIN_SESSION_SECRET trop court (32 caractères minimum) : ' +
+            'générez-le avec `openssl rand -hex 32`.',
+        );
+      }
       this.cachedSecret = configured;
       return configured;
     }
@@ -270,10 +327,17 @@ export class AdminAuthService implements OnModuleInit {
     return this.cachedSecret;
   }
 
-  /** Token de session signé : `<adminId>.<expiration>.<signature>`. */
+  /**
+   * Token de session signé : `<adminId>.<émission>.<expiration>.<signature>`.
+   *
+   * La date d'ÉMISSION est nouvelle : elle est comparée à `passwordChangedAt`
+   * pour permettre la révocation. Sans elle, un cookie volé restait utilisable
+   * jusqu'à 12 h après un changement de mot de passe.
+   */
   issueToken(adminId: string): string {
-    const exp = Date.now() + AdminAuthService.TTL_MS;
-    const payload = `${adminId}.${exp}`;
+    const iat = Date.now();
+    const exp = iat + AdminAuthService.TTL_MS;
+    const payload = `${adminId}.${iat}.${exp}`;
     const sig = createHmac('sha256', this.secret()).update(payload).digest('hex');
     return `${payload}.${sig}`;
   }
@@ -287,14 +351,33 @@ export class AdminAuthService implements OnModuleInit {
     return this.parseToken(token) !== null;
   }
 
-  /** Valide un token et renvoie l'id de l'admin, ou null. */
-  private parseToken(token?: string): string | null {
+  /**
+   * Valide un token et renvoie l'id de l'admin + sa date d'émission.
+   *
+   * Deux formats sont acceptés : `<id>.<iat>.<exp>.<sig>` (actuel) et
+   * `<id>.<exp>.<sig>` (ancien). L'ancien est toléré pour que le déploiement
+   * ne déconnecte pas les admins en cours de travail ; il ne porte pas de date
+   * d'émission, donc `iat` vaut null et la révocation ne peut pas s'appliquer
+   * — ces jetons s'éteignent d'eux-mêmes en 12 h au plus.
+   */
+  private parseToken(
+    token?: string,
+  ): { adminId: string; iat: number | null } | null {
     if (!token) return null;
     const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const [adminId, expStr, sig] = parts;
+    if (parts.length !== 4 && parts.length !== 3) return null;
+
+    const legacy = parts.length === 3;
+    const adminId = parts[0];
+    const iatStr = legacy ? null : parts[1];
+    const expStr = legacy ? parts[1] : parts[2];
+    const sig = legacy ? parts[2] : parts[3];
+
+    const payload = legacy
+      ? `${adminId}.${expStr}`
+      : `${adminId}.${iatStr}.${expStr}`;
     const expected = createHmac('sha256', this.secret())
-      .update(`${adminId}.${expStr}`)
+      .update(payload)
       .digest('hex');
     try {
       const a = Buffer.from(sig);
@@ -305,7 +388,10 @@ export class AdminAuthService implements OnModuleInit {
     }
     const exp = parseInt(expStr, 10);
     if (Number.isNaN(exp) || Date.now() >= exp) return null;
-    return adminId;
+
+    const iat = iatStr === null ? null : parseInt(iatStr, 10);
+    if (iat !== null && Number.isNaN(iat)) return null;
+    return { adminId, iat };
   }
 
   /**
@@ -313,10 +399,24 @@ export class AdminAuthService implements OnModuleInit {
    * expiré, ou si le compte a été bloqué/supprimé entre-temps.
    */
   async currentAdmin(token?: string): Promise<SessionAdmin | null> {
-    const adminId = this.parseToken(token);
-    if (!adminId) return null;
-    const admin = await this.admins.findOne({ where: { id: adminId } });
+    const parsed = this.parseToken(token);
+    if (!parsed) return null;
+    const admin = await this.admins.findOne({ where: { id: parsed.adminId } });
     if (!admin || admin.blocked) return null;
+
+    // RÉVOCATION : un jeton émis avant le dernier changement de mot de passe
+    // n'est plus valable. C'est ce qui rend le changement de mot de passe
+    // réellement protecteur — jusqu'ici, un cookie volé survivait 12 h de plus.
+    //
+    // On retranche une seconde : la date en base est un `datetime` MySQL, dont
+    // la précision descend à la seconde, alors que `iat` est en millisecondes.
+    // Sans cette marge, le jeton émis juste après un changement pouvait se
+    // retrouver « antérieur » à lui et l'admin était déconnecté aussitôt.
+    if (parsed.iat !== null && admin.passwordChangedAt) {
+      const changedAt = new Date(admin.passwordChangedAt).getTime() - 1000;
+      if (parsed.iat < changedAt) return null;
+    }
+
     return { id: admin.id, email: admin.email, role: admin.role };
   }
 
@@ -363,16 +463,18 @@ export class AdminAuthService implements OnModuleInit {
       return { ok: false, error: 'Mot de passe trop court (8 caractères min).' };
     }
 
+    const passwordHash = await this.hashPassword(password);
     const admin = await this.admins.save(
       this.admins.create({
         id: randomUUID(),
         email: mail,
-        passwordHash: this.hashPassword(password),
+        passwordHash,
         role: 'admin',
         blocked: false,
         invitedBy: invitedBy || null,
         shopifyCustomerId: shopifyCustomerId || null,
         lastLoginAt: null,
+        passwordChangedAt: null,
       }),
     );
     return { ok: true, admin };
@@ -400,14 +502,36 @@ export class AdminAuthService implements OnModuleInit {
     return { ok: true };
   }
 
-  /** Régénère le mot de passe d'un admin ; renvoie le nouveau (en clair, une fois). */
+  /**
+   * Régénère le mot de passe d'un admin ; renvoie le nouveau (en clair, une fois).
+   *
+   * `actorId` permet de refuser l'auto-réinitialisation. C'est un garde-fou
+   * anti-verrouillage : le mot de passe généré n'est affiché QU'UNE FOIS et
+   * n'est stocké que haché. Si l'owner se réinitialisait lui-même et perdait
+   * la réponse (onglet fermé, coupure réseau), il se retrouvait dehors
+   * définitivement — il n'existe aucune récupération par e-mail, et
+   * `createAdmin` force `role: 'admin'`, donc l'owner est unique et
+   * irremplaçable. `changeOwnPassword` couvre déjà ce besoin, en exigeant le
+   * mot de passe actuel.
+   */
   async resetPassword(
     id: string,
+    actorId?: string,
   ): Promise<{ ok: boolean; error?: string; password?: string; email?: string }> {
     const admin = await this.admins.findOne({ where: { id } });
     if (!admin) return { ok: false, error: 'Admin introuvable.' };
+    if (actorId && admin.id === actorId) {
+      return {
+        ok: false,
+        error:
+          'Utilisez « Changer mon mot de passe » pour votre propre compte : ' +
+          'la réinitialisation ne montre le nouveau mot de passe qu’une fois.',
+      };
+    }
     const password = this.generatePassword(8);
-    admin.passwordHash = this.hashPassword(password);
+    admin.passwordHash = await this.hashPassword(password);
+    // Révoque les sessions ouvertes de ce compte (cf. currentAdmin).
+    admin.passwordChangedAt = new Date();
     await this.admins.save(admin);
     return { ok: true, password, email: admin.email };
   }
@@ -423,11 +547,11 @@ export class AdminAuthService implements OnModuleInit {
     id: string,
     currentPassword: string,
     newPassword: string,
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; token?: string }> {
     const admin = await this.admins.findOne({ where: { id } });
     if (!admin) return { ok: false, error: 'Compte introuvable.' };
 
-    if (!this.verifyPassword(currentPassword || '', admin.passwordHash)) {
+    if (!(await this.verifyPassword(currentPassword || '', admin.passwordHash))) {
       return { ok: false, error: 'Mot de passe actuel incorrect.' };
     }
 
@@ -438,13 +562,20 @@ export class AdminAuthService implements OnModuleInit {
         error: 'Le nouveau mot de passe doit faire au moins 8 caractères.',
       };
     }
-    if (this.verifyPassword(pwd, admin.passwordHash)) {
+    if (await this.verifyPassword(pwd, admin.passwordHash)) {
       return { ok: false, error: 'Le nouveau mot de passe est identique à l’actuel.' };
     }
 
-    admin.passwordHash = this.hashPassword(pwd);
+    admin.passwordHash = await this.hashPassword(pwd);
+    // Révoque TOUTES les sessions de ce compte, y compris celle en cours : si
+    // le mot de passe est changé parce qu'un cookie a fuité, laisser vivre les
+    // sessions existantes viderait l'opération de son sens.
+    admin.passwordChangedAt = new Date();
     await this.admins.save(admin);
     this.logger.log(`Mot de passe changé pour ${admin.email}`);
-    return { ok: true };
+
+    // ... mais on rend un jeton neuf à l'appelant : celui qui vient de changer
+    // son mot de passe légitimement ne doit pas être éjecté de son dashboard.
+    return { ok: true, token: this.issueToken(admin.id) };
   }
 }

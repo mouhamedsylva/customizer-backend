@@ -10,6 +10,7 @@ import { Column, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
  *  - price_<produit>     : prix unitaire du configurateur
  *  - tiers_<produit>     : grille dégressive (JSON)
  *  - admin_session_secret: clé de signature des cookies de session
+ *  - cart_token_secret   : clé de signature des jetons de panier
  *
  * Les anciennes clés `notify_email_enabled` / `notify_email` ne sont plus
  * lues : le backend n'émet aucun e-mail, toute la correspondance passe par

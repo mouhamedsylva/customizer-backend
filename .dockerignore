@@ -6,3 +6,5 @@ dist
 !.env.example
 *.md
 scripts
+test
+jest.config.js

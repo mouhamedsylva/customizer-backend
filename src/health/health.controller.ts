@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Logger, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ShopifyService } from '../shared/shopify.service';
+import { AdminSessionGuard } from '../admin/admin-session.guard';
 
 // Product IDs fournis pour le panier natif (drapeaux + textiles).
 // Coins = devis (draft order), donc pas de variant panier.
@@ -14,6 +15,8 @@ const CONFIG_PRODUCTS: Record<string, string> = {
 
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(
     private readonly config: ConfigService,
     private readonly shopify: ShopifyService,
@@ -30,10 +33,19 @@ export class HealthController {
   }
 
   /**
-   * GET /api/health/variants
+   * GET /api/health/variants — RÉSERVÉ AUX ADMINS.
+   *
    * Debug : renvoie, pour chaque produit du configurateur, son/ses variant_id.
    * A utiliser une fois pour remplir les window.CONF_VARIANT_* cote Liquid.
+   *
+   * Cette route était PUBLIQUE alors qu'elle déclenche 5 appels séquentiels à
+   * l'API Admin Shopify. Le quota REST de Shopify étant d'environ 120 appels
+   * par minute, une seule IP tapant au plafond du rate limiting (120 req/min)
+   * en consommait 600 — Shopify répondait alors 429 à TOUT le backend :
+   * création de devis, envoi de factures et synchro des commandes tombaient
+   * ensemble. Une route de debug ne doit pas pouvoir couper la production.
    */
+  @UseGuards(AdminSessionGuard)
   @Get('variants')
   async variants(): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
@@ -49,7 +61,12 @@ export class HealthController {
           allVariants: p.variants,
         };
       } catch (error) {
-        out[key] = { productId, error: (error as Error).message };
+        // Message générique : le détail (qui contenait l'URL Shopify complète
+        // et la version d'API en cas de timeout) reste dans les logs serveur.
+        this.logger.warn(
+          `Lecture des variants ${productId} échouée : ${(error as Error).message}`,
+        );
+        out[key] = { productId, error: 'Lecture Shopify impossible.' };
       }
     }
     return out;

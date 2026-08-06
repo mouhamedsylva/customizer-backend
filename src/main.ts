@@ -1,12 +1,31 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { json, urlencoded, Request } from 'express';
+import { json, urlencoded, Request, Response, NextFunction } from 'express';
+import { randomBytes } from 'crypto';
 import helmet from 'helmet';
 import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
+  // FILET DE SÉCURITÉ : depuis Node 15, une promesse rejetée sans récepteur
+  // ARRÊTE le process. Or les synchros périodiques sont lancées en
+  // `void this.xxx()` depuis des timers : le moindre rejet non capturé — une
+  // coupure MySQL pendant une passe, par exemple — tuait le backend entier,
+  // configurateur et webhooks compris, pour une tâche de fond secondaire.
+  //
+  // On journalise et on continue : ces tâches sont toutes réessayées au
+  // passage suivant. Ce filet ne dispense PAS de gérer les erreurs à la
+  // source, il empêche seulement qu'un oubli devienne une panne totale.
+  process.on('unhandledRejection', (reason) => {
+    Logger.error(
+      `Promesse rejetée sans gestionnaire : ${
+        reason instanceof Error ? reason.stack || reason.message : String(reason)
+      }`,
+      'UnhandledRejection',
+    );
+  });
+
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
@@ -15,10 +34,74 @@ async function bootstrap(): Promise<void> {
   // serait faux. On fait confiance au premier proxy en amont.
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
-  // En-têtes de sécurité (nosniff, HSTS, etc.). `contentSecurityPolicy`
-  // désactivé : le dashboard admin est une page HTML autonome avec styles et
-  // scripts inline (admin.view.ts) qu'une CSP par défaut casserait.
-  app.use(helmet({ contentSecurityPolicy: false }));
+  // Un NONCE par requête, posé avant helmet pour que la CSP puisse s'y référer.
+  //
+  // Le dashboard est une page autonome dont les styles et scripts sont inline :
+  // la CSP était donc désactivée pour TOUTE l'application, y compris les routes
+  // qui n'ont rien à voir avec elle. Le nonce autorise précisément les blocs de
+  // la réponse en cours, sans ouvrir `unsafe-inline`.
+  app.use(
+    (
+      req: Request & { cspNonce?: string },
+      _res: Response,
+      next: NextFunction,
+    ) => {
+      req.cspNonce = randomBytes(16).toString('base64');
+      next();
+    },
+  );
+
+  // En-têtes de sécurité (nosniff, HSTS, etc.) + CSP.
+  const isProd = config.get<string>('NODE_ENV') === 'production';
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          defaultSrc: ["'self'"],
+          // Le nonce couvre les <script> et <style> émis par admin.view.ts : un
+          // script injecté sans nonce est rejeté, même si `'unsafe-inline'`
+          // figure ici (un navigateur qui comprend les nonces l'ignore pour les
+          // balises).
+          scriptSrc: [
+            "'self'",
+            (req) => `'nonce-${(req as Request & { cspNonce?: string }).cspNonce}'`,
+            "'unsafe-inline'",
+          ],
+          // INDISPENSABLE : `script-src-attr` est plus spécifique que
+          // `script-src` et vaut `'none'` dans les défauts de helmet. Sans cette
+          // ligne, elle gouverne SEULE les attributs de gestionnaire et bloque
+          // les 56 `onclick`/`oninput`/`onblur` du dashboard — y compris le
+          // `window.print()` des fiches d'atelier. La page s'affichait
+          // normalement et ne répondait plus à aucun clic.
+          //
+          // Les retirer au profit d'écouteurs délégués permettrait de repasser
+          // cette directive à `'none'` : c'est le vrai palier suivant.
+          scriptSrcAttr: ["'unsafe-inline'"],
+          styleSrc: [
+            "'self'",
+            (req) => `'nonce-${(req as Request & { cspNonce?: string }).cspNonce}'`,
+            "'unsafe-inline'",
+          ],
+          // Les aperçus de devis peuvent être des data-URL (générées au
+          // navigateur), d'où `data:` en plus des deux CDN.
+          imgSrc: ["'self'", 'data:', 'https://res.cloudinary.com', 'https://cdn.shopify.com'],
+          connectSrc: ["'self'"],
+          // Aucun plugin, aucune iframe, et le formulaire de login ne poste
+          // que vers cette même origine.
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          formAction: ["'self'"],
+          baseUri: ["'self'"],
+          // Hors production, l'application est servie en HTTP simple : forcer
+          // la réécriture en https casserait le dashboard local (et le cookie
+          // de session est déjà `secure`). En production, Nginx termine le TLS
+          // et la directive reprend tout son sens.
+          ...(isProd ? {} : { upgradeInsecureRequests: null }),
+        },
+      },
+    }),
+  );
 
   // Augmente la taille max du body JSON/urlencoded.
   // Les devis "coins" embarquent 3 apercus (recto/verso/cote) en base64,
@@ -29,7 +112,15 @@ async function bootstrap(): Promise<void> {
     json({
       limit: '25mb',
       verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
-        if (req.originalUrl && req.originalUrl.includes('/webhooks/')) {
+        // Le test porte sur le CHEMIN SEUL, et il est ancré.
+        //
+        // `originalUrl.includes('/webhooks/')` regardait aussi la query : une
+        // URL comme `/api/quotes?x=/webhooks/` déclenchait donc la copie du
+        // corps sur une route publique quelconque. Avec une limite à 25 Mo,
+        // chaque requête allouait 50 Mo au lieu de 25 (le buffer d'Express plus
+        // sa copie), sans aucune authentification.
+        const path = (req.originalUrl || '').split('?')[0];
+        if (path.startsWith('/api/webhooks/')) {
           req.rawBody = Buffer.from(buf);
         }
       },

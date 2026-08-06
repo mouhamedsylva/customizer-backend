@@ -18,6 +18,8 @@ import { Quote } from '../database/entities/quote.entity';
 export class QuotesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QuotesService.name);
   private syncTimer?: NodeJS.Timeout;
+  /** Première synchro différée : annulée si l'app s'arrête avant son échéance. */
+  private startTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly shopify: ShopifyService,
@@ -31,7 +33,7 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
    * Au démarrage puis toutes les 10 minutes.
    */
   onModuleInit(): void {
-    setTimeout(() => {
+    this.startTimer = setTimeout(() => {
       void this.syncStatuses('démarrage');
     }, 12000);
 
@@ -41,7 +43,13 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
     }, 10 * 60 * 1000);
   }
 
+  /**
+   * Le `setTimeout` initial est annulé, pas seulement l'intervalle : sans cela,
+   * un arrêt dans les 12 premières secondes le laissait se déclencher après la
+   * fermeture du pool TypeORM, sur une application déjà détruite.
+   */
   onModuleDestroy(): void {
+    if (this.startTimer) clearTimeout(this.startTimer);
     if (this.syncTimer) clearInterval(this.syncTimer);
   }
 
@@ -326,7 +334,7 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  /** Liste des devis en base (pour le futur dashboard admin — étape 3). */
+  /** Liste des devis en base — sert `GET /api/quotes` (réservé aux admins). */
   async findAll(): Promise<Quote[]> {
     return this.quotes.find({ order: { createdAt: 'DESC' } });
   }

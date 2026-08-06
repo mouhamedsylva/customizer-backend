@@ -217,12 +217,47 @@ export class AdminService {
     });
   }
 
-  /** Enregistre le résultat d'une expédition Shopify. */
-  async setFulfillment(
+  /**
+   * Mémorise le numéro de suivi AVANT l'appel à Shopify.
+   *
+   * L'expédition enchaînait trois écritures non atomiques : appel Shopify,
+   * statut de production, puis suivi. Une interruption entre les deux dernières
+   * laissait la commande expédiée chez Shopify — le client ayant DÉJÀ reçu son
+   * e-mail — avec un `trackingNumber` resté nul en base. Et il l'était pour
+   * toujours : la synchro protège ce champ de l'écrasement, et le bouton
+   * « Expédier » refuse de rejouer une commande déjà traitée. Le numéro saisi
+   * par l'opérateur était définitivement perdu.
+   *
+   * En l'écrivant d'abord, le pire cas devient un suivi enregistré pour une
+   * expédition qui n'a pas abouti — corrigeable d'un clic, contrairement à
+   * l'inverse.
+   */
+  async setTrackingNumber(
     shopifyOrderId: string,
-    patch: { fulfillmentStatus: string | null; trackingNumber: string | null },
+    trackingNumber: string | null,
   ): Promise<void> {
-    await this.orders.update(shopifyOrderId, patch);
+    await this.orders.update(shopifyOrderId, { trackingNumber });
+  }
+
+  /**
+   * Enregistre le résultat d'une expédition Shopify.
+   *
+   * Statut de production et statut d'exécution sont posés dans UNE SEULE
+   * écriture : ils décrivent le même événement, les séparer ouvrait une fenêtre
+   * où le dashboard affichait « Expédiée » et « Non traitée » simultanément.
+   */
+  async setShipped(
+    shopifyOrderId: string,
+    patch: {
+      productionStatus: string;
+      fulfillmentStatus: string | null;
+      trackingNumber: string | null;
+    },
+  ): Promise<void> {
+    await this.orders.update(shopifyOrderId, {
+      ...patch,
+      productionUpdatedAt: new Date(),
+    });
   }
 
   /** Enregistre la note interne d'une commande. */

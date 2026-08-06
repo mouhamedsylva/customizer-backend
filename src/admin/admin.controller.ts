@@ -78,7 +78,9 @@ export class AdminController {
         (req.cookies || {})[this.auth.cookieName],
       );
       if (hadSession) res.clearCookie(this.auth.cookieName);
-      res.type('html').send(loginPage(false, hadSession ? 'blocked' : undefined));
+      res
+        .type('html')
+        .send(loginPage(false, hadSession ? 'blocked' : undefined, nonceOf(req)));
       return;
     }
     const filters = {
@@ -109,28 +111,35 @@ export class AdminController {
           filters,
           me: me || undefined,
           allQuotes,
+          nonce: nonceOf(req),
         }),
       );
   }
 
   /** POST /api/admin/login — vérifie e-mail + mot de passe, pose le cookie. */
-  // Plafond strict : 5 tentatives/minute/IP. scryptSync est déjà lent (~50 ms),
-  // mais ceci bloque net le bruteforce en ligne et le déni de service par login.
+  // Plafond strict : 5 tentatives/minute/IP. Le hachage scrypt est déjà lent
+  // (~50 ms), mais ceci bloque net le bruteforce en ligne.
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   async login(
+    @Req() req: Request,
     @Body('email') email: string,
     @Body('password') password: string,
     @Res() res: Response,
   ): Promise<void> {
     const admin = await this.auth.login(email, password);
     if (!admin) {
-      res.type('html').status(401).send(loginPage(true));
+      res.type('html').status(401).send(loginPage(true, undefined, nonceOf(req)));
       return;
     }
     res.cookie(this.auth.cookieName, this.auth.issueToken(admin.id), {
       httpOnly: true,
-      sameSite: 'lax',
+      // `strict` et non `lax` : le dashboard est servi par cette même origine
+      // (`GET /api/admin`), aucune navigation cross-site légitime n'a besoin du
+      // cookie. En `lax`, un formulaire HTML hébergé ailleurs pouvait déclencher
+      // les POST d'administration — changer les prix, envoyer une facture, ou
+      // marquer une commande expédiée, ce qui envoie un e-mail au client.
+      sameSite: 'strict',
       secure: true,
       maxAge: 1000 * 60 * 60 * 12,
     });
@@ -174,6 +183,23 @@ export class AdminController {
         ok: false,
         error:
           "Ce devis n'a pas de brouillon Shopify associé : impossible d'envoyer la facture.",
+      });
+      return;
+    }
+
+    // Un devis PAYÉ ne se refacture pas.
+    //
+    // Sans cette garde, recliquer « envoyer la facture » réécrivait
+    // `draftStatus: 'invoice_sent'` et remettait `remindersSent` à zéro : le
+    // client qui venait de régler entrait à nouveau dans le cycle de relances
+    // et recevait « votre devis reste en attente de règlement » à J+3, J+7 et
+    // J+14. Shopify refuse généralement de modifier un brouillon complété, mais
+    // l'écriture en base, elle, avait déjà eu lieu.
+    if (quote.draftStatus === 'completed') {
+      res.status(409).json({
+        ok: false,
+        error:
+          'Ce devis a déjà été réglé par le client : il ne peut plus être refacturé.',
       });
       return;
     }
@@ -259,13 +285,24 @@ export class AdminController {
     if (status === 'shipped') {
       const tracking = String((req.body as any)?.tracking || '').trim();
       const carrier = String((req.body as any)?.carrier || '').trim();
+
+      // Le suivi est persisté AVANT l'appel Shopify. C'est la seule donnée de
+      // cette séquence que l'opérateur a saisie à la main et qu'on ne peut pas
+      // retrouver ailleurs : une interruption après l'expédition la perdait
+      // définitivement (la synchro ne réécrit jamais ce champ, et Shopify
+      // refuse de rejouer une commande déjà traitée).
+      if (tracking) {
+        await this.data
+          .setTrackingNumber(orderId, tracking)
+          .catch(() => undefined);
+      }
+
       try {
         const r = await this.shopify.fulfillOrder(orderId, {
           trackingNumber: tracking || undefined,
           trackingCompany: carrier || undefined,
           notifyCustomer: true,
         });
-        await this.data.setProductionStatus(orderId, status);
 
         // Relit l'état réel plutôt que d'écrire 'fulfilled' en dur : quand une
         // commande a plusieurs fulfillment orders et qu'un seul reste ouvert,
@@ -280,7 +317,11 @@ export class AdminController {
           // Relecture impossible : on garde 'fulfilled', la synchro corrigera.
         }
 
-        await this.data.setFulfillment(orderId, {
+        // UNE seule écriture : statut de production et statut d'exécution
+        // décrivent le même événement. Les séparer laissait une fenêtre où le
+        // dashboard annonçait « Expédiée » et « Non traitée » en même temps.
+        await this.data.setShipped(orderId, {
+          productionStatus: status,
           fulfillmentStatus: real,
           trackingNumber: tracking || null,
         });
@@ -359,7 +400,7 @@ export class AdminController {
       res.status(404).type('text').send('Commande introuvable.');
       return;
     }
-    res.type('html').send(productionSheetPage(order));
+    res.type('html').send(productionSheetPage(order, nonceOf(req)));
   }
 
   /**
@@ -382,7 +423,7 @@ export class AdminController {
       res.status(404).type('text').send('Devis introuvable.');
       return;
     }
-    res.type('html').send(groupSheetPage(quote));
+    res.type('html').send(groupSheetPage(quote, nonceOf(req)));
   }
 
   /**
@@ -402,11 +443,22 @@ export class AdminController {
     try {
       await this.buildAndSendZip(orderId, res);
     } catch (err) {
-      // Remonte l'erreur réelle plutôt qu'un 500 opaque.
-      res
-        .status(500)
-        .type('text')
-        .send('ZIP ERROR:\n' + ((err as Error)?.stack || String(err)));
+      // Le DÉTAIL part dans les logs, pas dans la réponse : la stack trace
+      // exposait les chemins absolus du serveur, la structure interne et les
+      // versions des bibliothèques.
+      this.logger.error(
+        `Archive de la commande ${orderId} impossible : ` +
+          ((err as Error)?.stack || String(err)),
+      );
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .type('text')
+          .send(
+            "L'archive n'a pas pu être construite. " +
+              'Le détail figure dans les logs du serveur.',
+          );
+      }
     }
   }
 
@@ -457,20 +509,48 @@ export class AdminController {
       return;
     }
 
-    // 1) Télécharge d'abord TOUS les fichiers (les URLs Cloudinary peuvent être
-    //    lentes). On ignore ceux qui échouent plutôt que de casser l'archive.
+    // 1) Télécharge les fichiers, PAR LOTS et avec timeout. On ignore ceux qui
+    //    échouent plutôt que de casser l'archive.
+    //
+    //    Trois garde-fous, absents jusqu'ici :
+    //      - liste blanche d'hôtes : ces URLs viennent des `properties` des
+    //        lignes de commande, que le client remplit librement via le panier.
+    //        Sans filtre, une commande pouvait faire interroger au serveur une
+    //        adresse interne (métadonnées cloud, service local) dont le contenu
+    //        atterrissait dans l'archive téléchargée par l'admin ;
+    //      - timeout : `fetch` n'en a aucun par défaut, une URL qui pend
+    //        bloquait la requête admin indéfiniment ;
+    //      - parallélisme borné : une commande de 50 lignes déclenchait 200
+    //        téléchargements simultanés, tous conservés en mémoire.
     const fetched: Array<{ name: string; buf: Buffer }> = [];
-    await Promise.all(
-      files.map(async (f) => {
-        try {
-          const r = await fetch(f.url);
-          if (!r.ok) return;
-          fetched.push({ name: f.name, buf: Buffer.from(await r.arrayBuffer()) });
-        } catch {
-          /* fichier inaccessible : ignoré */
-        }
-      }),
-    );
+    const allowed = files.filter((f) => isAllowedAssetUrl(f.url));
+    const skipped = files.length - allowed.length;
+    if (skipped > 0) {
+      this.logger.warn(
+        `Archive ${orderId} : ${skipped} fichier(s) ignoré(s), hôte non autorisé.`,
+      );
+    }
+
+    const BATCH = 5;
+    for (let i = 0; i < allowed.length; i += BATCH) {
+      await Promise.all(
+        allowed.slice(i, i + BATCH).map(async (f) => {
+          try {
+            const r = await fetch(f.url, {
+              redirect: 'manual',
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!r.ok) return;
+            fetched.push({
+              name: f.name,
+              buf: Buffer.from(await r.arrayBuffer()),
+            });
+          } catch {
+            /* fichier inaccessible : ignoré */
+          }
+        }),
+      );
+    }
 
     if (!fetched.length) {
       res
@@ -587,6 +667,12 @@ export class AdminController {
      * lignes les plus anciennes de la période — un exercice incomplet remis
      * au comptable sans le moindre signal.
      */
+    // PLAFOND TECHNIQUE, pas seulement fonctionnel : `getOrders`/`getQuotes`
+    // chargent les lignes via `In(ids)`, ce qui produit un placeholder par id.
+    // MySQL en accepte 65 535 au maximum par requête préparée. 50 000 laisse
+    // une marge volontaire — ne PAS augmenter cette valeur sans passer la
+    // lecture en pagination, sinon l'export échouerait pile au moment de la
+    // clôture comptable annuelle.
     const EXPORT_LIMIT = 50000;
 
     let rows: string[] = [];
@@ -873,6 +959,17 @@ export class AdminController {
       res.status(400).json({ ok: false, error: result.error });
       return;
     }
+    // Le changement révoque toutes les sessions du compte (y compris celle-ci) :
+    // on repose immédiatement un cookie frais pour que l'admin qui vient de
+    // changer son mot de passe ne soit pas déconnecté de son propre dashboard.
+    if (result.token) {
+      res.cookie(this.auth.cookieName, result.token, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: true,
+        maxAge: 1000 * 60 * 60 * 12,
+      });
+    }
     res.json({ ok: true });
   }
 
@@ -1037,12 +1134,45 @@ export class AdminController {
       res.status(403).json({ ok: false, error: 'Réservé à l’admin principal.' });
       return;
     }
-    const result = await this.auth.resetPassword(id);
+    const result = await this.auth.resetPassword(id, me.id);
     if (!result.ok) {
       res.status(400).json({ ok: false, error: result.error });
       return;
     }
     res.json({ ok: true, password: result.password, email: result.email });
+  }
+}
+
+/**
+ * Nonce CSP de la requête courante, posé par le middleware de `main.ts`.
+ *
+ * Les pages du dashboard portent leurs styles et leurs scripts en ligne : sans
+ * ce jeton, la CSP les bloquerait. Renvoie une chaîne vide si le middleware
+ * n'a pas tourné (tests unitaires appelant les vues directement), auquel cas
+ * les balises sont émises sans attribut `nonce`.
+ */
+function nonceOf(req: Request): string {
+  return (req as Request & { cspNonce?: string }).cspNonce || '';
+}
+
+/**
+ * Hôtes dont les fichiers peuvent être téléchargés dans l'archive de production.
+ *
+ * Ces URLs proviennent des `properties` des lignes de commande — que le client
+ * renseigne librement au moment d'ajouter au panier. Elles ne sont donc PAS de
+ * confiance : sans liste blanche, `buildAndSendZip` interrogeait n'importe
+ * quelle adresse, y compris sur le réseau interne du serveur.
+ */
+const ASSET_HOSTS = ['res.cloudinary.com', 'cdn.shopify.com'];
+
+function isAllowedAssetUrl(raw: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(raw);
+    if (protocol !== 'https:') return false;
+    const h = hostname.toLowerCase();
+    return ASSET_HOSTS.some((d) => h === d || h.endsWith('.' + d));
+  } catch {
+    return false;
   }
 }
 

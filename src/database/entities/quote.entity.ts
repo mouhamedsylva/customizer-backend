@@ -20,6 +20,9 @@ export class Quote {
 
   /**
    * Statut du brouillon Shopify, synchronisé périodiquement :
+   *  - null          : devis tout juste créé, brouillon pas encore confirmé
+   *  - failed        : la création du brouillon a échoué ; `retryOrphanQuotes`
+   *                    réessaie toutes les 10 min et remet le statut à null
    *  - open          : devis créé, pas encore chiffré/envoyé
    *  - invoice_sent  : facture envoyée, en attente de paiement
    *  - completed     : PAYÉ (Shopify a créé la commande)

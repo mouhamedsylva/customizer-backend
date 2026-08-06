@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
@@ -23,6 +24,7 @@ export class PreviewViewDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(20)
   @ValidateNested({ each: true })
   @Type(() => PreviewLogoDto)
   logos?: PreviewLogoDto[];
@@ -39,10 +41,21 @@ export class PreviewViewDto {
   mirror?: boolean;
 }
 
-/** Body de POST /api/export/preview-multi. */
+/**
+ * Body de POST /api/export/preview-multi.
+ *
+ * `views` et `logos` sont PLAFONNÉS. Sans borne, chaque vue déclenchant un
+ * téléchargement HTTP par fond et par logo puis plusieurs passes sharp, une
+ * seule requête de 25 Mo pouvait demander des dizaines de milliers d'opérations
+ * — le rate limiting compte les requêtes entrantes, pas le travail déclenché.
+ *
+ * 8 vues couvrent largement le besoin réel (face, dos, deux manches, et de la
+ * marge) ; au-delà, c'est un abus.
+ */
 export class PreviewMultiDto {
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(8)
   @ValidateNested({ each: true })
   @Type(() => PreviewViewDto)
   views!: PreviewViewDto[];

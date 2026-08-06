@@ -23,6 +23,8 @@ import { SettingsService } from '../admin/settings.service';
 export class RemindersService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RemindersService.name);
   private timer?: NodeJS.Timeout;
+  /** Première passe différée : annulée si l'app s'arrête avant son échéance. */
+  private startTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly shopify: ShopifyService,
@@ -33,11 +35,20 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     // Première passe peu après le démarrage, puis toutes les heures.
-    setTimeout(() => void this.run('démarrage'), 30000);
+    this.startTimer = setTimeout(() => void this.run('démarrage'), 30000);
     this.timer = setInterval(() => void this.run('périodique'), 60 * 60 * 1000);
   }
 
+  /**
+   * Le `setTimeout` initial est annulé, pas seulement l'intervalle.
+   *
+   * Son handle n'était pas conservé : sur un arrêt survenant avant son
+   * échéance — un `docker compose restart` prend souvent moins de 30 s — il se
+   * déclenchait APRÈS la fermeture du pool TypeORM, sur une application déjà
+   * détruite.
+   */
   onModuleDestroy(): void {
+    if (this.startTimer) clearTimeout(this.startTimer);
     if (this.timer) clearInterval(this.timer);
   }
 
@@ -46,7 +57,23 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
    * Ne lève jamais : une panne Shopify ne doit pas arrêter le backend.
    */
   async run(reason = 'manuel'): Promise<{ sent: number }> {
-    const cfg = await this.settings.get();
+    // La lecture des réglages est DANS le try, comme celle des devis juste en
+    // dessous. Elle ne l'était pas : `settings.get()` fait un `find()` qui
+    // rejette si MySQL est indisponible, et `run()` est appelée via
+    // `void this.run(...)` depuis un timer — le rejet n'avait aucun récepteur.
+    // Sans gestionnaire `unhandledRejection`, Node arrête alors le process :
+    // un simple redémarrage de la base faisait tomber TOUT le backend
+    // (configurateur, webhooks, dashboard) à cause des relances, une
+    // fonctionnalité secondaire souvent désactivée.
+    let cfg: Awaited<ReturnType<SettingsService['get']>>;
+    try {
+      cfg = await this.settings.get();
+    } catch (e) {
+      this.logger.warn(
+        `Réglages de relance illisibles : ${(e as Error).message}`,
+      );
+      return { sent: 0 };
+    }
     if (!cfg.reminderEnabled || !cfg.reminderDays.length) return { sent: 0 };
 
     let candidates: Quote[] = [];

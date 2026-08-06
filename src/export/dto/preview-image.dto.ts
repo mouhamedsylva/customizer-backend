@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsNotEmpty,
   IsNumber,
@@ -31,8 +32,10 @@ export class PreviewImageDto {
   @IsNotEmpty()
   background!: string;
 
+  // Plafonné : chaque logo = 1 téléchargement HTTP + 2 passes sharp.
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(20)
   @ValidateNested({ each: true })
   @Type(() => PreviewLogoDto)
   logos?: PreviewLogoDto[];

@@ -2,6 +2,9 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import sharp from 'sharp';
+// Depuis sharp 0.35, le namespace de types n'est plus exposé via l'import par
+// défaut : `sharp.OverlayOptions` ne résout plus. Le type est importé nommément.
+import type { OverlayOptions } from 'sharp';
 
 export interface UploadResult {
   url: string;
@@ -25,6 +28,25 @@ interface UploadOptions {
 @Injectable()
 export class CloudinaryService implements OnModuleInit {
   private readonly logger = new Logger(CloudinaryService.name);
+
+  /**
+   * Hôtes dont une image peut être téléchargée par le serveur.
+   *
+   * Volontairement RESTREINTE aux deux CDN qui servent réellement les assets de
+   * cette application, et alignée sur `IMG_HOSTS` (admin.view.ts) et
+   * `ASSET_HOSTS` (admin.controller.ts).
+   *
+   * La liste précédente incluait `.myshopify.com`, `.shopifycdn.com` et l'apex
+   * `.cloudinary.com`. Or n'importe qui crée gratuitement une boutique de
+   * développement `*.myshopify.com` : les endpoints PUBLICS
+   * `/api/export/preview-*` faisaient alors télécharger au serveur un contenu
+   * entièrement contrôlé par un tiers — révélant l'IP du serveur et exposant
+   * le décodeur d'images à un fichier piégé.
+   */
+  private static readonly ALLOWED_IMAGE_HOSTS = [
+    'res.cloudinary.com',
+    'cdn.shopify.com',
+  ];
 
   constructor(private readonly config: ConfigService) {}
 
@@ -190,20 +212,19 @@ export class CloudinaryService implements OnModuleInit {
    * CDN d'images légitimes.
    */
   private isAllowedImageUrl(url: URL): boolean {
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+    if (url.protocol !== 'https:') return false;
     if (this.isInternalHost(url.hostname)) return false;
 
     const host = url.hostname.toLowerCase();
     const store = (this.config.get<string>('SHOPIFY_STORE_URL') || '').toLowerCase();
-    const allowedSuffixes = [
-      '.cloudinary.com',
-      'res.cloudinary.com',
-      '.shopify.com', // cdn.shopify.com
-      '.shopifycdn.com',
-      '.myshopify.com',
-    ];
+
+    // La boutique configurée est toujours acceptée : c'est elle qui sert les
+    // images de fond du configurateur.
     if (store && host === store) return true;
-    return allowedSuffixes.some((s) => host === s.replace(/^\./, '') || host.endsWith(s));
+
+    return CloudinaryService.ALLOWED_IMAGE_HOSTS.some(
+      (d) => host === d || host.endsWith('.' + d),
+    );
   }
 
   /**
@@ -284,7 +305,7 @@ export class CloudinaryService implements OnModuleInit {
     const canvasH = meta.height || baseWidth;
 
     // 2) Prepare chaque logo redimensionne a sa largeur cible.
-    const overlays: sharp.OverlayOptions[] = [];
+    const overlays: OverlayOptions[] = [];
     for (const logo of logos || []) {
       if (!logo || !logo.src) continue;
       try {
@@ -397,7 +418,7 @@ export class CloudinaryService implements OnModuleInit {
       PAD * 2 + rowHeights.reduce((s, h) => s + h, 0) + (rows - 1) * GAP;
 
     // 3) Place chaque vue (centrée horizontalement dans sa colonne) + libellé.
-    const overlays: sharp.OverlayOptions[] = [];
+    const overlays: OverlayOptions[] = [];
     const svgLabels: string[] = [];
     let yCursor = PAD;
     for (let r = 0; r < rows; r++) {

@@ -173,15 +173,28 @@ export class PricingService {
   /**
    * Enregistre les prix fournis (partiel accepté). Ignore les valeurs
    * invalides (non numériques ou négatives) et renvoie les prix à jour.
+   *
+   * Toutes les lignes sont écrites dans UNE transaction. La boucle de `save()`
+   * successifs laissait, en cas d'interruption, une grille de prix à moitié
+   * appliquée : quelques produits au nouveau tarif, les autres à l'ancien,
+   * sans que rien ne le signale. Sur des prix affichés au client, une
+   * incohérence partielle est pire qu'un échec franc — ici, soit tout passe,
+   * soit rien ne change.
    */
   async save(input: Partial<Record<ProductKey, unknown>>): Promise<Pricing> {
+    const rows: Array<{ key: string; value: string }> = [];
     for (const key of PRODUCT_KEYS) {
       if (!(key in input)) continue;
       const n = Number(input[key]);
       if (Number.isNaN(n) || n < 0) continue;
       // Deux décimales : un prix n'a pas plus de précision.
       const value = (Math.round(n * 100) / 100).toFixed(2);
-      await this.repo.save({ key: KEY_PREFIX + key, value });
+      rows.push({ key: KEY_PREFIX + key, value });
+    }
+    if (rows.length) {
+      await this.repo.manager.transaction(async (trx) => {
+        await trx.getRepository(Setting).save(rows);
+      });
     }
     return this.get();
   }
@@ -221,12 +234,21 @@ export class PricingService {
    * consommer la table telle quelle, sans la retrier.
    */
   async saveTiers(input: Record<string, unknown>): Promise<Tiers> {
+    const rows: Array<{ key: string; value: string }> = [];
     for (const key of PRODUCT_KEYS) {
       if (!(key in input)) continue;
       const clean = this.normalizeTiers(input[key]);
-      await this.repo.save({
+      rows.push({
         key: TIERS_PREFIX + key,
         value: JSON.stringify(clean),
+      });
+    }
+    // Une transaction, pour la même raison que `save()` : une grille
+    // dégressive à moitié écrite produirait des prix incohérents entre
+    // produits, sans aucun signal.
+    if (rows.length) {
+      await this.repo.manager.transaction(async (trx) => {
+        await trx.getRepository(Setting).save(rows);
       });
     }
     return this.getTiers();

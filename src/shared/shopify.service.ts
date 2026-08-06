@@ -4,6 +4,12 @@ import { ConfigService } from '@nestjs/config';
 /**
  * Ligne d'article pour un draft order Shopify.
  * `custom: true` permet de creer une ligne sans variant existant (produit personnalise).
+ *
+ * Les trois derniers champs sont PRÉSERVÉS lors de toute reconstruction de
+ * ligne. Les omettre — ce que faisait le code — avait deux effets silencieux :
+ * une remise commerciale accordée sur le brouillon disparaissait, et une ligne
+ * volontairement exonérée redevenait `taxable: true` (défaut Shopify), faisant
+ * réapparaître la TVA sur la facture.
  */
 export interface ShopifyLineItem {
   title?: string;
@@ -12,6 +18,9 @@ export interface ShopifyLineItem {
   quantity: number;
   custom?: boolean;
   properties?: Array<{ name: string; value: string }>;
+  applied_discount?: Record<string, unknown>;
+  taxable?: boolean;
+  requires_shipping?: boolean;
 }
 
 export interface DraftOrderCustomer {
@@ -487,22 +496,45 @@ export class ShopifyService {
     // facturé que sur 5 pièces — 75 % du montant perdu, sur une facture que le
     // client paie légitimement.
     //
+    // Un prix uniforme reste correct même quand certaines pièces coûtent plus
+    // cher (flocage) : le dashboard envoie alors le prix unitaire MOYEN
+    // (base × qté + flocage × nb floqué) ÷ qté, et affiche à l'équipe l'écart
+    // d'arrondi éventuel. Le total facturé est donc juste ; seule la
+    // ventilation par ligne est lissée.
+    //
     // `variant_id` est préservé quand il existe : le forcer en ligne `custom`
     // romprait le lien produit et le stock ne serait plus décrémenté.
+    //
+    // `applied_discount` est conservé partout : l'omettre effaçait une remise
+    // négociée au moment même de l'envoi de la facture, et le client recevait
+    // un montant supérieur à celui convenu.
+    //
+    // `taxable` / `requires_shipping` ne sont renvoyés que sur les lignes
+    // `custom` : sur une ligne à variant, Shopify les dérive du produit et peut
+    // refuser qu'on les impose — le rejet casserait l'envoi de la facture pour
+    // un gain nul.
+    const keep = (li: Record<string, any>) => ({
+      quantity: li.quantity as number,
+      properties: li.properties as Array<{ name: string; value: string }>,
+      ...(li.applied_discount ? { applied_discount: li.applied_discount } : {}),
+    });
+
     const rebuilt: ShopifyLineItem[] = items.map((li) =>
       li.variant_id
         ? {
             variant_id: li.variant_id as number | string,
             price: unitPrice.toFixed(2),
-            quantity: li.quantity as number,
-            properties: li.properties as Array<{ name: string; value: string }>,
+            ...keep(li),
           }
         : {
             title: li.title as string,
             price: unitPrice.toFixed(2),
-            quantity: li.quantity as number,
             custom: true,
-            properties: li.properties as Array<{ name: string; value: string }>,
+            ...keep(li),
+            ...(li.taxable !== undefined ? { taxable: li.taxable } : {}),
+            ...(li.requires_shipping !== undefined
+              ? { requires_shipping: li.requires_shipping }
+              : {}),
           },
     );
 
@@ -524,21 +556,36 @@ export class ShopifyService {
     );
 
     // On reconstruit les line_items compatibles avec l'API de mise a jour.
+    //
+    // `applied_discount` est conservé : sans lui, retirer UN article du panier
+    // faisait disparaître la remise accordée sur les autres — le client voyait
+    // son total augmenter en supprimant un produit. `price` est conservé sur
+    // les lignes à variant, sinon Shopify les re-tarifait au prix courant.
+    //
+    // `taxable` / `requires_shipping` : lignes `custom` uniquement (cf.
+    // setDraftOrderPrice) — Shopify les dérive du variant et peut refuser
+    // qu'on les impose.
     const rebuilt: ShopifyLineItem[] = remaining.map(
       (li: Record<string, any>) => {
+        const common = {
+          quantity: li.quantity,
+          properties: li.properties,
+          ...(li.applied_discount
+            ? { applied_discount: li.applied_discount }
+            : {}),
+        };
         if (li.variant_id) {
-          return {
-            variant_id: li.variant_id,
-            quantity: li.quantity,
-            properties: li.properties,
-          };
+          return { variant_id: li.variant_id, price: li.price, ...common };
         }
         return {
           title: li.title,
           price: li.price,
-          quantity: li.quantity,
           custom: true,
-          properties: li.properties,
+          ...common,
+          ...(li.taxable !== undefined ? { taxable: li.taxable } : {}),
+          ...(li.requires_shipping !== undefined
+            ? { requires_shipping: li.requires_shipping }
+            : {}),
         };
       },
     );

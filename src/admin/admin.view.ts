@@ -6,13 +6,109 @@ import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
 
+/**
+ * Échappement HTML.
+ *
+ * `\` est échappé en plus des cinq caractères habituels. Sans lui, une valeur
+ * terminée par un antislash — `nom: "Bob\"` depuis le formulaire PUBLIC de
+ * devis — échappait le guillemet fermant d'un argument `onclick="fn('…')"` :
+ * la chaîne JavaScript ne se refermait pas et le champ suivant devenait du code
+ * exécutable, dans une page sans CSP.
+ *
+ * Ceci ne rend PAS `esc()` sûr en contexte JavaScript : le parseur HTML décode
+ * les entités AVANT que JS ne lise l'attribut. Les valeurs venant de sources
+ * non fiables (formulaire de devis, checkout) passent donc par des `data-*`,
+ * lus par un écouteur délégué.
+ *
+ * Quelques `onclick` interpolent encore une valeur, mais UNIQUEMENT des
+ * identifiants générés par nous : UUID `char(36)` et `shopifyOrderId` (bigint).
+ * Aucun n'est influençable par un tiers. Si un jour un identifiant devient
+ * saisissable, il DOIT basculer en `data-*` — l'échappement ne suffira pas.
+ */
 function esc(s: unknown): string {
-  return String(s ?? '').replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string),
+  return String(s ?? '').replace(/[&<>"'\\]/g, (c) =>
+    ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '\\': '&#92;',
+    }[c] as string),
   );
 }
+/**
+ * Hôtes dont les images peuvent être affichées dans le dashboard.
+ *
+ * Ces URLs viennent des propriétés de commande et du formulaire PUBLIC de
+ * devis : elles sont donc contrôlables par un tiers. Or toute URL acceptée est
+ * chargée AUTOMATIQUEMENT à l'ouverture de la page — une adresse arbitraire
+ * révélait l'IP, l'User-Agent et le Referer de l'admin à un serveur tiers, et
+ * servait d'accusé de lecture.
+ */
+/*
+ * Volontairement RESTREINTE aux deux hôtes qui servent les assets de cette
+ * application. Une liste plus large avait été essayée puis retirée :
+ * `myshopify.com` autorise n'importe quelle boutique — or une boutique de
+ * développement se crée gratuitement en deux minutes. Un tiers obtenait ainsi
+ * une URL de confiance, chargée AUTOMATIQUEMENT à l'ouverture du dashboard,
+ * qui lui révélait l'IP, l'User-Agent et le Referer de l'administrateur.
+ * Même raisonnement pour les apex `cloudinary.com` / `shopifycdn.*`.
+ */
+const IMG_HOSTS = ['res.cloudinary.com', 'cdn.shopify.com'];
+
+function isAllowedImgHost(u: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(u);
+    if (protocol !== 'https:') return false;
+    const h = hostname.toLowerCase();
+    return IMG_HOSTS.some((d) => h === d || h.endsWith('.' + d));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Est-ce une URL d'image affichable ?
+ *
+ * L'hôte est la vraie garantie ; l'extension n'est qu'un indice. On la teste
+ * sur le CHEMIN seul et ancrée en fin : `https://evil.com/a.png/../payload`
+ * ne doit pas passer, mais `…/a.png?v=2` doit passer.
+ *
+ * Une URL SANS extension est acceptée si l'hôte est de confiance : Cloudinary
+ * sert des images transformées (`f_auto`, redimensionnements) dont l'URL n'a
+ * pas de suffixe. Les rejeter faisait disparaître des visuels du dashboard ET
+ * des fiches de production imprimées — l'atelier produisait à l'aveugle, sans
+ * le moindre message d'erreur.
+ *
+ * `.svg` reste exclu : c'est un format XML, et ces URLs sont chargées
+ * automatiquement à l'ouverture de la page.
+ */
 function isImg(u: unknown): u is string {
-  return typeof u === 'string' && /^https?:\/\//i.test(u) && /\.(png|jpe?g|webp|gif|svg)/i.test(u);
+  if (typeof u !== 'string') return false;
+
+  /* Data-URL : c'est le format NOMINAL des aperçus de devis, générés au
+     navigateur (cf. create-quote.dto.ts). Les rejeter les faisait disparaître
+     du dashboard ET des fiches de production imprimées — et, n'étant ni image
+     ni lien, la chaîne base64 de plusieurs Mo était rendue en CLAIR dans le
+     HTML de la page. Le type MIME est vérifié, et `svg+xml` exclu comme pour
+     les URLs distantes. */
+  if (u.startsWith('data:')) {
+    return /^data:image\/(png|jpe?g|jpg|webp|gif|avif);base64,/i.test(u);
+  }
+
+  if (!isAllowedImgHost(u)) return false;
+  let path: string;
+  try {
+    path = new URL(u).pathname;
+  } catch {
+    return false;
+  }
+  if (/\.svg$/i.test(path)) return false;
+  // Extension d'image reconnue, ou aucune extension du tout (image transformée).
+  return (
+    /\.(png|jpe?g|webp|gif|avif)$/i.test(path) || !/\.[a-z0-9]{1,5}$/i.test(path)
+  );
 }
 function isUrl(u: unknown): u is string {
   return typeof u === 'string' && /^https?:\/\//i.test(u);
@@ -86,7 +182,16 @@ function renderSizeGroupTable(items: any[], summary: string): string {
 
     const size = item?.properties?.find?.((p: any) => p?.name === 'Taille')?.value;
     if (size && typeof size === 'string') {
-      sizeQtys[size] = (sizeQtys[size] || 0) + (item.quantity || 1);
+      /* `quantity` traverse le webhook puis une colonne JSON sans jamais être
+         normalisé : rien ne garantit que ce soit un nombre. Sans `Number()`,
+         deux lignes à "2" et "3" donnaient la CHAÎNE "023" — le dashboard
+         affichait 23 pièces là où la fiche de production, elle, en comptait 5.
+         Même règle que sheetSizeTable() : on ignore 0, les négatifs et
+         l'illisible plutôt que de les compter pour 1. */
+      const qty = Number(item?.quantity);
+      if (Number.isFinite(qty) && qty >= 1) {
+        sizeQtys[size] = (sizeQtys[size] || 0) + qty;
+      }
     }
   });
   
@@ -524,6 +629,7 @@ body{
 .pill.ok{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 22%,transparent)}
 .pill.warn{background:var(--warn-soft);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 22%,transparent)}
 .pill.neutral{background:var(--raise);color:var(--muted);border-color:var(--line)}
+.pill.danger{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 22%,transparent)}
 
 /* Detail body */
 .body{display:none;padding:0 18px 18px;border-top:1px solid var(--line-soft)}
@@ -1371,12 +1477,13 @@ body{
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
 
-function shell(body: string): string {
+function shell(body: string, nonce = ''): string {
+  const n = nonce ? ` nonce="${nonce}"` : '';
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Administration — Custom Textile</title>
-<style>${STYLE}</style></head><body>${body}
-<script>
+<style${n}>${STYLE}</style></head><body>${body}
+<script${n}>
 (function(){
   // Thème mémorisé
   var KEY='ct_admin_theme';
@@ -1400,7 +1507,11 @@ function shell(body: string): string {
  * @param reason 'blocked' : la session a été coupée (compte bloqué/supprimé),
  *               d'où un message dédié plutôt qu'un écran de login muet.
  */
-export function loginPage(error?: boolean, reason?: 'blocked'): string {
+export function loginPage(
+  error?: boolean,
+  reason?: 'blocked',
+  nonce = '',
+): string {
   const alert = error
     ? `<div class="lg-alert is-error" role="alert">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -1478,7 +1589,7 @@ export function loginPage(error?: boolean, reason?: 'blocked'): string {
     <p class="lg-foot">Custom Textile · Espace de production</p>
   </div>
 
-  <script>
+  <script${nonce ? ` nonce="${nonce}"` : ''}>
     /* Bascule masqué/visible du mot de passe. L'icône passe en « œil barré »
        quand le texte est lisible, pour que l'état soit explicite. */
     function lgToggle(btn){
@@ -1490,7 +1601,7 @@ export function loginPage(error?: boolean, reason?: 'blocked'): string {
       btn.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
       i.focus();
     }
-  </script>`);
+  </script>`, nonce);
 }
 
 /**
@@ -1535,7 +1646,7 @@ function itemRow(li: any): string {
   const links = props.filter((p) => !isImg(p.value) && isUrl(p.value));
   const texts = props.filter((p) => !isUrl(p.value));
   const thumbs = imgs.length
-    ? `<div class="thumbs">${imgs.map((p) => `<img class="thumb" src="${esc(p.value)}" title="${esc(p.name)}" onclick="zoom('${esc(p.value)}')" alt="${esc(p.name)}">`).join('')}</div>`
+    ? `<div class="thumbs">${imgs.map((p) => `<img class="thumb js-zoom" src="${esc(p.value)}" title="${esc(p.name)}" data-zoom="${esc(p.value)}" alt="${esc(p.name)}">`).join('')}</div>`
     : `<div class="no-thumb">Sans aperçu</div>`;
   const specs = texts.length
     ? `<div class="specs">${texts.map((p) => `<span class="spec"><b>${esc(p.name)}</b> ${esc(p.value)}</span>`).join('')}</div>`
@@ -1806,7 +1917,15 @@ function orderCard(o: Order, srcQuote?: Quote): string {
   </div>`;
 }
 
-/** Statut lisible d'un devis + pastille. */
+/**
+ * Statut lisible d'un devis + pastille.
+ *
+ * `failed` — la création du brouillon Shopify a échoué — tombait jusqu'ici dans
+ * le cas par défaut et s'affichait « À chiffrer », strictement comme un devis
+ * sain. L'équipe cliquait « Envoyer la facture » pour découvrir seulement là
+ * qu'aucun brouillon n'existe, sans savoir qu'un rattrapage automatique est en
+ * cours.
+ */
 function quoteStatus(q: Quote): { key: string; pill: string } {
   const s = q.draftStatus || 'open';
   if (s === 'completed') {
@@ -1814,6 +1933,12 @@ function quoteStatus(q: Quote): { key: string; pill: string } {
   }
   if (s === 'invoice_sent') {
     return { key: 'sent', pill: `<span class="pill warn">Facture envoyée</span>` };
+  }
+  if (s === 'failed') {
+    return {
+      key: 'failed',
+      pill: `<span class="pill danger" title="La création du brouillon Shopify a échoué. Une nouvelle tentative a lieu automatiquement toutes les 10 minutes.">Brouillon en échec</span>`,
+    };
   }
   return { key: 'open', pill: `<span class="pill neutral">À chiffrer</span>` };
 }
@@ -1955,7 +2080,7 @@ function quoteCard(q: Quote, shopDomain: string): string {
   const previews: any[] = Array.isArray(coin.previews) ? coin.previews : [];
   const imgs = previews.flatMap((p) => [p.logo, p.base].filter(isImg));
   const thumbs = imgs.length
-    ? `<div class="thumbs">${imgs.map((u) => `<img class="thumb" src="${esc(u)}" onclick="zoom('${esc(u)}')" alt="aperçu">`).join('')}</div>`
+    ? `<div class="thumbs">${imgs.map((u) => `<img class="thumb js-zoom" src="${esc(u)}" data-zoom="${esc(u)}" alt="aperçu">`).join('')}</div>`
     : `<div class="no-thumb">Sans aperçu</div>`;
   const details: string[] = Array.isArray(coin.details) ? coin.details : [];
   const search = esc([c.nom, c.email, coin.name].join(' ').toLowerCase());
@@ -2038,7 +2163,13 @@ function quoteCard(q: Quote, shopDomain: string): string {
             ? `<span class="hint">Aucun brouillon Shopify associé : facture indisponible.</span>`
             : isPaid
               ? `<span class="hint ok">✓ Devis réglé par le client${q.totalPrice ? ` — ${money(q.totalPrice)}` : ''}.</span>`
-              : `<button class="btn primary" onclick="openInvoice('${esc(q.id)}','${esc(c.email || '')}','${esc(c.nom || '')}','${esc(group ? group.productLabel || 'Commande de groupe' : coin.name || '')}',${group ? Number(group.pieces) || groupRows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : Number(coin.qty) || 1},${group ? groupRows.filter((r: any) => r.flock).reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : 0})">
+              : `<button class="btn primary js-invoice"
+                     data-qid="${esc(q.id)}"
+                     data-email="${esc(c.email || '')}"
+                     data-nom="${esc(c.nom || '')}"
+                     data-produit="${esc(group ? group.productLabel || 'Commande de groupe' : coin.name || '')}"
+                     data-qty="${group ? Number(group.pieces) || groupRows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : Number(coin.qty) || 1}"
+                     data-flock="${group ? groupRows.filter((r: any) => r.flock).reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : 0}">
                    ✉ ${st.key === 'sent' ? 'Corriger le prix et renvoyer' : 'Chiffrer et envoyer la facture'}
                  </button>
                  ${
@@ -2079,7 +2210,7 @@ function designCard(d: Design, frontendUrl: string): string {
 }
 
 /* ════════════ FICHE DE PRODUCTION (imprimable A4) ════════════ */
-export function productionSheetPage(o: Order): string {
+export function productionSheetPage(o: Order, nonce = ''): string {
   const items = Array.isArray(o.lineItems) ? o.lineItems : [];
   const info: any = o.customerInfo || {};
   const s = info.shipping || info.billing || {};
@@ -2126,7 +2257,7 @@ export function productionSheetPage(o: Order): string {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fiche de production ${esc(o.orderNumber || o.shopifyOrderId)}</title>
-<style>
+<style${nonce ? ` nonce="${nonce}"` : ''}>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;color:#1b1f24;background:#eceae6;padding:24px}
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
@@ -2244,7 +2375,7 @@ export function productionSheetPage(o: Order): string {
  * Design commun en grand + récap taille/couleur + liste des flocages + liste
  * détaillée. Même charte que la fiche commande, imprimable A4.
  */
-export function groupSheetPage(q: Quote): string {
+export function groupSheetPage(q: Quote, nonce = ''): string {
   const d: any = q.quoteData || {};
   const c = d.customer || {};
   const group: any = d.group || {};
@@ -2259,7 +2390,7 @@ export function groupSheetPage(q: Quote): string {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fiche groupe ${esc(ref)}</title>
-<style>
+<style${nonce ? ` nonce="${nonce}"` : ''}>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif;color:#1b1f24;background:#eceae6;padding:24px}
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
@@ -2498,8 +2629,11 @@ export function dashboardPage(
         (ils deviennent des commandes) : il faut cette liste complète pour
         rattacher une commande à son devis d'origine. */
     allQuotes?: Quote[];
+    /** Nonce CSP de la requête : autorise les blocs inline de CETTE réponse. */
+    nonce?: string;
   } = {},
 ): string {
+  const nonce = extra.nonce || '';
   const me = extra.me;
   const isOwner = me?.role === 'owner';
   const f: DashboardFilters = extra.filters || {
@@ -2974,7 +3108,7 @@ export function dashboardPage(
 
   <div class="toast" id="toast"></div>
 
-  <script>
+  <script${nonce ? ` nonce="${nonce}"` : ''}>
     var UNSEEN=${seenPayload};
 
     /* ═══════════ Menus déroulants personnalisés (.dd) ═══════════
@@ -3372,9 +3506,15 @@ export function dashboardPage(
       if(!dot) return;                                  // rien de neuf
       fetch('/api/admin/seen',{
         method:'POST',
+        credentials:'same-origin',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(UNSEEN)
-      }).then(function(){
+      }).then(function(r){
+        /* fetch ne rejette PAS sur un 401 ou un 500 : sans ce test, l'UI
+           retirait les badges et affichait « Vous êtes à jour » alors que le
+           serveur avait refusé. Une session expirée pendant la nuit suffisait :
+           l'admin croyait avoir traité des commandes qu'il ne reverrait plus. */
+        if(!r.ok) throw new Error('HTTP '+r.status);
         dot.remove();
         document.querySelectorAll('.badge-new').forEach(function(b){b.remove();});
         var clear=document.querySelector('.notif-clear');
@@ -3382,6 +3522,12 @@ export function dashboardPage(
         document.getElementById('notif-list').innerHTML=
           '<div class="notif-empty"><div class="ico">&#10003;</div>'+
           '<p>Rien de nouveau.</p><small>Vous êtes à jour.</small></div>';
+      }).catch(function(){
+        /* On ne touche à RIEN : les badges restent, l'état affiché continue de
+           refléter la base. */
+        showAlert('Marquage impossible',
+          'Les nouveautés restent non lues. Rechargez la page et réessayez.',
+          'error');
       });
     }
 
@@ -4023,7 +4169,12 @@ export function dashboardPage(
         headers:{'Content-Type':'application/json'},
         credentials:'same-origin',
         body:JSON.stringify(payload)
-      }).then(function(){
+      }).then(function(r){
+        /* Un 401/500 passait par ce then (fetch ne rejette que sur erreur
+           réseau) : le badge disparaissait et DASH_STATE était décrémenté alors
+           que la base n'avait pas bougé. L'écart désactivait en prime la
+           détection de nouveautés de l'auto-refresh. */
+        if(!r.ok) throw new Error('HTTP '+r.status);
         badge.remove();                                   // retire « nouveau »
 
         // Retire l'entrée correspondante de la liste des notifications.
@@ -4059,9 +4210,40 @@ export function dashboardPage(
           if(payload.orders.length&&DASH_STATE.newOrders>0) DASH_STATE.newOrders--;
           if(payload.quotes.length&&DASH_STATE.newQuotes>0) DASH_STATE.newQuotes--;
         }
+      }).catch(function(){
+        /* Marquage refusé : on laisse le badge en place. L'écart avec la base
+           se résorbe au prochain chargement, sans intervention. Pas de modale
+           ici : l'action est implicite (ouverture d'une carte), une alerte
+           serait intrusive alors que rien n'est perdu. */
       });
     }
     function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}
+
+    /* ── Écouteurs délégués : les données ne transitent plus par onclick ──
+       Un attribut onclick est du CODE : y interpoler une valeur venant du
+       formulaire public de devis permettait, avec un simple antislash final,
+       de refermer la chaîne JS et d'exécuter du script arbitraire dans une
+       page sans CSP. Les mêmes valeurs passent maintenant par des data-*,
+       où l'échappement HTML est réellement suffisant, et sont lues ici. */
+    document.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (!t || !t.closest) return;
+
+      var img = t.closest('.js-zoom');
+      if (img) { zoom(img.getAttribute('data-zoom') || ''); return; }
+
+      var inv = t.closest('.js-invoice');
+      if (inv) {
+        openInvoice(
+          inv.getAttribute('data-qid') || '',
+          inv.getAttribute('data-email') || '',
+          inv.getAttribute('data-nom') || '',
+          inv.getAttribute('data-produit') || '',
+          inv.getAttribute('data-qty') || '1',
+          inv.getAttribute('data-flock') || '0'
+        );
+      }
+    });
 
     /* ── Chiffrage du devis + envoi de la facture ── */
     var invQuoteId=null, invQty=1;
@@ -4284,5 +4466,5 @@ export function dashboardPage(
     })();
 
     filterCards(true);
-  </script>`);
+  </script>`, nonce);
 }

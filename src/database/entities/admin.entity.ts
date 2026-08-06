@@ -59,6 +59,19 @@ export class Admin {
   @Column({ type: 'datetime', nullable: true })
   lastLoginAt: Date | null;
 
+  /**
+   * Date du dernier changement de mot de passe — sert de POINT DE RÉVOCATION.
+   *
+   * Elle est incluse dans le cookie signé : tout jeton émis avant cette date
+   * est refusé. Sans elle, un cookie volé restait valide jusqu'à 12 h MÊME
+   * après changement du mot de passe, et l'owner n'avait aucun moyen de couper
+   * sa propre session (il ne peut pas se bloquer lui-même).
+   *
+   * `null` = jamais changé : les jetons existants restent valides.
+   */
+  @Column({ type: 'datetime', nullable: true })
+  passwordChangedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -19,8 +19,9 @@ export class WebhooksController {
    * Reçoit chaque commande Shopify (événement orders/create), vérifie la
    * signature HMAC, puis enregistre la commande en base.
    *
-   * IMPORTANT : cette route lit le corps BRUT (req.rawBody) pour le HMAC ;
-   * la configuration est faite dans main.ts (rawBody: true).
+   * IMPORTANT : cette route lit le corps BRUT (req.rawBody) pour le HMAC. Il
+   * est conservé par le callback `verify` du middleware `json()` dans main.ts,
+   * qui ne l'active que sur les chemins commençant par `/api/webhooks/`.
    */
   @Post('orders-create')
   @HttpCode(HttpStatus.OK)
