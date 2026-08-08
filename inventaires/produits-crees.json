@@ -1,0 +1,17 @@
+{
+  "date": "2026-08-07",
+  "boutique": "38cca3.myshopify.com",
+  "cree": [
+    {
+      "cle": "patches",
+      "handle": "coin-metal-personnalise",
+      "titre": "Coin métal personnalisé",
+      "prix": "0.00",
+      "type": "simple",
+      "id": "gid://shopify/Product/15982850998606",
+      "variants": 1
+    }
+  ],
+  "ignores": [],
+  "echecs": []
+}

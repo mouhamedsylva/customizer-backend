@@ -17,6 +17,17 @@
  *   SHOPIFY_STORE_URL, SHOPIFY_ACCESS_TOKEN, SHOPIFY_API_VERSION (optionnel)
  */
 
+import { COULEURS, TEXTILES, fichiersImage, verifier } from './couleurs-textiles.mjs';
+
+/* Garde-fou au démarrage : un module incohérent produirait un catalogue
+   incohérent, et le constater après 120 variants créés coûte cher. */
+const _err = verifier();
+if (_err.length) {
+  console.error('❌ couleurs-textiles.mjs incohérent :');
+  _err.forEach((e) => console.error('   - ' + e));
+  process.exit(1);
+}
+
 const STORE = process.env.SHOPIFY_STORE_URL;
 const TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
 const API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-01';
@@ -38,31 +49,42 @@ if (!STORE || !TOKEN) {
 const BASE = `https://${STORE}/admin/api/${API_VERSION}`;
 const HEADERS = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': TOKEN };
 
-// Produits textiles : clé -> { productId, prefixe de fichier image }
+/* Produits textiles : clé -> { productId, prefix }.
+
+   Les `productId` ci-dessous sont ceux de la boutique de DÉVELOPPEMENT
+   (customizer-fh5lguwi). Ils ne valent RIEN sur une autre boutique.
+
+   Pour la boutique d'un client, deux façons de les remplacer sans éditer ce
+   fichier :
+     --product-id=sweatshirt=123456789   (répétable, une fois par produit)
+     ou passer par setup-boutique.mjs, qui les découvre par `handle` et
+     appelle ce script avec les bons IDs.
+
+   Le préfixe d'image et le handle viennent du module partagé : une seule
+   source de vérité. */
 const PRODUCTS = {
-  sweatshirt:       { productId: '9167767240867', prefix: 'sweatshirt' },
-  tshirt:           { productId: '9167767404707', prefix: 'tshirt' },
-  tshirt_polyester: { productId: '9167767732387', prefix: 'tshirt-polyester' },
+  sweatshirt:       { productId: '9167767240867', prefix: TEXTILES.sweatshirt.prefix },
+  tshirt:           { productId: '9167767404707', prefix: TEXTILES.tshirt.prefix },
+  tshirt_polyester: { productId: '9167767732387', prefix: TEXTILES.tshirt_polyester.prefix },
 };
 
-// Couleurs : libellé affiché (option) -> slug de fichier
-const COLORS = [
-  ['Noir', 'noir'],
-  ['Blanc cassé', 'blanc-casse'],
-  ['Gris', 'gris'],
-  ['Gris foncé', 'gris-fonce'],
-  ['Gris ardoise', 'gris-ardoise'],
-  ['Bleu marine', 'bleu-marine'],
-  ['Bleu ciel', 'bleu-ciel'],
-  ['Vert foncé', 'vert-fonce'],
-  ['Rose clair', 'rose-clair'],
-  ['Rose', 'rose'],
-  ['Rouge', 'rouge'],
-  ['Orange', 'orange'],
-  ['Jaune', 'jaune'],
-  ['Violet', 'violet'],
-  ['Marron', 'marron'],
-];
+/* Surcharge des IDs par la ligne de commande : --product-id=<clé>=<id> */
+for (const arg of process.argv.filter((a) => a.startsWith('--product-id='))) {
+  const [cle, id] = arg.slice('--product-id='.length).split('=');
+  if (!PRODUCTS[cle]) { console.error(`❌ --product-id : clé inconnue « ${cle} »`); process.exit(1); }
+  if (!/^d+$/.test(id || '')) { console.error(`❌ --product-id=${cle}= : id numérique attendu`); process.exit(1); }
+  PRODUCTS[cle].productId = id;
+  console.log(`  ↪ ${cle} : productId forcé à ${id}`);
+}
+
+/* Couleurs : importées du module PARTAGÉ, plus de liste locale.
+
+   Ce fichier portait sa propre constante `COLORS` avec les 15 anciennes
+   couleurs FRANÇAISES (noir, bleu-marine…), alors que le thème était déjà passé
+   aux 40 couleurs ANGLAISES de COULEURS-TEXTILES.md. Les deux listes avaient
+   divergé en silence : le script aurait créé 15 variants dont les libellés ne
+   correspondaient à aucune pastille du configurateur, donc aucune couleur
+   choisie n'aurait retrouvé son variant au checkout. */
 
 async function shopify(path, method = 'GET', body) {
   const res = await fetch(`${BASE}${path}`, {
@@ -111,8 +133,8 @@ async function processProduct(key) {
   // Construit les nouveaux variants (un par couleur).
   // inventory_management=null + inventory_policy=continue : produit personnalisé
   // à la demande, toujours vendable (jamais "sold out").
-  const variants = COLORS.map(([label]) => ({
-    option1: label,
+  const variants = COULEURS.map((c) => ({
+    option1: c.nom,
     price: basePrice,
     inventory_management: null,
     inventory_policy: 'continue',
@@ -123,15 +145,27 @@ async function processProduct(key) {
 
   // Récupère les URLs d'images couleur (face). À défaut d'image couleur,
   // on retombe sur l'image générique (la couleur reste indiquée en texte).
+  /* Les images livrées portent les ANCIENS slugs français
+     (sweatshirt-noir-face.png), alors que le thème utilise les slugs anglais.
+     `fichiersImage()` renvoie les deux noms à essayer, l'anglais d'abord : dès
+     que les visuels définitifs arrivent sous ce nom, ils sont pris sans
+     retoucher le code. Mesuré : 45 des 120 combinaisons produit×couleur ont une
+     vraie image, les 75 autres retombent sur le générique. */
   const imagePlan = [];
-  for (const [label, slug] of COLORS) {
-    const filename = `${conf.prefix}-${slug}-face.png`;
-    let url = await assetUrl(filename);
+  let nbCouleur = 0, nbGenerique = 0;
+  for (const c of COULEURS) {
+    let url = null, filename = null;
+    for (const nom of fichiersImage(conf.prefix, c, 'face')) {
+      url = await assetUrl(nom);
+      if (url) { filename = nom; break; }
+    }
     let source = 'couleur';
-    if (!url && genericUrl) { url = genericUrl; source = 'générique'; }
-    imagePlan.push({ label, filename, url });
-    console.log(`  image ${label.padEnd(14)} -> ${url ? source.toUpperCase() : 'AUCUNE'} (${url ? filename : ''})`);
+    if (url) nbCouleur++;
+    else if (genericUrl) { url = genericUrl; filename = `${conf.prefix}-face.png`; source = 'générique'; nbGenerique++; }
+    imagePlan.push({ label: c.nom, filename, url });
+    console.log(`  image ${c.nom.padEnd(18)} -> ${url ? source.toUpperCase() : 'AUCUNE'} (${filename || ''})`);
   }
+  console.log(`  → ${nbCouleur} image(s) couleur, ${nbGenerique} sur le générique`);
 
   if (!APPLY) {
     console.log('  [dry-run] 15 variants seraient créés + images assignées. (utilise --apply)');
@@ -143,7 +177,11 @@ async function processProduct(key) {
   await shopify(`/products/${conf.productId}.json`, 'PUT', {
     product: {
       id: conf.productId,
-      options: [{ name: 'Couleur', values: COLORS.map(([l]) => l) }],
+      /* `COULEURS`, pas l'ancienne constante locale `COLORS` : celle-ci a été
+         supprimée au profit du module partagé. Cette ligne la référençait
+         encore — un ReferenceError que le mode aperçu ne révélait PAS, puisque
+         le garde `if (!APPLY) return` sort avant de l'atteindre. */
+      options: [{ name: 'Couleur', values: COULEURS.map((c) => c.nom) }],
       variants,
     },
   });

@@ -26,11 +26,29 @@ if (!STORE || !TOKEN) {
 const BASE = `https://${STORE}/admin/api/${API_VERSION}`;
 const HEADERS = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': TOKEN };
 
+/* Les `productId` sont ceux de la boutique de DÉVELOPPEMENT
+   (customizer-fh5lguwi) : ils ne valent RIEN sur la boutique d'un client.
+   Surchargeables sans éditer ce fichier :
+     --product-id=sweatshirt=123456789      (répétable) */
 const PRODUCTS = {
   sweatshirt:       '9167767240867',
   tshirt:           '9167767404707',
   tshirt_polyester: '9167767732387',
 };
+
+for (const arg of process.argv.filter((a) => a.startsWith('--product-id='))) {
+  const [cle, id] = arg.slice('--product-id='.length).split('=');
+  if (!PRODUCTS[cle]) {
+    console.error(`❌ --product-id : clé inconnue « ${cle} » (attendu : ${Object.keys(PRODUCTS).join(', ')})`);
+    process.exit(1);
+  }
+  if (!/^\d+$/.test(id || '')) {
+    console.error(`❌ --product-id=${cle}= : identifiant numérique attendu`);
+    process.exit(1);
+  }
+  PRODUCTS[cle] = id;
+  console.log(`  ↪ ${cle} : productId forcé à ${id}`);
+}
 
 async function shopify(path, method = 'GET', body) {
   const res = await fetch(`${BASE}${path}`, {

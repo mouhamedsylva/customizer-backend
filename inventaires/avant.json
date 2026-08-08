@@ -1,0 +1,2785 @@
+{
+  "date": "2026-08-07",
+  "boutique": "38cca3.myshopify.com",
+  "produits": 396,
+  "variants": 4361,
+  "parStatut": {
+    "ARCHIVED": 5,
+    "DRAFT": 132,
+    "ACTIVE": 259
+  },
+  "handles": [
+    {
+      "id": "gid://shopify/Product/15760248111438",
+      "handle": "4",
+      "titre": "4++",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15870682104142",
+      "handle": "5eme-regiment-de-dragons",
+      "titre": "5EME REGIMENT DE DRAGONS - TSHIRT",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/15871020400974",
+      "handle": "5eme-regiment-de-dragons-le-pack",
+      "titre": "5EME REGIMENT DE DRAGONS - LE PACK",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/15871017779534",
+      "handle": "5eme-regiment-de-dragons-le-patch",
+      "titre": "5EME REGIMENT DE DRAGONS - LE PATCH",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10765747978574",
+      "handle": "9line-patch-forces-armees",
+      "titre": "NINELINE - Patch Forces armées",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10765748011342",
+      "handle": "9line-patch-forces-armees-copie",
+      "titre": "NINELINE - Patch Pompiers & SSA",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10765748928846",
+      "handle": "9line-patch-pompiers-ssa-copie",
+      "titre": "NINE LINE - Patch Forces de sécurité intérieure",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10379022926158",
+      "handle": "9line-te-ipsum-vincere",
+      "titre": "NINE LINE / TE IPSUM VINCERE",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10379028496718",
+      "handle": "9line-te-ipsum-vincere-2",
+      "titre": "NINE LINE / TE IPSUM VINCERE 2",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10863129821518",
+      "handle": "album-jeunesse-quand-maman-part-loin-yggdrasil",
+      "titre": "ALBUM JEUNESSE - QUAND MAMAN PART LOIN",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15735903224142",
+      "handle": "amaury-designer-tshirt-pink-contracts",
+      "titre": "TSH - PINK CONTRACTS",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10780097020238",
+      "handle": "asso-rdg-patch-mecano",
+      "titre": "MECANO",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10780098953550",
+      "handle": "asso-reliques-de-guerre-avio-hub",
+      "titre": "AVIO HUB",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10780100723022",
+      "handle": "association-reliques-de-guerre-le-patch",
+      "titre": "ASSOCIATION RELIQUES DE GUERRE / LE PATCH",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10765771833678",
+      "handle": "association-reliques-de-guerre-t-shirt-apero",
+      "titre": "APERO",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10831376548174",
+      "handle": "bd-hussard-de-bercheny-tome-1-1720-1918",
+      "titre": "BD Hussard de Bercheny - Tome 1 (1720 -1918)",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10831377400142",
+      "handle": "bd-hussard-de-bercheny-tome-2-1919-nos-jours",
+      "titre": "BD Hussard de Bercheny - Tome 2 (1919 - nos jours)",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15797802860878",
+      "handle": "bip-bip-je-suis-un-satellite",
+      "titre": "BIP BIP JE SUIS UN SATELLITE",
+      "statut": "ACTIVE",
+      "variants": 35
+    },
+    {
+      "id": "gid://shopify/Product/10446448132430",
+      "handle": "blast",
+      "titre": "CAFÉ BLAST",
+      "statut": "ACTIVE",
+      "variants": 6
+    },
+    {
+      "id": "gid://shopify/Product/10722749088078",
+      "handle": "bracelet-bleu-blanc-rouge",
+      "titre": "BRACELET BLEU BLANC ROUGE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10805737029966",
+      "handle": "bracelet-paracorde",
+      "titre": "1 bracelet paracorde",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10847292326222",
+      "handle": "briquet-tiens-enc-le",
+      "titre": "BRIQUET \"TIENS ENC*LÉ !\"",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10765296107854",
+      "handle": "bufff",
+      "titre": "BUFFF",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10841443139918",
+      "handle": "calecon-chef-peper",
+      "titre": "CALEÇONS - CHEF PEPER",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10847275221326",
+      "handle": "calendrier-massacre-2026",
+      "titre": "CALENDRIER MASSACRE 2026",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10805735096654",
+      "handle": "canette-moralex-x2",
+      "titre": "2 canettes Moralex",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10805735162190",
+      "handle": "canette-moralex-x3",
+      "titre": "3 canettes Moralex",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15777769390414",
+      "handle": "carnet-du-combattant-lesconnaisseurs®-actualise-2025-2026",
+      "titre": "Carnet du Combattant LESCONNAISSEURS® - actualisé 2025/2026",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10804100399438",
+      "handle": "carte-cadeau",
+      "titre": "CARTE CADEAU",
+      "statut": "ACTIVE",
+      "variants": 4
+    },
+    {
+      "id": "gid://shopify/Product/15791781019982",
+      "handle": "chameau-coureur",
+      "titre": "CHAMEAU COUREUR",
+      "statut": "DRAFT",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/15843265053006",
+      "handle": "chasseur-de-vie",
+      "titre": "CHASSEUR DE VIE - PRECOMMANDE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15949270253902",
+      "handle": "chasseur-de-vie-1",
+      "titre": "CHASSEUR DE VIE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15948555485518",
+      "handle": "chat-maigre-troupe-de-marines",
+      "titre": "CHAT MAIGRE TROUPE DE MARINES",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/15729009918286",
+      "handle": "chaussettes-tta",
+      "titre": "CHAUSSETTES TTA",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10464599081294",
+      "handle": "chef-peper-patch-bm-double-pied",
+      "titre": "BM Double Pied",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10464599638350",
+      "handle": "chef-peper-patch-hk",
+      "titre": "HK",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827183067470",
+      "handle": "chef-peper-patch-la-vie-cest-pas-un-kiwiii",
+      "titre": "La vie c'est pas un kiwiii !",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10464600064334",
+      "handle": "chef-peper-patch-tdm",
+      "titre": "Troupes de Marine",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827219603790",
+      "handle": "chef-peper-patch-tireur-de-litres",
+      "titre": "Tireur de litres",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827312402766",
+      "handle": "chef-peper-patch-toujours-pret-a-tirer",
+      "titre": "Toujours prêt à tirer",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827363324238",
+      "handle": "chef-peper-sticker",
+      "titre": "CHEF PEPER / STICKER NB",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827365323086",
+      "handle": "chef-peper-sticker-1",
+      "titre": "CHEF PEPER / STICKER",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827311452494",
+      "handle": "chef-peper-sticker-holographique-toujours-pret-a-tirer",
+      "titre": "CHEF PEPER / STICKER HOLOGRAPHIQUE Toujours prêt à tirer",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827185852750",
+      "handle": "chef-peper-sticker-la-vie-cest-pas-un-kiwiii",
+      "titre": "CHEF PEPER / STICKER \"La vie c'est pas un kiwiii !\"",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827220947278",
+      "handle": "chef-peper-sticker-tireur-de-litres",
+      "titre": "CHEF PEPER / STICKER Tireur de litres",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827374498126",
+      "handle": "chef-peper-stickers",
+      "titre": "CHEF PEPER LOT DE STICKERS",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9827192537422",
+      "handle": "chef-peper-sweat-la-vie-cest-pas-un-kiwiii",
+      "titre": "CHEF PEPER / SWEAT \"La vie c'est pas un kiwiii !\"",
+      "statut": "ACTIVE",
+      "variants": 14
+    },
+    {
+      "id": "gid://shopify/Product/9827268886862",
+      "handle": "chef-peper-sweat-tireur-de-litres",
+      "titre": "CHEF PEPER / SWEAT Tireur de litres",
+      "statut": "ACTIVE",
+      "variants": 14
+    },
+    {
+      "id": "gid://shopify/Product/9827316662606",
+      "handle": "chef-peper-sweat-toujours-pret-a-tirer",
+      "titre": "CHEF PEPER / SWEAT Toujours prêt à tirer",
+      "statut": "ACTIVE",
+      "variants": 6
+    },
+    {
+      "id": "gid://shopify/Product/10464599540046",
+      "handle": "chef-peper-tshirt-bm-double-pied",
+      "titre": "CHEF PEPER / TSHIRT BM Double Pied",
+      "statut": "ACTIVE",
+      "variants": 12
+    },
+    {
+      "id": "gid://shopify/Product/10464601506126",
+      "handle": "chef-peper-tshirt-la-base-arriere",
+      "titre": "CHEF PEPER / TSHIRT La Base Arrière",
+      "statut": "ACTIVE",
+      "variants": 12
+    },
+    {
+      "id": "gid://shopify/Product/9827188441422",
+      "handle": "chef-peper-tshirt-la-vie-cest-pas-un-kiwiii",
+      "titre": "CHEF PEPER / TSHIRT \"La vie c'est pas un kiwiii !\"",
+      "statut": "ACTIVE",
+      "variants": 24
+    },
+    {
+      "id": "gid://shopify/Product/9827256729934",
+      "handle": "chef-peper-tshirt-tireur-de-litres",
+      "titre": "CHEF PEPER / TSHIRT Tireur de litres",
+      "statut": "ACTIVE",
+      "variants": 18
+    },
+    {
+      "id": "gid://shopify/Product/9827315351886",
+      "handle": "chef-peper-tshirt-toujours-pret-a-tirer",
+      "titre": "CHEF PEPER / TSHIRT Toujours prêt à tirer",
+      "statut": "ACTIVE",
+      "variants": 8
+    },
+    {
+      "id": "gid://shopify/Product/10878257299790",
+      "handle": "coin-edition-lepax",
+      "titre": "COINS PAYE TON COUP",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10481028956494",
+      "handle": "coin-massacre-officiel",
+      "titre": "COINS MASSACRE OFFICIEL",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15873687617870",
+      "handle": "coin-pas-paye-a-reflechir-lepax",
+      "titre": "COIN PAS PAYE A REFLECHIR LEPAX",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10830794817870",
+      "handle": "coins-numerotes-‼️precommande‼️",
+      "titre": "COINS NUMÉROTÉS 30 ANS VRBANJA",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15949407158606",
+      "handle": "conducteur-hors-chemin",
+      "titre": "CONDUCTEUR HORS-CHEMIN",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15950565114190",
+      "handle": "conforme",
+      "titre": "CONFORME",
+      "statut": "ACTIVE",
+      "variants": 25
+    },
+    {
+      "id": "gid://shopify/Product/10454209167694",
+      "handle": "creatine",
+      "titre": "CRÉATINE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10433434812750",
+      "handle": "daddy-wolf-concept-medaille-bapteme-du-feu",
+      "titre": "DADDY WOLF CONCEPT / Médaille Baptême du Feu",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10759697596750",
+      "handle": "daddy-wolf-concept-medaille-lame-chargeur",
+      "titre": "DADDY WOLF CONCEPT / Médaille L'âme chargeur",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15870971150670",
+      "handle": "dans-lombre",
+      "titre": "DANS L'OMBRE",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/15776713277774",
+      "handle": "depeche-toi-dattendre",
+      "titre": "DÉPÊCHE-TOI D'ATTENDRE",
+      "statut": "ACTIVE",
+      "variants": 35
+    },
+    {
+      "id": "gid://shopify/Product/15760124084558",
+      "handle": "dies-irae",
+      "titre": "DIES IRAE",
+      "statut": "DRAFT",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/15760234807630",
+      "handle": "dies-irae-copie",
+      "titre": "DIES IRAE SWEAT",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/9807384936782",
+      "handle": "dp-donation",
+      "titre": "Don",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15936025329998",
+      "handle": "drapeau-14-juillet",
+      "titre": "DRAPEAU 14 JUILLET",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9795604545870",
+      "handle": "drapeau-francais-satine",
+      "titre": "DRAPEAU FRANÇAIS SUBLIMÉ",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15948548014414",
+      "handle": "drapeau-nine-line-blanc",
+      "titre": "DRAPEAU NINE LINE BLANC",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15948548178254",
+      "handle": "drapeau-nine-line-bleu",
+      "titre": "DRAPEAU NINE LINE BLEU",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15948548407630",
+      "handle": "drapeau-nine-line-bleu-copie",
+      "titre": "DRAPEAU NINE LINE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10095616262478",
+      "handle": "ecusson-embrasement-generalise",
+      "titre": "ÉCUSSON EMBRASEMENT GÉNÉRALISÉ",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10281269526862",
+      "handle": "ecusson-france",
+      "titre": "ÉCUSSON FRANCE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10759972716878",
+      "handle": "embrasement-generalise-patch-sainte-barbe",
+      "titre": "SAINTE BARBE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10769288200526",
+      "handle": "embrasement-generalise-sweat-sainte-barbe",
+      "titre": "SAINTE BARBE",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10813917004110",
+      "handle": "embrasement-generalise-tshirt-eg",
+      "titre": "L'ORIGINAL",
+      "statut": "DRAFT",
+      "variants": 35
+    },
+    {
+      "id": "gid://shopify/Product/10744979358030",
+      "handle": "embrasement-generalise-tshirt-sainte-barbe",
+      "titre": "SAINTE BARBE",
+      "statut": "ACTIVE",
+      "variants": 24
+    },
+    {
+      "id": "gid://shopify/Product/15898597425486",
+      "handle": "eternal-violence",
+      "titre": "ETERNAL VIOLENCE",
+      "statut": "ACTIVE",
+      "variants": 11
+    },
+    {
+      "id": "gid://shopify/Product/10820559372622",
+      "handle": "feminines-constance-nommick",
+      "titre": "Féminines - Constance Nommick",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10875830174030",
+      "handle": "figurines-bourbaki-n-1-le-popotier",
+      "titre": "FIGURINES BOURBAKI - N°1 LE POPOTIER",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15843265642830",
+      "handle": "force-des-montagnes",
+      "titre": "FORCE DES MONTAGNES - PRECOMMANDE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15949263765838",
+      "handle": "force-des-montagnes-1",
+      "titre": "FORCE DES MONTAGNES",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15843264495950",
+      "handle": "frapper-en-un-tir",
+      "titre": "FRAPPER EN UN TIR - PRECOMMANDE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15949268877646",
+      "handle": "frapper-en-un-tir-1",
+      "titre": "FRAPPER EN UN TIR",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15949178667342",
+      "handle": "fruit-du-chene",
+      "titre": "FRUIT DU CHENE",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/15892229587278",
+      "handle": "g1-g2-g3",
+      "titre": "G1 / G2 / G3",
+      "statut": "ACTIVE",
+      "variants": 75
+    },
+    {
+      "id": "gid://shopify/Product/9795591995726",
+      "handle": "grade-armee-francaise-basse-visibilite-ir-cte",
+      "titre": "CTE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9795569418574",
+      "handle": "grade-armee-francaise-basse-visibilite-ir-sergent-tout-neuf",
+      "titre": "SERGENT TOUT NEUF",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9741568049486",
+      "handle": "grade-basse-visibilite-ir-1ere-classe",
+      "titre": "GRADE 1ERE CLASSE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9741568868686",
+      "handle": "grade-basse-visibilite-ir-caporal-brigadier",
+      "titre": "GRADE CAPORAL - BRIGADIER",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9741572309326",
+      "handle": "grade-basse-visibilite-ir-caporal-chef-brigadier-chef",
+      "titre": "CAPORAL CHEF - BRIGADIER CHEF",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9741577486670",
+      "handle": "grade-basse-visibilite-ir-caporal-chef-premiere-classe",
+      "titre": "CAPORAL CHEF DE 1ERE CLASSE - BRIGADIER CHEF DE 1ERE CLASSE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10829228507470",
+      "handle": "grade-en-greve-embrasement-generalise",
+      "titre": "GRADE « EN GRÈVE » - EMBRASEMENT GÉNÉRALISÉ",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9618406998350",
+      "handle": "graton-1ere-classe-cme",
+      "titre": "1ERE CLASSE CME",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155402101070",
+      "handle": "graton-ad-la-vie",
+      "titre": "CAPORAL CHEF / AD LA VIE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155377623374",
+      "handle": "graton-armee-francaise-1cl-infini",
+      "titre": "1CL INFINI",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10772722975054",
+      "handle": "graton-armee-francaise-ancien-du-gaz",
+      "titre": "ANCIEN DU GAZ",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10772723466574",
+      "handle": "graton-armee-francaise-excel",
+      "titre": "EXCEL",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10772722483534",
+      "handle": "graton-armee-francaise-roue-libre",
+      "titre": "ROUE LIBRE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10772721631566",
+      "handle": "graton-armee-francaise-tta",
+      "titre": "TTA",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10085840224590",
+      "handle": "graton-vieux-chouf",
+      "titre": "VIEUX CHOUF",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10454191014222",
+      "handle": "greatest-warriors-viande-sechee",
+      "titre": "VIANDE SÉCHÉE",
+      "statut": "ACTIVE",
+      "variants": 2
+    },
+    {
+      "id": "gid://shopify/Product/15892210417998",
+      "handle": "gros-chat",
+      "titre": "GROS CHAT",
+      "statut": "ACTIVE",
+      "variants": 39
+    },
+    {
+      "id": "gid://shopify/Product/10449358553422",
+      "handle": "guile-training-chat-maigre",
+      "titre": "CHAT MAIGRE",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10449365631310",
+      "handle": "guile-training-montessori",
+      "titre": "TSHIRT MONTESSORI - GUILE TRAINING",
+      "statut": "ACTIVE",
+      "variants": 34
+    },
+    {
+      "id": "gid://shopify/Product/10769285349710",
+      "handle": "guile-training-sweat-chat-maigre",
+      "titre": "CHAT MAIGRE",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10772728316238",
+      "handle": "guile-training-sweat-montessori-militaire-1",
+      "titre": "MONTESSORI MILITAIRE",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10799796388174",
+      "handle": "guile-training-tshirt-azimut-brutal",
+      "titre": "AZIMUT BRUTAL",
+      "statut": "ACTIVE",
+      "variants": 31
+    },
+    {
+      "id": "gid://shopify/Product/15777106395470",
+      "handle": "hibou-tactique",
+      "titre": "HIBOU TACTIQUE",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/9977697861966",
+      "handle": "jeu-de-cartes-haute-intensite",
+      "titre": "JEU DE CARTES - HAUTE INTENSITÉ",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10810168574286",
+      "handle": "joue-avec-le-chat",
+      "titre": "Joue avec le chat",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10576570548558",
+      "handle": "justvane-tshirt-femme-de-marin",
+      "titre": "FEMME DE MARIN",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10576560783694",
+      "handle": "justvane-tshirt-femme-de-militaire",
+      "titre": "TSHIRT FEMME DE MILITAIRE",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10883734045006",
+      "handle": "la-boite-a-mun",
+      "titre": "LA BOITE À MUN'",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10805742633294",
+      "handle": "la-boite-de-noel-numero-1",
+      "titre": "La Boîte de Noël - Numéro 1",
+      "statut": "DRAFT",
+      "variants": 12
+    },
+    {
+      "id": "gid://shopify/Product/10815701483854",
+      "handle": "la-boite-de-noel-numero-2",
+      "titre": "La Boîte de Noël - Numéro 2",
+      "statut": "DRAFT",
+      "variants": 12
+    },
+    {
+      "id": "gid://shopify/Product/10815738446158",
+      "handle": "la-boite-de-noel-numero-3",
+      "titre": "La Boîte de Noël - Numéro 3",
+      "statut": "DRAFT",
+      "variants": 96
+    },
+    {
+      "id": "gid://shopify/Product/10862019903822",
+      "handle": "la-cle-de-la-p4",
+      "titre": "LA CLÉ DE LA P4",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10841076597070",
+      "handle": "laffiche-embrasement-generalise",
+      "titre": "L'AFFICHE - EMBRASEMENT GENERALISE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15768603787598",
+      "handle": "le-basique-personnalise",
+      "titre": "LE BASIQUE - PERSONNALISÉ",
+      "statut": "ACTIVE",
+      "variants": 585
+    },
+    {
+      "id": "gid://shopify/Product/9635740254542",
+      "handle": "le-patracdr-72",
+      "titre": "PATRACDR72",
+      "statut": "ARCHIVED",
+      "variants": 25
+    },
+    {
+      "id": "gid://shopify/Product/10450880004430",
+      "handle": "le-pax-patch-mental-de-poulpe",
+      "titre": "MENTAL DE POULPE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10450886230350",
+      "handle": "lepax-patch-arrete-de-subir-espece-de-chips",
+      "titre": "ARRETE DE SUBIR, ESPECE DE CHIPS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10450883936590",
+      "handle": "lepax-patch-jeune-bitos",
+      "titre": "JEUNE BITOS",
+      "statut": "DRAFT",
+      "variants": 2
+    },
+    {
+      "id": "gid://shopify/Product/10450887115086",
+      "handle": "lepax-patch-militaire-pomme-de-terre",
+      "titre": "MILITAIRE POMME DE TERRE",
+      "statut": "DRAFT",
+      "variants": 2
+    },
+    {
+      "id": "gid://shopify/Product/10387840008526",
+      "handle": "lepax-plankton",
+      "titre": "LEPAX / PLANKTON",
+      "statut": "DRAFT",
+      "variants": 8
+    },
+    {
+      "id": "gid://shopify/Product/10387848462670",
+      "handle": "lepax-pro-du-claquage-de-fume",
+      "titre": "LEPAX / PRO DU CLAQUAGE DE FUME",
+      "statut": "DRAFT",
+      "variants": 8
+    },
+    {
+      "id": "gid://shopify/Product/10769285022030",
+      "handle": "lepax-sweat-pas-paye-a-reflechir",
+      "titre": "PAS PAYÉ À RÉFLÉCHIR",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10802599559502",
+      "handle": "lepax-tshirt",
+      "titre": "TSHIRT LA PLUS BELLE MISSION - LEPAX",
+      "statut": "DRAFT",
+      "variants": 40
+    },
+    {
+      "id": "gid://shopify/Product/10685604168014",
+      "handle": "lepax-tshirt-arrete-de-subir",
+      "titre": "ARRÊTE DE SUBIR",
+      "statut": "ACTIVE",
+      "variants": 60
+    },
+    {
+      "id": "gid://shopify/Product/10803357614414",
+      "handle": "lepax-tshirt-f-la-plus-belle-mission",
+      "titre": "TSHIRT (F) LA PLUS BELLE MISSION - LEPAX",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10802602737998",
+      "handle": "lepax-tshirt-pas-de-cerveau-pas-de-migraine",
+      "titre": "RÉFLÉCHIR C’EST DÉSOBÉIR",
+      "statut": "ACTIVE",
+      "variants": 60
+    },
+    {
+      "id": "gid://shopify/Product/10474086531406",
+      "handle": "lepax-tshirt-pas-paye-a-reflechir",
+      "titre": "TSHIRT PAS PAYE À REFLECHIR - LEPAX",
+      "statut": "ACTIVE",
+      "variants": 60
+    },
+    {
+      "id": "gid://shopify/Product/15760249717070",
+      "handle": "les-5c",
+      "titre": "LES 5C",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15743676580174",
+      "handle": "les-soldats-de-lapocalyptix",
+      "titre": "LES SOLDATS DE L'APOCALYPTIX",
+      "statut": "ACTIVE",
+      "variants": 57
+    },
+    {
+      "id": "gid://shopify/Product/10806666199374",
+      "handle": "lesdessinsdeseb-14-044-sweat-bac-buddys",
+      "titre": "BAC buddy's",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10806662496590",
+      "handle": "lesdessinsdeseb-14-044-sweat-frogmen",
+      "titre": "FROGMEN",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10806664626510",
+      "handle": "lesdessinsdeseb-14-044-sweat-ni-repos-ni-repit",
+      "titre": "SWEAT NI REPOS NI RÉPIT - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10813951574350",
+      "handle": "lesdessinsdeseb-14-044-tshirt",
+      "titre": "TSHIRT SQUAT - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10798132003150",
+      "handle": "lesdessinsdeseb-14-044-tshirt-bac-buddys",
+      "titre": "BAC buddy's",
+      "statut": "DRAFT",
+      "variants": 18
+    },
+    {
+      "id": "gid://shopify/Product/10780136046926",
+      "handle": "lesdessinsdeseb-14-044-tshirt-frogmen",
+      "titre": "FROGMEN",
+      "statut": "ACTIVE",
+      "variants": 18
+    },
+    {
+      "id": "gid://shopify/Product/10780135620942",
+      "handle": "lesdessinsdeseb-14-044-tshirt-ni-repos-ni-repit",
+      "titre": "TSHIRT NI REPOS NI RÉPIT - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 18
+    },
+    {
+      "id": "gid://shopify/Product/10813944922446",
+      "handle": "lesdessinsdeseb-14-044-tshirt-psig",
+      "titre": "TSHIRT CELLULE BOUCLAR - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10388087701838",
+      "handle": "lot-on-senvoie-en-lair",
+      "titre": "Lot - On s'envoie en l'air ?",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10805736735054",
+      "handle": "lot-sticker-noel",
+      "titre": "Lot Stickers de Noël",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8877670859086",
+      "handle": "lot-stickers",
+      "titre": "LOT STICKERS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10805731262798",
+      "handle": "magnet-boite-de-noel",
+      "titre": "Magnets de Noël",
+      "statut": "DRAFT",
+      "variants": 4
+    },
+    {
+      "id": "gid://shopify/Product/10851406119246",
+      "handle": "magnet-courtinistan",
+      "titre": "MAGNET COURTINISTAN",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10851406250318",
+      "handle": "magnet-maillywood",
+      "titre": "MAGNET MAILLYWOOD",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10851406020942",
+      "handle": "magnet-occ",
+      "titre": "MAGNET OCC",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10851405889870",
+      "handle": "magnet-suippistan",
+      "titre": "MAGNET SUIPPISTAN",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15756085264718",
+      "handle": "marins-du-feu",
+      "titre": "Marins du Feu",
+      "statut": "ACTIVE",
+      "variants": 25
+    },
+    {
+      "id": "gid://shopify/Product/10489329549646",
+      "handle": "mayeul-la-voie-du-soldat",
+      "titre": "MAYEUL - La voie du soldat",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10481034166606",
+      "handle": "medaille-b-ise-national",
+      "titre": "MÉDAILLE B*ISÉ NATIONAL",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10839176675662",
+      "handle": "medaille-de-lordre-national-des-punis",
+      "titre": "MÉDAILLE DE L'ORDRE NATIONAL DES PUNIS",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10839192109390",
+      "handle": "medaille-de-lordre-national-des-punis-copie",
+      "titre": "MEDAILLE DE L'ORDRE NATIONAL DE LA GUERITE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15937580532046",
+      "handle": "medaille-gardien-des-valeurs",
+      "titre": "MÉDAILLE GARDIEN DES VALEURS",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10481037345102",
+      "handle": "medaille-inaptitude-a-la-vie",
+      "titre": "MÉDAILLE INAPTITUDE À LA VIE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10839173824846",
+      "handle": "medaille-la-valeur-de-la-biere",
+      "titre": "MÉDAILLE LA VALEUR DE LA BIERE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15777089257806",
+      "handle": "memento-mori",
+      "titre": "MEMENTO MORI",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/15892193608014",
+      "handle": "miliwife",
+      "titre": "MILIWIFE",
+      "statut": "ACTIVE",
+      "variants": 112
+    },
+    {
+      "id": "gid://shopify/Product/10155280400718",
+      "handle": "mini-grade-971",
+      "titre": "MINI-PATCH - 971",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155291640142",
+      "handle": "mini-grade-972",
+      "titre": "MINI-PATCH - 972",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10722747777358",
+      "handle": "mini-grade-973",
+      "titre": "MINI-PATCH - 973",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10109074080078",
+      "handle": "mini-grade-974",
+      "titre": "MINI-PATCH - 974",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155289379150",
+      "handle": "mini-grade-976",
+      "titre": "MINI-PATCH - 976",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155278008654",
+      "handle": "mini-grade-987",
+      "titre": "MINI-PATCH - 987",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155275977038",
+      "handle": "mini-grade-988",
+      "titre": "MINI-PATCH - 988",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155293540686",
+      "handle": "mini-grade-ad-la-planete",
+      "titre": "MINI-PATCH - AD LA PLANETE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155343708494",
+      "handle": "mini-grade-binouze",
+      "titre": "MINI-PATCH - BIERES",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155267817806",
+      "handle": "mini-grade-breizh",
+      "titre": "MINI-PATCH - BREIZH",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155295015246",
+      "handle": "mini-grade-burger",
+      "titre": "MINI-PATCH - BURGER",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155282235726",
+      "handle": "mini-grade-cookies",
+      "titre": "MINI-PATCH - COOKIES",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10722746630478",
+      "handle": "mini-grade-corse",
+      "titre": "MINI-PATCH - CORSE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155270832462",
+      "handle": "mini-grade-france",
+      "titre": "MINI-PATCH - FRANCE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10575805382990",
+      "handle": "mini-grade-ia-ora-na",
+      "titre": "MINI-PATCH - IA ORA NA",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10109077848398",
+      "handle": "mini-grade-le-grand-majeur",
+      "titre": "MINI-PATCH - LE GRAND MAJEUR",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10760014725454",
+      "handle": "mini-grade-saint-michel",
+      "titre": "MINI-PATCH - SAINT MICHEL",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10759980646734",
+      "handle": "mini-grade-sainte-barbe",
+      "titre": "MINI-PATCH - SAINTE BARBE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10155273486670",
+      "handle": "mini-grade-tete-de-mort",
+      "titre": "MINI-PATCH - TÊTE DE MORT",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10760923578702",
+      "handle": "mini-patch",
+      "titre": "MINI-PATCHS",
+      "statut": "ACTIVE",
+      "variants": 19
+    },
+    {
+      "id": "gid://shopify/Product/10877221994830",
+      "handle": "mission-tombouctour",
+      "titre": "MISSION TOMBOUCTOUR",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10498495021390",
+      "handle": "moralex",
+      "titre": "MORALEX - BOISSON ÉNERGISANTE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10713093701966",
+      "handle": "moralex-baies-sauvages",
+      "titre": "MORALEX - BAIES SAUVAGES",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15873693352270",
+      "handle": "mug-inox-moral-critique",
+      "titre": "MUG INOX « MORAL CRITIQUE »",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10049271923022",
+      "handle": "mug-jpeux-pas-jai",
+      "titre": "MUG J'PEUX PAS J'AI",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15851075502414",
+      "handle": "napoleon",
+      "titre": "NAPOLEON",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/15949186138446",
+      "handle": "no-rats-no-betrayal",
+      "titre": "NO RATS, NO BETRAYAL",
+      "statut": "ACTIVE",
+      "variants": 25
+    },
+    {
+      "id": "gid://shopify/Product/10494617551182",
+      "handle": "olight-baldr-pro-lampe-tactique-ultra-puissante-avec-laser-vert",
+      "titre": "Olight Baldr Pro | Lampe Tactique Ultra Puissante Avec Laser Vert",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10494655037774",
+      "handle": "olight-baldr-s-lampe-tactique-avec-laser-vert",
+      "titre": "Olight Baldr S | Lampe tactique avec laser vert",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10494656512334",
+      "handle": "olight-odin-gl-lampe-tactique-avec-laser-vert-1500-lumens",
+      "titre": "Olight Odin GL | Lampe tactique avec laser vert 1500 Lumens",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10494654808398",
+      "handle": "olight-odin-lampe-tactique-puissante",
+      "titre": "Olight Odin | Lampe tactique puissante",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10494774608206",
+      "handle": "olight-odin-s-lampe-tactique-1500-lumens",
+      "titre": "Olight Odin S | Lampe tactique 1500 lumens",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10494806688078",
+      "handle": "olight-warrior-3s-lampe-tactique-stroboscopique-puissante",
+      "titre": "Olight Warrior 3S | Lampe Tactique Stroboscopique Puissante",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15777104200014",
+      "handle": "operation-mangouste",
+      "titre": "OPERATION MANGOUSTE",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/15847550320974",
+      "handle": "pas-de-cerveau-pas-de-migraine",
+      "titre": "PAS DE CERVEAU PAS DE MIGRAINE",
+      "statut": "ACTIVE",
+      "variants": 55
+    },
+    {
+      "id": "gid://shopify/Product/10109036298574",
+      "handle": "patch-armee-de-l",
+      "titre": "ARMÉE DE L'AIR ET DE L'ESPACE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10226143134030",
+      "handle": "patch-armee-de-terre-rugby",
+      "titre": "SUPPOR'TERRE - LE PATCH",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874552332622",
+      "handle": "patch-besseges-les-hommes-forts",
+      "titre": "PATCH BESSEGES LES HOMMES FORTS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8979975766350",
+      "handle": "patch-bip-bip-satellite",
+      "titre": "BIP BIP SATELLITE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8979973898574",
+      "handle": "patch-boimas",
+      "titre": "BOIMAS",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15729009852750",
+      "handle": "patch-bourbaki",
+      "titre": "BOURBAKI",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874569503054",
+      "handle": "patch-ca-decaale",
+      "titre": "PATCH CA DECAALE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874571993422",
+      "handle": "patch-cafe-clope-carence",
+      "titre": "PATCH CAFE CLOPE CARENCE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874556494158",
+      "handle": "patch-captain-perrin",
+      "titre": "PATCH CAPTAIN PERRIN",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10226129895758",
+      "handle": "patch-cati",
+      "titre": "CATI",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15719873610062",
+      "handle": "patch-chat-maigre-noir-guile-training",
+      "titre": "CHAT MAIGRE (MARRON)",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15719873413454",
+      "handle": "patch-chat-maigre-vert-guile-training",
+      "titre": "CHAT MAIGRE (VERT)",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15729009983822",
+      "handle": "patch-chat-noir",
+      "titre": "CHAT NOIR",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9950526800206",
+      "handle": "patch-chef-eugenie-2-0",
+      "titre": "CHEF EUGENIE 2.0",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874553217358",
+      "handle": "patch-coloswami",
+      "titre": "PATCH COLOSWAMI",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10474162618702",
+      "handle": "patch-croix-st-benoit",
+      "titre": "CROIX ST BENOIT",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874545484110",
+      "handle": "patch-custom-rocket",
+      "titre": "PATCH CUSTOM ROCKET",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10241664614734",
+      "handle": "patch-defender-du-seigneur",
+      "titre": "DEFENDER DU SEIGNEUR POMPIER",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10474157211982",
+      "handle": "patch-defender-du-seigneur-1",
+      "titre": "DEFENDER DU SEIGNEUR GENDARMERIE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10413475725646",
+      "handle": "patch-defender-vigipirate",
+      "titre": "DEFENDER VIGIPIRATE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874779939150",
+      "handle": "patch-dr-strange-cop-team",
+      "titre": "PATCH DR. STRANGE COP TEAM",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10410307158350",
+      "handle": "patch-embrasement-generalise-3p",
+      "titre": "3P - EMBRASEMENT GÉNÉRALISÉ",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874546958670",
+      "handle": "patch-falcon-cta-codis",
+      "titre": "PATCH FALCON CTA-CODIS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10049218445646",
+      "handle": "patch-fruit-du-chene",
+      "titre": "FRUIT DU CHÊNE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10403934601550",
+      "handle": "patch-fte-tior",
+      "titre": "FTE TIOR",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8723200180558",
+      "handle": "patch-gardiens-des-jo",
+      "titre": "PATCH GARDIENS DES JO",
+      "statut": "ARCHIVED",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9816079008078",
+      "handle": "patch-gbcoptere",
+      "titre": "GBCOPTERE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10862019772750",
+      "handle": "patch-i-love-centac",
+      "titre": "I LOVE CENTAC",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9816078385486",
+      "handle": "patch-i-love-jonquera",
+      "titre": "I LOVE JONQUERA",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10109042819406",
+      "handle": "patch-inapte-a-la-vie",
+      "titre": "INAPTE À LA VIE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10759702806862",
+      "handle": "patch-jeudredi",
+      "titre": "JEUDREDI",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10465994998094",
+      "handle": "patch-lamicale-du-vent",
+      "titre": "L'AMICALE DU VENT",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10403930702158",
+      "handle": "patch-les-couilles-a-jul",
+      "titre": "LES COUILLES A JUL",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874550628686",
+      "handle": "patch-les-veilleurs-des-pupilles",
+      "titre": "PATCH LES VEILLEURS DES PUPILLES",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10804501315918",
+      "handle": "patch-lot-test",
+      "titre": "Patchs de Noël",
+      "statut": "DRAFT",
+      "variants": 3
+    },
+    {
+      "id": "gid://shopify/Product/15874548597070",
+      "handle": "patch-lyon-corneille-vision",
+      "titre": "PATCH LYON CORNEILLE VISION",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10413476118862",
+      "handle": "patch-manip-de-merde",
+      "titre": "MANIP DE MERDE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8985943998798",
+      "handle": "patch-massacre",
+      "titre": "MASSACRE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10851398549838",
+      "handle": "patch-massacre-2026",
+      "titre": "MASSACRE 2026",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874551480654",
+      "handle": "patch-miss-annabelle",
+      "titre": "PATCH MISS ANNABELLE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8979974717774",
+      "handle": "patch-moralex-500",
+      "titre": "MORALEX 500",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874779119950",
+      "handle": "patch-mrs-flashover",
+      "titre": "PATCH MRS FLASHOVER",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8877379125582",
+      "handle": "patch-mystere",
+      "titre": "PATCH MYSTERE",
+      "statut": "ARCHIVED",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10394473595214",
+      "handle": "patch-mystere-1",
+      "titre": "Patchs Mystère",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10403936108878",
+      "handle": "patch-narine-nationale",
+      "titre": "NARINE NATIONALE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874549711182",
+      "handle": "patch-oeil-de-strasecours",
+      "titre": "PATCH OEIL DE STRASECOURS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10356308279630",
+      "handle": "patch-operation-serval",
+      "titre": "OPERATION SERVAL",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10049217691982",
+      "handle": "patch-p4-du-seigneur",
+      "titre": "P4 DU SEIGNEUR",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874554233166",
+      "handle": "patch-panther-secours",
+      "titre": "PATCH PANTHER SECOURS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10491619344718",
+      "handle": "patch-pas-vu-pas-pris",
+      "titre": "PAS VU PAS PRIS",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15873679360334",
+      "handle": "patch-pvc-pas-de-cerveau-pas-de-migraine",
+      "titre": "PATCH PVC « PAS DE CERVEAU, PAS DE MIGRAINE »",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15873673757006",
+      "handle": "patch-pvc-pas-paye-a-reflechir",
+      "titre": "PATCH PVC « PAS PAYÉ À RÉFLÉCHIR »",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15873683063118",
+      "handle": "patch-pvc-percutalgine",
+      "titre": "PATCH PVC « PERCUTALGINE »",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10474156032334",
+      "handle": "patch-reserviste-de-choc",
+      "titre": "RÉSERVISTE DE CHOC",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874544140622",
+      "handle": "patch-sapeur-pompier-thoiry",
+      "titre": "PATCH SAPEUR POMPIER THOIRY",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15719874298190",
+      "handle": "patch-sculpteur-de-flamme-eg",
+      "titre": "SCULPTEUR DE FLAMMES",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10759704052046",
+      "handle": "patch-specialiste-base-arriere",
+      "titre": "SPÉCIALISTE BASE ARRIÈRE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9816074584398",
+      "handle": "patch-subitex-1000",
+      "titre": "SUBITEX 1000",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15874778333518",
+      "handle": "patch-the-crazy-sapeur",
+      "titre": "PATCH THE CRAZY SAPEUR",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/8774770032974",
+      "handle": "patch-tig",
+      "titre": "TIG 2.0",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10414736015694",
+      "handle": "patch-tior-de-mes-morts",
+      "titre": "TIOR DE MES MORTS",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10815913197902",
+      "handle": "patchs-boite-de-noel-n-2",
+      "titre": "Duo de Noël",
+      "statut": "DRAFT",
+      "variants": 3
+    },
+    {
+      "id": "gid://shopify/Product/9635766436174",
+      "handle": "patracdr48",
+      "titre": "PATRACDR48",
+      "statut": "ARCHIVED",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10858958782798",
+      "handle": "pins-massacre",
+      "titre": "PIN'S MASSACRE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10858958913870",
+      "handle": "pins-saucisse-volante",
+      "titre": "PIN'S SAUCISSE VOLANTE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10502470893902",
+      "handle": "plus-difficile-a-tuer",
+      "titre": "Plus difficile à tuer",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15873690141006",
+      "handle": "porte-cles-boimas",
+      "titre": "PORTE-CLÉS « BOIMAS »",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15760183001422",
+      "handle": "pour-que-la-memoire-ne-sefface-jamais",
+      "titre": "POUR QUE LA MEMOIRE NE S'EFFACE JAMAIS",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/15760160293198",
+      "handle": "pour-que-la-memoire-ne-sefface-pas",
+      "titre": "POUR QUE LA MEMOIRE NE S'EFFACE PAS",
+      "statut": "DRAFT",
+      "variants": 25
+    },
+    {
+      "id": "gid://shopify/Product/15982715371854",
+      "handle": "precommande-arrete-de-subir",
+      "titre": "PRECOMMANDE - ARRÊTE DE SUBIR",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15982685946190",
+      "handle": "precommande-coins-caporal-chef-race-des-seigneurs",
+      "titre": "PRECOMMANDE - COINS CAPORAL CHEF RACE DES SEIGNEURS",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15982667923790",
+      "handle": "precommande-coins-decapsuleur-jeudredi",
+      "titre": "PRECOMMANDE - COINS DECAPSULEUR JEUDREDI",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15982678573390",
+      "handle": "precommande-coins-tas-pas-de-couilles",
+      "titre": "PRECOMMANDE - COINS T'AS PAS DE COUILLES",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15793989419342",
+      "handle": "precommande-drapeau-barkhane",
+      "titre": "DRAPEAU BARKHANE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15793978900814",
+      "handle": "precommande-drapeau-liberte",
+      "titre": "PRÉCOMMANDE - DRAPEAU LIBERTÉ",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15793975853390",
+      "handle": "precommande-drapeau-timalerie-massacre",
+      "titre": "DRAPEAU TIMALERIE",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15851117871438",
+      "handle": "precommande-lot-14-juillet",
+      "titre": "PRECOMMANDE - COFFRET 14 JUILLET",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15962916487502",
+      "handle": "qui-ose-charge",
+      "titre": "QUI OSE CHARGE",
+      "statut": "ACTIVE",
+      "variants": 35
+    },
+    {
+      "id": "gid://shopify/Product/10806486532430",
+      "handle": "renfort-collegue-alexandre-vigier",
+      "titre": "RENFORT COLLEGUE - Alexandre Vigier",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15843266527566",
+      "handle": "sauver-sans-perir",
+      "titre": "SAUVER SANS PÉRIR - PRECOMMANDE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15949261373774",
+      "handle": "sauver-sans-perir-1",
+      "titre": "SAUVER SANS PÉRIR",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10767315206478",
+      "handle": "seb-david-tshirt-band-of-brothers",
+      "titre": "TSHIRT BAND OF BROTHERS - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 13
+    },
+    {
+      "id": "gid://shopify/Product/15758219870542",
+      "handle": "servir-la-france-un-jour",
+      "titre": "SERVIR LA FRANCE UN JOUR, LA PORTER EN SOI TOUJOURS",
+      "statut": "DRAFT",
+      "variants": 25
+    },
+    {
+      "id": "gid://shopify/Product/15760173072718",
+      "handle": "servir-la-france-un-jour-la-porter-en-soi-toujours",
+      "titre": "SERVIR LA FRANCE UN JOUR, LA PORTER EN SOI TOUJOURS",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10484447609166",
+      "handle": "soldartiste-la-casquette-copie",
+      "titre": "SOLDA'RTISTE - LE PORTE CLES",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10484449476942",
+      "handle": "soldartiste-la-gourde",
+      "titre": "SOLDA'RTISTE - LA GOURDE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10484444430670",
+      "handle": "soldartiste-le-mug-1",
+      "titre": "SOLDA'RTISTE - LE MUG",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10484445577550",
+      "handle": "soldartiste-le-mug-copie",
+      "titre": "SOLDA'RTISTE - LA CASQUETTE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15892168409422",
+      "handle": "soldier-on-break",
+      "titre": "SOLDIER ON BREAK",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10144046711118",
+      "handle": "spwr-le-t-shirt",
+      "titre": "SPWR - LE T-SHIRT",
+      "statut": "DRAFT",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10109047341390",
+      "handle": "sticker-lours",
+      "titre": "STICKER L'OURS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15898612433230",
+      "handle": "strenght",
+      "titre": "STRENGHT",
+      "statut": "ACTIVE",
+      "variants": 12
+    },
+    {
+      "id": "gid://shopify/Product/10391075750222",
+      "handle": "supporterre-le-t-shirt",
+      "titre": "SUPPOR'TERRE / LE T-SHIRT H/F",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/15948549423438",
+      "handle": "surfs",
+      "titre": "SurFS",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10823104004430",
+      "handle": "sweat-11-novembre-association-reliques-de-guerre",
+      "titre": "SWEAT ON NE PASSE PAS - ASSOCIATION RELIQUES DE GUERRE",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10829852672334",
+      "handle": "sweat-arrete-de-subir-lepax",
+      "titre": "SW ARRÊTE DE SUBIR",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10891289755982",
+      "handle": "sweat-croc-frites",
+      "titre": "CROC'FRITES",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10858967859534",
+      "handle": "sweat-foudre-de-guerre",
+      "titre": "FOUDRE DE GUERRE",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10769282203982",
+      "handle": "sweat-je-suis-pas-un-titoi",
+      "titre": "JE SUIS PAS UN TITOÏ",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10104301977934",
+      "handle": "sweat-jeudredi",
+      "titre": "SWEAT JEUDREDI",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10841451823438",
+      "handle": "sweat-kiwi-pere-noel-chef-peper",
+      "titre": "SWEAT KIWI PERE NOËL - CHEF PEPER",
+      "statut": "DRAFT",
+      "variants": 7
+    },
+    {
+      "id": "gid://shopify/Product/15721680666958",
+      "handle": "sweat-legoperator",
+      "titre": "SW - LEGOPERATOR",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10769283055950",
+      "handle": "sweat-pas-vu-pas-pris",
+      "titre": "PAS VU PAS PRIS",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10829851132238",
+      "handle": "sweat-reflechir-cest-desobeir-lepax",
+      "titre": "SW RÉFLÉCHIR C'EST DÉSOBÉIR",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10891260330318",
+      "handle": "sweat-saint-bernard",
+      "titre": "SAINT BERNARD",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10891253809486",
+      "handle": "sweat-saint-eloi",
+      "titre": "SAINT ELOI",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10891256070478",
+      "handle": "sweat-saint-gabriel",
+      "titre": "SAINT GABRIEL",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10891262034254",
+      "handle": "sweat-saint-roch",
+      "titre": "SAINT ROCH",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10871460233550",
+      "handle": "sweatshirt-machine-de-guerre-guile-training",
+      "titre": "SWEATSHIRT MACHINE DE GUERRE - GUILE TRAINING",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10869023736142",
+      "handle": "sweatshirt-mak-lesdessinsdeseb-14-044",
+      "titre": "MAK",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10871490478414",
+      "handle": "sweatshirt-ops-skull-lesdessinsdeseb-14-044",
+      "titre": "SWEATSHIRT OPS SKULL - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10866368840014",
+      "handle": "sweatshirt-saint-georges",
+      "titre": "SAINT GEORGES",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10866370937166",
+      "handle": "sweatshirt-saint-maurice",
+      "titre": "SAINT MAURICE",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10791378780494",
+      "handle": "sweatshirt-saint-michel",
+      "titre": "SAINT MICHEL",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10866374672718",
+      "handle": "sweatshirt-sainte-genevieve",
+      "titre": "SAINTE GENEVIEVE",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10871477666126",
+      "handle": "sweatshirt-sogh-lesdessinsdeseb-14-044",
+      "titre": "SWEATSHIRT \"SOGH\" - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/15883230183758",
+      "handle": "t-shirt",
+      "titre": "T-SHIRT",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/9004635717966",
+      "handle": "t-shirt-commando",
+      "titre": "TSHIRT COMMANDO TIG TTA",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10331206451534",
+      "handle": "t-shirt-je-suis-pas-un-titoi",
+      "titre": "T-SHIRT - JE SUIS PAS UN TITOÏ",
+      "statut": "ACTIVE",
+      "variants": 14
+    },
+    {
+      "id": "gid://shopify/Product/10383553102158",
+      "handle": "t-shirt-le-roi-de-la-popote",
+      "titre": "T-SHIRT / LE ROI DE LA POPOTE",
+      "statut": "ACTIVE",
+      "variants": 18
+    },
+    {
+      "id": "gid://shopify/Product/10796645417294",
+      "handle": "tactical-nutrition-casquette-multicam",
+      "titre": "CASQUETTE MULTICAM",
+      "statut": "ACTIVE",
+      "variants": 2
+    },
+    {
+      "id": "gid://shopify/Product/10387801375054",
+      "handle": "tactical-nutrition-specialite-francaise",
+      "titre": "TACTICAL NUTRITION / SPÉCIALITÉ FRANCAISE",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10796648628558",
+      "handle": "tactical-nutrition-t-shirt-ghost-x-nostra-lex",
+      "titre": "T-Shirt Ghost X Nostra Lex",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10796643123534",
+      "handle": "tactical-nutrition-t-shirt-original-x-banksy",
+      "titre": "T-SHIRT ORIGINAL X BANKSY",
+      "statut": "ACTIVE",
+      "variants": 4
+    },
+    {
+      "id": "gid://shopify/Product/10387801866574",
+      "handle": "tactical-nutrition-x-nostra-lex",
+      "titre": "TACTICAL NUTRITION X NOSTRA LEX",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/15939106799950",
+      "handle": "tasse-14-juillet",
+      "titre": "TASSE 14 JUILLET",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/9702257557838",
+      "handle": "tasse-tes-perms",
+      "titre": "TASSE TES PERMS",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10839174938958",
+      "handle": "tasse-tes-perms-2-0",
+      "titre": "TASSE TES PERMS 2.0",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10454215622990",
+      "handle": "tasses-blast",
+      "titre": "TASSES BLAST",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15898245366094",
+      "handle": "the-knight",
+      "titre": "THE KNIGHT",
+      "statut": "ACTIVE",
+      "variants": 20
+    },
+    {
+      "id": "gid://shopify/Product/15836530377038",
+      "handle": "tie-un-tchigre-du-regiment",
+      "titre": "TIE UN TCHIGRE DU REGIMENT",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/15948539822414",
+      "handle": "toujours-ba-se-jamais-surpris",
+      "titre": "TOUJOURS BA*SE, JAMAIS SURPRIS",
+      "statut": "ACTIVE",
+      "variants": 60
+    },
+    {
+      "id": "gid://shopify/Product/15920182001998",
+      "handle": "trop-percu",
+      "titre": "TROP PERÇU",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/15898589626702",
+      "handle": "tryhard-club",
+      "titre": "TRYHARD CLUB",
+      "statut": "ACTIVE",
+      "variants": 12
+    },
+    {
+      "id": "gid://shopify/Product/10822982173006",
+      "handle": "tshirt-11-novembre-association-reliques-de-guerre",
+      "titre": "TSHIRT ON NE PASSE PAS - ASSOCIATION RELIQUES DE GUERRE",
+      "statut": "DRAFT",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10711213441358",
+      "handle": "tshirt-b-a-n-c",
+      "titre": "TSHIRT B.A.N.C",
+      "statut": "DRAFT",
+      "variants": 18
+    },
+    {
+      "id": "gid://shopify/Product/10883079405902",
+      "handle": "tshirt-bombs-away-association-reliques-de-guerre",
+      "titre": "BOMBS AWAY",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10871474880846",
+      "handle": "tshirt-chuteur-lesdessinsdeseb-14-044",
+      "titre": "TSHIRT \"SOGH\" - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10880909934926",
+      "handle": "tshirt-conflit-tactical-nutrition",
+      "titre": "CONFLIT",
+      "statut": "ACTIVE",
+      "variants": 3
+    },
+    {
+      "id": "gid://shopify/Product/10413452198222",
+      "handle": "tshirt-courtine-paradise",
+      "titre": "TSHIRT COURTINE PARADISE",
+      "statut": "DRAFT",
+      "variants": 8
+    },
+    {
+      "id": "gid://shopify/Product/10891288052046",
+      "handle": "tshirt-crocfrites",
+      "titre": "CROC'FRITES",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10829234733390",
+      "handle": "tshirt-cyno-lesdessinsdeseb-14-044",
+      "titre": "MAK",
+      "statut": "ACTIVE",
+      "variants": 45
+    },
+    {
+      "id": "gid://shopify/Product/15729006936398",
+      "handle": "tshirt-democratie-massacre",
+      "titre": "DEMOCRATIE - MASSACRE",
+      "statut": "ACTIVE",
+      "variants": 45
+    },
+    {
+      "id": "gid://shopify/Product/10815832752462",
+      "handle": "tshirt-expressions-militaires",
+      "titre": "EXPRESSIONS MILITAIRES",
+      "statut": "DRAFT",
+      "variants": 8
+    },
+    {
+      "id": "gid://shopify/Product/10886422430030",
+      "handle": "tshirt-f-the-lovers-justevane",
+      "titre": "THE LOVERS (F)",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10886422331726",
+      "handle": "tshirt-f-vent-du-c-l-justevane",
+      "titre": "VENT DU C*L (F)",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10573753844046",
+      "handle": "tshirt-ffomecblot-pade",
+      "titre": "TSHIRT FFOMECBLOT PADE",
+      "statut": "DRAFT",
+      "variants": 34
+    },
+    {
+      "id": "gid://shopify/Product/10858967564622",
+      "handle": "tshirt-foudre-de-guerre",
+      "titre": "FOUDRE DE GUERRE",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/15728943857998",
+      "handle": "tshirt-je-me-souviens-bluegun",
+      "titre": "13.11.15",
+      "statut": "DRAFT",
+      "variants": 40
+    },
+    {
+      "id": "gid://shopify/Product/8861086548302",
+      "handle": "tshirt-jeudredi-gris",
+      "titre": "TSHIRT JEUDREDI GRIS",
+      "statut": "ARCHIVED",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/8861086220622",
+      "handle": "tshirt-jeudredi-noir",
+      "titre": "TSHIRT JEUDREDI NOIR",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/8861087138126",
+      "handle": "tshirt-jeudredi-tta",
+      "titre": "TSHIRT JEUDREDI KAKI TTA",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10841449365838",
+      "handle": "tshirt-kiwi-pere-noel-chef-peper",
+      "titre": "TSHIRT KIWI PERE NOËL - CHEF PEPER",
+      "statut": "DRAFT",
+      "variants": 7
+    },
+    {
+      "id": "gid://shopify/Product/10891288379726",
+      "handle": "tshirt-le-croise",
+      "titre": "LE CROISÉ",
+      "statut": "DRAFT",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/15709519642958",
+      "handle": "tshirt-legio-patria-nostra-lesdessinsdeseb-14-044",
+      "titre": "TSHIRT LEGIO PATRIA NOSTRA - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 20
+    },
+    {
+      "id": "gid://shopify/Product/10901955313998",
+      "handle": "tshirt-legoperator",
+      "titre": "LEGOPERATOR",
+      "statut": "ACTIVE",
+      "variants": 33
+    },
+    {
+      "id": "gid://shopify/Product/10872125423950",
+      "handle": "tshirt-liberte-egalite-fo-shurrr",
+      "titre": "TSHIRT LIBERTÉ EGALITÉ FO SHURRR",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10871453745486",
+      "handle": "tshirt-machine-de-guerre-guile-training",
+      "titre": "TSHIRT MACHINE DE GUERRE - GUILE TRAINING",
+      "statut": "DRAFT",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10885796331854",
+      "handle": "tshirt-marche-course-massacre",
+      "titre": "TSHIRT MARCHE COURSE - MASSACRE",
+      "statut": "DRAFT",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/10744978735438",
+      "handle": "tshirt-no-road-too-rough",
+      "titre": "TSHIRT - NO ROAD TOO ROUGH",
+      "statut": "DRAFT",
+      "variants": 33
+    },
+    {
+      "id": "gid://shopify/Product/8859594686798",
+      "handle": "tshirt-operation-paname-24-gris",
+      "titre": "TSHIRT OPERATION PANAME 24 GRIS",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/8859597341006",
+      "handle": "tshirt-operation-paname-24-tta",
+      "titre": "TSHIRT OPERATION PANAME 24 KAKI TTA",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/8751908028750",
+      "handle": "tshirt-operation-paname-noir",
+      "titre": "TSHIRT OPERATION PANAME 24 NOIR",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10871486546254",
+      "handle": "tshirt-ops-skull-lesdessinsdeseb-14-044",
+      "titre": "TSHIRT OPS SKULL - LesdessinsdeSeb/14.044",
+      "statut": "DRAFT",
+      "variants": 20
+    },
+    {
+      "id": "gid://shopify/Product/10880863961422",
+      "handle": "tshirt-oversize-the-lovers-justevane",
+      "titre": "THE LOVERS",
+      "statut": "ACTIVE",
+      "variants": 20
+    },
+    {
+      "id": "gid://shopify/Product/10880891093326",
+      "handle": "tshirt-oversize-vent-du-c-l-justevane",
+      "titre": "VENT DU C*L",
+      "statut": "ACTIVE",
+      "variants": 20
+    },
+    {
+      "id": "gid://shopify/Product/10491631993166",
+      "handle": "tshirt-pas-vu-pas-pris",
+      "titre": "TSHIRT PAS VU PAS PRIS",
+      "statut": "ACTIVE",
+      "variants": 34
+    },
+    {
+      "id": "gid://shopify/Product/15735951327566",
+      "handle": "tshirt-pink-contracts-copie",
+      "titre": "SW - PINK CONTRACTS",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10759701266766",
+      "handle": "tshirt-sahel-starter-pack",
+      "titre": "TSHIRT - SAHEL STARTER PACK",
+      "statut": "DRAFT",
+      "variants": 33
+    },
+    {
+      "id": "gid://shopify/Product/10891205673294",
+      "handle": "tshirt-saint-bernard-massacre",
+      "titre": "SAINT BERNARD",
+      "statut": "ACTIVE",
+      "variants": 40
+    },
+    {
+      "id": "gid://shopify/Product/10891177230670",
+      "handle": "tshirt-saint-eloi-massacre",
+      "titre": "SAINT ELOI",
+      "statut": "ACTIVE",
+      "variants": 43
+    },
+    {
+      "id": "gid://shopify/Product/10891197481294",
+      "handle": "tshirt-saint-gabriel-massacre",
+      "titre": "SAINT GABRIEL",
+      "statut": "ACTIVE",
+      "variants": 40
+    },
+    {
+      "id": "gid://shopify/Product/10865674289486",
+      "handle": "tshirt-saint-georges",
+      "titre": "SAINT GEORGES",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10862059716942",
+      "handle": "tshirt-saint-maurice",
+      "titre": "SAINT MAURICE",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10790313787726",
+      "handle": "tshirt-saint-michel",
+      "titre": "SAINT MICHEL",
+      "statut": "ACTIVE",
+      "variants": 20
+    },
+    {
+      "id": "gid://shopify/Product/10901973467470",
+      "handle": "tshirt-saint-michel-1",
+      "titre": "L'ARCHANGE SAINT MICHEL",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10891215798606",
+      "handle": "tshirt-saint-roch-massacre",
+      "titre": "SAINT ROCH",
+      "statut": "ACTIVE",
+      "variants": 40
+    },
+    {
+      "id": "gid://shopify/Product/10865673306446",
+      "handle": "tshirt-sainte-genevieve",
+      "titre": "SAINTE GENEVIEVE",
+      "statut": "ACTIVE",
+      "variants": 30
+    },
+    {
+      "id": "gid://shopify/Product/10883072524622",
+      "handle": "tshirt-sans-valentine-lepax",
+      "titre": "SANS VALENTINE",
+      "statut": "DRAFT",
+      "variants": 25
+    },
+    {
+      "id": "gid://shopify/Product/10901972123982",
+      "handle": "tshirt-send-nods",
+      "titre": "SEND NODS",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10901972943182",
+      "handle": "tshirt-send-nods-copie",
+      "titre": "SHOOT PARK",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10901973238094",
+      "handle": "tshirt-shoot-park-copie",
+      "titre": "TECHNOPERATOR",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/15728812261710",
+      "handle": "tshirt-soldier-on-break-lepax",
+      "titre": "SOLDIER ON BREAK",
+      "statut": "ACTIVE",
+      "variants": 55
+    },
+    {
+      "id": "gid://shopify/Product/10892026544462",
+      "handle": "tshirt-tig-massacre",
+      "titre": "TIG",
+      "statut": "ACTIVE",
+      "variants": 10
+    },
+    {
+      "id": "gid://shopify/Product/9744835674446",
+      "handle": "tshirt-vigipirate",
+      "titre": "TSHIRT VIGIPIRATE",
+      "statut": "DRAFT",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/10744997871950",
+      "handle": "tshirt-warriors",
+      "titre": "WARRIORS",
+      "statut": "ACTIVE",
+      "variants": 33
+    },
+    {
+      "id": "gid://shopify/Product/15982713405774",
+      "handle": "tta-is-dead",
+      "titre": "PRECOMMANDE - TTA IS DEAD",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10805734965582",
+      "handle": "une-canette",
+      "titre": "1 canette Moralex",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15843263643982",
+      "handle": "vaincre-par-le-ciel",
+      "titre": "VAINCRE PAR LE CIEL - PRECOMMANDE",
+      "statut": "DRAFT",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15949265633614",
+      "handle": "vaincre-par-le-ciel-1",
+      "titre": "VAINCRE PAR LE CIEL",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/15847538786638",
+      "handle": "veni-vidi-vici",
+      "titre": "VENI VIDI VICI",
+      "statut": "ACTIVE",
+      "variants": 53
+    },
+    {
+      "id": "gid://shopify/Product/10436088070478",
+      "handle": "week-end-patriote",
+      "titre": "PACK PATRIOTE",
+      "statut": "DRAFT",
+      "variants": 8
+    },
+    {
+      "id": "gid://shopify/Product/10797500498254",
+      "handle": "werwolf-sweat-make-dog-great-again",
+      "titre": "MAKE DOG GREAT AGAIN",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10491648409934",
+      "handle": "werwolf-tshirt-make-dog-great-again",
+      "titre": "WERWOLF - TSHIRT MAKE DOG GREAT AGAIN",
+      "statut": "ACTIVE",
+      "variants": 34
+    },
+    {
+      "id": "gid://shopify/Product/15898588840270",
+      "handle": "wodeater",
+      "titre": "WODEATER",
+      "statut": "ACTIVE",
+      "variants": 5
+    },
+    {
+      "id": "gid://shopify/Product/9850696139086",
+      "handle": "yggdrasil-porte-cle-barkhane",
+      "titre": "YGGDRASIL / Porte clé Barkhane",
+      "statut": "ACTIVE",
+      "variants": 1
+    },
+    {
+      "id": "gid://shopify/Product/10576587194702",
+      "handle": "yggdrasil-tshirt-femme-de-terrain",
+      "titre": "FEMME DE TERRAIN",
+      "statut": "ACTIVE",
+      "variants": 15
+    },
+    {
+      "id": "gid://shopify/Product/10812716384590",
+      "handle": "🎄-calendrier-de-l-avent-massacre-officiel🎁",
+      "titre": "🎄 CALENDRIER DE L’AVENT MASSACRE OFFICIEL🎁",
+      "statut": "DRAFT",
+      "variants": 8
+    }
+  ]
+}
