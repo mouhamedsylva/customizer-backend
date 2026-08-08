@@ -14,6 +14,12 @@ export const PRODUCT_KEYS = [
   'coins',
   'drapeaux',
   'patches',
+  // Supplément par manche personnalisée. Ce n'est pas un article vendu seul
+  // mais un add-on : le textile part au panier natif Shopify avec un variant à
+  // prix fixe, et une propriété de ligne ne porte pas de prix. Le supplément
+  // doit donc être une VRAIE ligne de panier — d'où un produit dédié
+  // (handle `personnalisation-manche`, cf. scripts/create-sleeve-addon.mjs).
+  'manche',
 ] as const;
 
 export type ProductKey = (typeof PRODUCT_KEYS)[number];
@@ -26,6 +32,7 @@ export const PRODUCT_LABELS: Record<ProductKey, string> = {
   coins: 'Coins',
   drapeaux: 'Drapeaux',
   patches: 'Patchs',
+  manche: 'Personnalisation manche',
 };
 
 /** Prix unitaires HT par produit. */
@@ -62,6 +69,10 @@ const DEFAULTS: Pricing = {
      commande). La valeur précédente (2,45 €) était celle des coins, restée là
      par copie : elle contredisait la grille dégressive. */
   patches: 20,
+  /* Prix du variant Shopify `personnalisation-manche` au moment du câblage.
+     Cette valeur ne sert que tant que l'admin n'a rien enregistré ; dès le
+     premier enregistrement, la base fait foi et pousse le prix vers Shopify. */
+  manche: 4,
 };
 
 /**
@@ -128,6 +139,7 @@ export const PRODUCT_SHOPIFY_IDS: Partial<Record<ProductKey, string>> = {
   tshirt_polyester: '9167767732387', // Textile - T-shirt Polyester (15 variants)
   drapeaux: '9167767928995', // Drapeau personnalisé        (1 variant)
   patches: '9167772254371', // Patch personnalisé          (1 variant)
+  manche: '9203358924963', // Personnalisation manche     (1 variant)
   // coins : vendu via devis (draft order), prix chiffré à la main -> non synchronisé.
 };
 
