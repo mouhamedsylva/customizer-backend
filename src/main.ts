@@ -138,12 +138,35 @@ async function bootstrap(): Promise<void> {
   // En développement, on accepte aussi le domaine Shopify et localhost.
   const frontendUrl =
     config.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+
+  /* FRONTEND_URL accepte PLUSIEURS origines séparées par des virgules.
+     Une boutique Shopify en a toujours au moins deux : son `.myshopify.com`
+     (couvert par isShopifyOrigin) et son domaine personnalisé, sur lequel les
+     clients naviguent réellement. Avec une valeur unique, le second restait
+     hors liste : le backend répondait 200 sans en-tête CORS, le navigateur
+     bloquait la lecture, et le configurateur retombait silencieusement sur ses
+     prix de repli — un changement de tarif dans le dashboard n'atteignait
+     jamais la boutique. */
+  const frontendUrls = frontendUrl
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean);
+
   const allowedOrigins = [
-    frontendUrl,
-    frontendUrl.replace(/^https?:\/\//, 'https://'),
+    ...frontendUrls,
+    ...frontendUrls.map((u) => u.replace(/^https?:\/\//, 'https://')),
     'http://localhost:9292',    // shopify theme dev
     'http://127.0.0.1:9292',
   ];
+
+  /* Domaine de la boutique en production. Codé ici EN PLUS de FRONTEND_URL :
+     l'oubli de cette variable sur l'hébergeur ne doit pas couper les prix pour
+     les clients. Une origine en dur n'affaiblit pas la protection — elle
+     désigne une boutique précise, pas un motif ouvert comme `*`. */
+  const BOUTIQUE_PROD = 'https://massacre-officiel.com';
+  if (!allowedOrigins.includes(BOUTIQUE_PROD)) {
+    allowedOrigins.push(BOUTIQUE_PROD, 'https://www.massacre-officiel.com');
+  }
   /**
    * Une origine est-elle un sous-domaine `.myshopify.com` ?
    *

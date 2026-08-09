@@ -7,6 +7,27 @@ import { Setting } from '../database/entities/setting.entity';
  * Clés des produits du configurateur. Elles correspondent aux types utilisés
  * côté frontend (window.CONF_VARIANTS) et servent de clé de réglage.
  */
+/* ⚠ NOMMAGE INVERSÉ — vérifié le 2026-08-08, ne pas « corriger ».
+ *
+ * Les clés `coins` et `patches` ne désignent PAS ce que leur nom suggère. La
+ * même inversion existe côté frontend (conf-main-inline.js, commentaire de
+ * CONF_VARIANTS) : les deux sont cohérents entre eux.
+ *
+ *   clé `patches`  → vos PATCHS brodés      → produit « Patch personnalisé »
+ *                    écran visible « Coins » du configurateur
+ *                    grille : 20 € à 10 pièces … 3,50 € à 100
+ *
+ *   clé `coins`    → vos COINS métal        → produit « Coin métal personnalisé »
+ *                    écran visible « Patchs » du configurateur
+ *                    vendus SUR DEVIS : pas de synchronisation Shopify
+ *
+ * Preuve : la grille `patches` reproduit à l'identique les 5 paliers du PDF
+ * « TARIFS PATCHS 2026 » fourni par le commerçant (20 / 12,50 / 9 / 5 / 3,50 €),
+ * et `prices.patches = 20 €` correspond à son premier palier.
+ *
+ * Renommer ces clés casserait la correspondance avec le frontend ET les
+ * réglages déjà enregistrés en base (préfixe `KEY_PREFIX + key`).
+ */
 export const PRODUCT_KEYS = [
   'sweatshirt',
   'tshirt',
@@ -24,12 +45,16 @@ export const PRODUCT_KEYS = [
 
 export type ProductKey = (typeof PRODUCT_KEYS)[number];
 
-/** Libellés affichés dans le dashboard. */
+/** Libellés affichés dans le dashboard.
+ *
+ *  Ils suivent le PRODUIT RÉEL, pas le nom de la clé — voir l'avertissement sur
+ *  PRODUCT_KEYS. L'admin qui saisit un prix sous « Patchs » doit modifier ses
+ *  patchs, quelle que soit la clé technique qui les porte. */
 export const PRODUCT_LABELS: Record<ProductKey, string> = {
   sweatshirt: 'Sweatshirt',
   tshirt: 'T-shirt coton',
   tshirt_polyester: 'T-shirt polyester',
-  coins: 'Coins',
+  coins: 'Coins métal (sur devis)',
   drapeaux: 'Drapeaux',
   patches: 'Patchs',
   manche: 'Personnalisation manche',
@@ -197,6 +222,19 @@ export class PricingService {
     const rows: Array<{ key: string; value: string }> = [];
     for (const key of PRODUCT_KEYS) {
       if (!(key in input)) continue;
+      /* Les COINS MÉTAL (clé `coins`, voir l'avertissement sur PRODUCT_KEYS) se
+         vendent UNIQUEMENT sur devis : leur prix dépend de la finition, de la
+         gravure et de la quantité, et il est chiffré à la main sur chaque
+         demande. Aucun prix fixe ne doit donc être enregistré.
+
+         Cette clé était déjà exclue de la synchronisation Shopify
+         (PRODUCT_SHOPIFY_IDS ne la contient pas), mais sa valeur restait
+         enregistrable en base — un prix saisi par mégarde s'affichait alors
+         dans le configurateur sans qu'aucune commande ne puisse l'honorer.
+
+         Le filtre est ici, au plus près de l'écriture : le poser dans le
+         contrôleur laisserait passer tout autre appelant de `save()`. */
+      if (key === 'coins') continue;
       const n = Number(input[key]);
       if (Number.isNaN(n) || n < 0) continue;
       // Deux décimales : un prix n'a pas plus de précision.
