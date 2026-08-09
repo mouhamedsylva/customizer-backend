@@ -70,30 +70,82 @@ export class ShopifyService {
   private static readonly TIMEOUT_MS = 20000;
 
   /**
-   * `fetch` borné dans le temps.
+   * Nombre de RÉESSAIS après un 429 (donc 3 tentatives au total).
    *
-   * Le `fetch` natif de Node n'a AUCUN timeout par défaut : un appel qui pend
-   * bloque son appelant indéfiniment. Côté synchro périodique, cela gèle le
-   * verrou anti-chevauchement et fige toutes les passes suivantes.
+   * Shopify applique un seau percé d'environ 2 requêtes/seconde : le quota se
+   * régénère en continu, un rejet est donc presque toujours transitoire.
+   * Au-delà de 3 essais on abandonne — mieux vaut un échec signalé qu'une
+   * requête HTTP retenue plusieurs minutes.
+   */
+  private static readonly MAX_RETRIES = 2;
+
+  /** Attente de repli quand Shopify n'envoie pas d'en-tête `Retry-After`. */
+  private static readonly BACKOFF_MS = [1000, 2000];
+
+  /** Pause simple, utilisée entre deux tentatives. */
+  private wait(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  /**
+   * `fetch` borné dans le temps, avec réessai sur quota dépassé.
+   *
+   * Deux protections distinctes :
+   *
+   * 1. TIMEOUT — le `fetch` natif de Node n'en a AUCUN par défaut : un appel
+   *    qui pend bloque son appelant indéfiniment. Côté synchro périodique,
+   *    cela gèle le verrou anti-chevauchement et fige les passes suivantes.
+   *
+   * 2. QUOTA (429) — Shopify plafonne à ~2 requêtes/seconde. Sans réessai, un
+   *    dépassement remontait comme une erreur fatale à TOUS les appelants à la
+   *    fois : prix non synchronisés, statuts d'expédition figés, relances
+   *    perdues. Or un 429 signifie « trop tôt », pas « impossible » : on
+   *    respecte le `Retry-After` de Shopify quand il est fourni, sinon on
+   *    patiente 1 s puis 2 s.
+   *
+   * Seul le 429 est rejoué. Un 5xx peut correspondre à une écriture déjà
+   * appliquée côté Shopify : la rejouer créerait un doublon (une commande
+   * expédiée deux fois, un brouillon en double).
    */
   private async fetchShopify(
     url: string,
     init: RequestInit = {},
   ): Promise<Response> {
-    try {
-      return await fetch(url, {
-        ...init,
-        signal: AbortSignal.timeout(ShopifyService.TIMEOUT_MS),
-      });
-    } catch (e) {
-      // `AbortSignal.timeout` lève une TimeoutError peu parlante : on la
-      // reformule pour que le message loggué désigne la cause réelle.
-      if ((e as Error)?.name === 'TimeoutError') {
-        throw new Error(
-          `Shopify n'a pas répondu en ${ShopifyService.TIMEOUT_MS / 1000}s : ${url}`,
-        );
+    for (let attempt = 0; ; attempt++) {
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          ...init,
+          signal: AbortSignal.timeout(ShopifyService.TIMEOUT_MS),
+        });
+      } catch (e) {
+        // `AbortSignal.timeout` lève une TimeoutError peu parlante : on la
+        // reformule pour que le message loggué désigne la cause réelle.
+        if ((e as Error)?.name === 'TimeoutError') {
+          throw new Error(
+            `Shopify n'a pas répondu en ${ShopifyService.TIMEOUT_MS / 1000}s : ${url}`,
+          );
+        }
+        throw e;
       }
-      throw e;
+
+      if (response.status !== 429 || attempt >= ShopifyService.MAX_RETRIES) {
+        return response;
+      }
+
+      // `Retry-After` est en SECONDES. On le borne à 10 s : une valeur
+      // aberrante retiendrait la requête bien au-delà du raisonnable.
+      const header = Number(response.headers.get('retry-after'));
+      const delay =
+        Number.isFinite(header) && header > 0
+          ? Math.min(header * 1000, 10000)
+          : ShopifyService.BACKOFF_MS[attempt];
+
+      this.logger.warn(
+        `Quota Shopify atteint (429) : nouvelle tentative dans ${delay} ms ` +
+          `(${attempt + 1}/${ShopifyService.MAX_RETRIES}) — ${url}`,
+      );
+      await this.wait(delay);
     }
   }
 
@@ -498,9 +550,19 @@ export class ShopifyService {
     //
     // Un prix uniforme reste correct même quand certaines pièces coûtent plus
     // cher (flocage) : le dashboard envoie alors le prix unitaire MOYEN
-    // (base × qté + flocage × nb floqué) ÷ qté, et affiche à l'équipe l'écart
-    // d'arrondi éventuel. Le total facturé est donc juste ; seule la
-    // ventilation par ligne est lissée.
+    // (base × qté + flocage × nb floqué) ÷ qté. Seule la ventilation par ligne
+    // est lissée.
+    //
+    // MAIS un prix moyen ne tombe pas toujours juste au centime. Appliquer
+    // `unitPrice.toFixed(2)` à chaque ligne faisait dériver le TOTAL : un
+    // groupe de 3 pièces à 35 € était facturé 35,01 €, un lot de 13 à 1000 €
+    // tombait à 999,96 €. L'écart s'affichait à l'opérateur, mais le client
+    // payait quand même le montant dérivé.
+    //
+    // On raisonne donc en CENTIMES ENTIERS : le total voulu est réparti sur
+    // les lignes, et le reste de la division est distribué une unité à la fois
+    // sur les premières pièces. La somme facturée retombe exactement sur le
+    // total annoncé, et l'écart maximal entre deux pièces est d'un centime.
     //
     // `variant_id` est préservé quand il existe : le forcer en ligne `custom`
     // romprait le lien produit et le stock ne serait plus décrémenté.
@@ -519,16 +581,57 @@ export class ShopifyService {
       ...(li.applied_discount ? { applied_discount: li.applied_discount } : {}),
     });
 
+    // Répartition du total en centimes entiers (cf. commentaire ci-dessus).
+    //
+    // CONTRAINTE : Shopify n'accepte qu'UN prix unitaire par ligne, et facture
+    // prix × quantité. Le montant d'une ligne est donc forcément un multiple
+    // de sa quantité — on ne peut pas ajouter un centime à une seule pièce
+    // d'une ligne qui en compte trois.
+    //
+    // La répartition se fait donc à l'échelle de la LIGNE : chaque ligne reçoit
+    // un prix unitaire au centime, et le résiduel est absorbé en ajoutant un
+    // centime au prix unitaire des premières lignes — celles dont la quantité
+    // permet d'écouler le reste sans le dépasser.
+    //
+    // LIMITE ASSUMÉE : sur une ligne UNIQUE dont le total ne se divise pas au
+    // centime (ex. 1000 € pour 13 pièces = 76,923… € l'unité), aucun prix
+    // unitaire ne retombe sur le total — la contrainte vient de Shopify, pas
+    // du calcul. L'écart reste alors de quelques centimes et le dashboard
+    // l'affiche à l'opérateur avant l'envoi.
+    //
+    // Dès que le devis compte plusieurs lignes — le cas des commandes de
+    // groupe, réparties par taille/couleur — la répartition retombe juste.
+    const qty = (li: Record<string, any>) => Math.max(1, Number(li.quantity) || 1);
+    const totalPieces = items.reduce((n, li) => n + qty(li), 0);
+    const totalCents = Math.round(unitPrice * totalPieces * 100);
+
+    // Prix unitaire plancher, puis centimes à replacer.
+    const baseCents = Math.floor(totalCents / totalPieces);
+    let reste = totalCents - baseCents * totalPieces;
+
+    const priceFor = (li: Record<string, any>): string => {
+      const n = qty(li);
+      // +1 centime sur le prix unitaire coûte `n` centimes sur la ligne.
+      //
+      // On l'accorde dès que le reste couvre au moins la MOITIÉ de la ligne :
+      // exiger le reste entier arrondissait toujours vers le bas et pouvait
+      // faire pire que l'ancien calcul (une ligne unique de 7 pièces perdait
+      // 5 centimes). Ce seuil revient à arrondir au plus proche.
+      const bonus = reste * 2 >= n ? 1 : 0;
+      reste -= bonus * n;
+      return ((baseCents + bonus) / 100).toFixed(2);
+    };
+
     const rebuilt: ShopifyLineItem[] = items.map((li) =>
       li.variant_id
         ? {
             variant_id: li.variant_id as number | string,
-            price: unitPrice.toFixed(2),
+            price: priceFor(li),
             ...keep(li),
           }
         : {
             title: li.title as string,
-            price: unitPrice.toFixed(2),
+            price: priceFor(li),
             custom: true,
             ...keep(li),
             ...(li.taxable !== undefined ? { taxable: li.taxable } : {}),

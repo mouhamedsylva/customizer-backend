@@ -12,7 +12,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AdminAuthService } from './admin-auth.service';
-import { AdminService } from './admin.service';
+import { AdminService, ORDERS_LIMIT, QUOTES_LIMIT } from './admin.service';
 import { SettingsService } from './settings.service';
 import {
   PricingService,
@@ -20,6 +20,7 @@ import {
   PRODUCT_LABELS,
   PRODUCT_SHOPIFY_IDS,
   MULTI_VARIANT_KEYS,
+  QUOTE_ONLY_KEYS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import {
@@ -32,6 +33,30 @@ import {
 // JSZip : construction d'archives en mémoire, API stable et sans streams.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const JSZip = require('jszip');
+
+/**
+ * Attributs du cookie de session, PARTAGÉS entre la pose et la suppression.
+ *
+ * Un navigateur ne supprime un cookie que si le `Set-Cookie` d'effacement
+ * porte les mêmes attributs que celui qui l'a posé. `clearCookie` était appelé
+ * sans options alors que la pose utilisait `httpOnly`, `sameSite` et
+ * `secure` : selon le navigateur, « Se déconnecter » pouvait laisser le cookie
+ * en place — l'utilisateur se croyait déconnecté sans l'être.
+ *
+ * `maxAge` n'est pas ici : il ne concerne que la pose (Express le remplace par
+ * une date passée à l'effacement).
+ */
+const ADMIN_COOKIE = {
+  httpOnly: true,
+  // `strict` et non `lax` : le dashboard est servi par cette même origine
+  // (`GET /api/admin`), aucune navigation cross-site légitime n'a besoin du
+  // cookie. En `lax`, un formulaire HTML hébergé ailleurs pouvait déclencher
+  // les POST d'administration — changer les prix, envoyer une facture, ou
+  // marquer une commande expédiée, ce qui envoie un e-mail au client.
+  sameSite: 'strict',
+  secure: true,
+  path: '/',
+} as const;
 
 @Controller('admin')
 export class AdminController {
@@ -77,7 +102,7 @@ export class AdminController {
       const hadSession = this.auth.verifyToken(
         (req.cookies || {})[this.auth.cookieName],
       );
-      if (hadSession) res.clearCookie(this.auth.cookieName);
+      if (hadSession) res.clearCookie(this.auth.cookieName, ADMIN_COOKIE);
       res
         .type('html')
         .send(loginPage(false, hadSession ? 'blocked' : undefined, nonceOf(req)));
@@ -112,6 +137,9 @@ export class AdminController {
           me: me || undefined,
           allQuotes,
           nonce: nonceOf(req),
+          // Permet à la vue de signaler une liste tronquée : sans cela, les
+          // commandes au-delà du plafond étaient inatteignables ET invisibles.
+          limits: { orders: ORDERS_LIMIT, quotes: QUOTES_LIMIT },
         }),
       );
   }
@@ -133,14 +161,7 @@ export class AdminController {
       return;
     }
     res.cookie(this.auth.cookieName, this.auth.issueToken(admin.id), {
-      httpOnly: true,
-      // `strict` et non `lax` : le dashboard est servi par cette même origine
-      // (`GET /api/admin`), aucune navigation cross-site légitime n'a besoin du
-      // cookie. En `lax`, un formulaire HTML hébergé ailleurs pouvait déclencher
-      // les POST d'administration — changer les prix, envoyer une facture, ou
-      // marquer une commande expédiée, ce qui envoie un e-mail au client.
-      sameSite: 'strict',
-      secure: true,
+      ...ADMIN_COOKIE,
       maxAge: 1000 * 60 * 60 * 12,
     });
     res.redirect('/api/admin');
@@ -149,7 +170,7 @@ export class AdminController {
   /** GET /api/admin/logout — supprime le cookie. */
   @Get('logout')
   logout(@Res() res: Response): void {
-    res.clearCookie(this.auth.cookieName);
+    res.clearCookie(this.auth.cookieName, ADMIN_COOKIE);
     res.redirect('/api/admin');
   }
 
@@ -362,7 +383,31 @@ export class AdminController {
     }
 
     await this.data.setProductionStatus(orderId, status);
-    res.json({ ok: true, status });
+
+    // Retour en arrière vers « À produire » : Shopify n'a AUCUNE opération
+    // inverse de `markInProgress` — un fulfillment order passé `IN_PROGRESS`
+    // ne revient pas à `OPEN`. La synchro (toutes les 2 min) relit donc
+    // `in_progress` et, via fromShopify(), réécrit « En production » : la
+    // correction de l'opérateur disparaissait sans le moindre message.
+    //
+    // On ne peut pas empêcher ce retour ; on le DIT, pour que l'opérateur
+    // sache que seul Shopify fait foi sur ce point.
+    let notice: string | undefined;
+    if (status === 'to_produce') {
+      try {
+        const state = await this.shopify.getShippingState(orderId);
+        if (state === 'in_progress' || state === 'partial') {
+          notice =
+            'Shopify garde cette commande « en préparation » et ne permet pas ' +
+            "de revenir en arrière : le statut repassera à « En production » " +
+            'à la prochaine synchronisation.';
+        }
+      } catch {
+        // Relecture impossible : pas d'avertissement plutôt qu'un faux.
+      }
+    }
+
+    res.json({ ok: true, status, ...(notice ? { notice } : {}) });
   }
 
   /** POST /api/admin/orders/:id/note — enregistre la note interne. */
@@ -881,6 +926,9 @@ export class AdminController {
       variants: PRODUCT_SHOPIFY_IDS,
       // Produits dont le prix couvre toutes les couleurs/tailles.
       multiVariant: MULTI_VARIANT_KEYS,
+      // Produits sur devis : le dashboard n'affiche PAS de champ de saisie
+      // pour eux, puisque le serveur rejette leur prix (cf. QUOTE_ONLY_KEYS).
+      quoteOnly: QUOTE_ONLY_KEYS,
     });
   }
 
@@ -912,11 +960,28 @@ export class AdminController {
     // 2) Répercussion sur Shopify : TOUS les variants du produit (les textiles en
     //    ont un par couleur). Un échec n'annule pas l'enregistrement : on le
     //    remonte pour que l'admin puisse réagir.
+    //
+    //    On ne pousse QUE les prix réellement acceptés par `save()`. Tester la
+    //    seule présence dans `body` poussait `prices[key]` — c'est-à-dire la
+    //    valeur EN BASE — même quand la saisie avait été rejetée (non
+    //    numérique, négative, produit sur devis). Une correction faite
+    //    directement dans Shopify était alors écrasée par l'ancienne valeur,
+    //    que l'admin n'avait jamais saisie.
     const warnings: string[] = [];
+    const rejected: string[] = [];
     for (const key of PRODUCT_KEYS) {
       if (!(key in body)) continue; // non modifié
       const productId = PRODUCT_SHOPIFY_IDS[key];
       if (!productId) continue; // coins : devis, pas de produit à synchroniser
+
+      // La valeur soumise a-t-elle survécu à `save()` ? Si elle diffère de ce
+      // que la base contient, c'est qu'elle a été écartée : ne rien pousser.
+      const submitted = Math.round(Number(body[key]) * 100) / 100;
+      if (!Number.isFinite(submitted) || submitted !== prices[key]) {
+        rejected.push(PRODUCT_LABELS[key]);
+        continue;
+      }
+
       try {
         const r = await this.shopify.updateProductPrice(productId, prices[key]);
         if (!r.ok) {
@@ -925,6 +990,12 @@ export class AdminController {
       } catch (e) {
         warnings.push(`${PRODUCT_LABELS[key]} : ${(e as Error).message}`);
       }
+    }
+    if (rejected.length) {
+      warnings.push(
+        `Valeur refusée, prix inchangé : ${rejected.join(', ')}. ` +
+          `Un prix doit être un nombre positif.`,
+      );
     }
 
     // Les grilles sont renvoyées normalisées (triées, doublons fusionnés) :
@@ -964,9 +1035,7 @@ export class AdminController {
     // changer son mot de passe ne soit pas déconnecté de son propre dashboard.
     if (result.token) {
       res.cookie(this.auth.cookieName, result.token, {
-        httpOnly: true,
-        sameSite: 'strict',
-        secure: true,
+        ...ADMIN_COOKIE,
         maxAge: 1000 * 60 * 60 * 12,
       });
     }

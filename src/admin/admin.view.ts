@@ -954,6 +954,12 @@ body{
 .price-lbl{display:flex;flex-direction:column;gap:2px;min-width:0}
 /* Précision sous le nom du produit (ex. « toutes couleurs et tailles »). */
 .price-note{font-size:11px;color:var(--faint);font-weight:500}
+/* Avertissement de troncature : discret, mais au-dessus des onglets — c'est là
+   que l'opérateur lit les compteurs qu'il croirait sinon exhaustifs. */
+.trunc-note{margin:0 0 12px;padding:8px 12px;border-left:3px solid var(--accent);
+  border-top:1px solid var(--line);border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);
+  border-radius:0 4px 4px 0}
 .price-field{display:flex;align-items:center;gap:8px;flex:none}
 .price-field .price-input{width:110px;text-align:right;font-size:14px}
 .price-cur{font-size:11.5px;color:var(--faint);font-weight:700;min-width:34px}
@@ -2631,11 +2637,27 @@ export function dashboardPage(
     allQuotes?: Quote[];
     /** Nonce CSP de la requête : autorise les blocs inline de CETTE réponse. */
     nonce?: string;
+    /** Plafonds appliqués aux listes : sert à signaler une troncature. */
+    limits?: { orders: number; quotes: number };
   } = {},
 ): string {
   const nonce = extra.nonce || '';
   const me = extra.me;
   const isOwner = me?.role === 'owner';
+
+  /* Liste servie « pleine à ras bord » = très probablement tronquée. Le CSV
+     avertissait déjà de ce plafond, mais le dashboard, lui, se taisait : au-delà
+     de 300 commandes, les suivantes n'existaient tout simplement plus pour
+     l'opérateur, et le pagineur affichait un total rassurant mais faux. */
+  const truncated: string[] = [];
+  if (extra.limits) {
+    if (orders.length >= extra.limits.orders) {
+      truncated.push(`les ${extra.limits.orders} commandes les plus récentes`);
+    }
+    if (quotes.length >= extra.limits.quotes) {
+      truncated.push(`les ${extra.limits.quotes} devis les plus récents`);
+    }
+  }
   const f: DashboardFilters = extra.filters || {
     period: 'all',
     payment: 'all',
@@ -2796,6 +2818,13 @@ export function dashboardPage(
       ${statCard(money(revenue), "Chiffre d'affaires", ICO_EURO)}
       ${statCard(nbOpen, 'Devis à traiter', ICO_QUOTE)}
     </div>
+
+    ${
+      truncated.length
+        ? `<p class="trunc-note">Cette page affiche ${truncated.join(' et ')}.
+           Utilisez les filtres de période, ou l'export CSV, pour atteindre les plus anciens.</p>`
+        : ''
+    }
 
     <div class="tabs">
       <button class="tab active" data-tab="orders">Commandes <span class="count mono">${orders.length}</span></button>
@@ -3340,10 +3369,24 @@ export function dashboardPage(
 
       fetch('/api/admin/orders/'+encodeURIComponent(orderId)+'/status',{
         method:'POST',
+        credentials:'same-origin',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)
       })
-      .then(function(r){return r.json();})
+      .then(function(r){
+        /* Le contrôleur répond en JSON même sur 400/502 (refus Shopify), et ce
+           message est utile : on le laisse passer. En revanche une 401 ou une
+           erreur générée par le proxy renvoie du HTML — r.json() lèverait
+           alors une erreur de parsing incompréhensible à la place de la cause.
+           Cette route déclenche le mail de confirmation au client : un
+           diagnostic exact compte ici plus que partout ailleurs. */
+        if(r.status===401) throw new Error('Session expirée : reconnectez-vous.');
+        var ct=r.headers.get('content-type')||'';
+        if(ct.indexOf('application/json')===-1){
+          throw new Error('Le serveur a répondu ' + r.status + '.');
+        }
+        return r.json();
+      })
       .then(function(res){
         if(!res.ok){
           /* Shopify a refusé : on NE marque PAS la commande expédiée, sinon le
@@ -3367,6 +3410,10 @@ export function dashboardPage(
         }
         filterCards();
         if(res.shopify) toast(res.shopify);
+        // Shopify ne sait pas revenir en arrière : la synchro rétablira le
+        // statut précédent. On le dit plutôt que de laisser la correction
+        // disparaître silencieusement deux minutes plus tard.
+        if(res.notice) toast(res.notice);
         if(done) done(res);
       })
       .catch(function(e){
@@ -3390,19 +3437,37 @@ export function dashboardPage(
       var input=document.getElementById('note-'+orderId);
       var st=document.getElementById('note-status-'+orderId);
       if(!input) return;
+      /* Verrou anti double-envoi : sans lui, deux clics rapides lançaient deux
+         POST concurrents et le dernier arrivé écrasait l'autre. */
+      if(input.dataset.saving==='1') return;
+      input.dataset.saving='1';
       st.className='hint'; st.textContent='Enregistrement…';
       fetch('/api/admin/orders/'+encodeURIComponent(orderId)+'/note',{
         method:'POST',
+        credentials:'same-origin',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({note:input.value})
       })
-      .then(function(r){return r.json();})
+      .then(function(r){
+        /* fetch ne rejette PAS sur une erreur HTTP : sans ce test, une 401
+           (session expirée) ou une 502 du proxy tombait dans .catch en
+           essayant de parser du HTML, et le message affiché devenait
+           « Erreur réseau » — un diagnostic faux, qui envoyait chercher le
+           problème du mauvais côté. */
+        if(r.status===401) throw new Error('Session expirée : reconnectez-vous.');
+        if(!r.ok) throw new Error('Le serveur a répondu ' + r.status + '.');
+        return r.json();
+      })
       .then(function(res){
         if(res.ok){ st.className='hint ok'; st.textContent='Note enregistrée.'; }
-        else { st.className='hint err'; st.textContent="Échec de l'enregistrement."; }
+        else { st.className='hint err'; st.textContent=res.error||"Échec de l'enregistrement."; }
         setTimeout(function(){st.textContent='';},2200);
       })
-      .catch(function(){ st.className='hint err'; st.textContent='Erreur réseau.'; });
+      .catch(function(e){
+        st.className='hint err';
+        st.textContent=e.message||'Erreur réseau.';
+      })
+      .then(function(){ input.dataset.saving=''; });
     }
 
     /* ── Relance d'un devis impayé ── */
@@ -3620,6 +3685,7 @@ export function dashboardPage(
 
     var PRICE_KEYS=[];   // ordre des produits, fourni par le serveur
     var PRICE_TIERS={};  // grilles dégressives chargées, par produit
+    var PRICE_QUOTE_ONLY=[]; // produits sur devis : ni champ, ni grille
 
     function openPricing(){
       document.getElementById('price-modal').classList.add('open');
@@ -3641,26 +3707,37 @@ export function dashboardPage(
         PRICE_KEYS=d.keys||[];
         PRICE_TIERS=d.tiers||{};
         var multi=d.multiVariant||[];
+        // Produits sur devis : le serveur REJETTE leur prix. Afficher un champ
+        // de saisie promettait une action impossible — la modale annonçait
+        // « Prix mis à jour » alors que la valeur était jetée.
+        PRICE_QUOTE_ONLY=d.quoteOnly||[];
         box.innerHTML=PRICE_KEYS.map(function(k){
+          var quoteOnly=PRICE_QUOTE_ONLY.indexOf(k)!==-1;
           var noVariant=!d.variants||!d.variants[k];
           // Textiles : le prix couvre toutes les couleurs/tailles -> on le dit
           // sur la ligne, là où l'admin saisit la valeur.
-          var note = multi.indexOf(k)!==-1
-            ? '<span class="price-note">toutes couleurs et tailles</span>'
-            : (noVariant ? '<span class="price-note">devis — indicatif</span>' : '');
+          var note = quoteOnly
+            ? '<span class="price-note">chiffré à la main sur chaque devis</span>'
+            : (multi.indexOf(k)!==-1
+              ? '<span class="price-note">toutes couleurs et tailles</span>'
+              : (noVariant ? '<span class="price-note">devis — indicatif</span>' : ''));
           var tiers = PRICE_TIERS[k]||[];
+          // Ni champ ni grille pour un produit sur devis : rien à enregistrer.
+          var field = quoteOnly
+            ? '<div class="price-field"><span class="price-note">sur devis</span></div>'
+            : '<div class="price-field">'+
+                '<input type="number" id="price-'+k+'" class="price-input mono" '+
+                  'step="0.01" min="0" value="'+Number(d.prices[k]).toFixed(2)+'">'+
+                '<span class="price-cur">€ HT</span>'+
+              '</div>';
           return '<div class="price-line">'+
                    '<div class="price-lbl">'+
                      '<label for="price-'+k+'">'+admEsc(d.labels[k]||k)+'</label>'+
                      note+
                    '</div>'+
-                   '<div class="price-field">'+
-                     '<input type="number" id="price-'+k+'" class="price-input mono" '+
-                       'step="0.01" min="0" value="'+Number(d.prices[k]).toFixed(2)+'">'+
-                     '<span class="price-cur">€ HT</span>'+
-                   '</div>'+
+                   field+
                  '</div>'+
-                 tierBlock(k, tiers);
+                 (quoteOnly ? '' : tierBlock(k, tiers));
         }).join('');
       }catch(e){
         box.innerHTML='<p class="hint">Erreur de chargement.</p>';

@@ -167,14 +167,27 @@ export class AdminAuthService implements OnModuleInit {
       if (provided) {
         this.logger.log(`Admin par défaut créé : ${email}`);
       } else {
-        // Seule et unique occasion de lire ce mot de passe : il n'est stocké
-        // que haché. En Docker : `docker compose logs api | grep MOT DE PASSE`.
+        /* Mot de passe généré, écrit EN CLAIR dans les journaux.
+
+           C'est le seul moyen de lire ce mot de passe — il n'est stocké que
+           haché — et sans lui personne ne peut se connecter au tout premier
+           démarrage. Mais les journaux d'un hébergeur (Railway, Docker) sont
+           conservés longtemps et lisibles par plus de monde que le dashboard
+           lui-même : ce mot de passe y reste indéfiniment.
+
+           Le chemin recommandé est donc `ADMIN_SEED_PASSWORD`, qui évite
+           complètement cette écriture. Le journal ci-dessous n'est qu'un
+           filet de secours, et il le dit. */
         this.logger.warn(
           `\n${'='.repeat(64)}\n` +
             `ADMIN CRÉÉ — notez ces identifiants, ils ne seront plus affichés\n` +
             `  E-mail       : ${email}\n` +
             `  MOT DE PASSE : ${password}\n` +
-            `Changez-le après connexion (Admins → Nouveau mot de passe).\n` +
+            `\n` +
+            `IMPORTANT : ce mot de passe reste lisible dans les journaux de\n` +
+            `l'hébergeur. Changez-le dès votre première connexion\n` +
+            `(Admins → Changer mon mot de passe), puis purgez les journaux.\n` +
+            `Pour éviter cette écriture, définissez ADMIN_SEED_PASSWORD.\n` +
             `${'='.repeat(64)}`,
         );
       }
@@ -526,6 +539,25 @@ export class AdminAuthService implements OnModuleInit {
         error:
           'Utilisez « Changer mon mot de passe » pour votre propre compte : ' +
           'la réinitialisation ne montre le nouveau mot de passe qu’une fois.',
+      };
+    }
+    /* Le compte principal ne se réinitialise pas depuis cette route, au même
+       titre qu'il ne se bloque pas (cf. `setBlocked`).
+
+       La protection est ICI, au niveau du service, et non plus seulement dans
+       le contrôleur : la route est aujourd'hui réservée à l'owner, mais rien
+       dans cette méthode ne l'imposait. Le jour où elle passerait derrière
+       `AdminSessionGuard` — qui vérifie l'authentification, PAS le rôle — ou
+       serait appelée depuis un script, n'importe quel admin aurait pu
+       réinitialiser le mot de passe du propriétaire et le lire dans la
+       réponse. Le dashboard masquant déjà le bouton pour l'owner, l'absence de
+       garde serveur ne se voyait pas à l'usage. */
+    if (admin.role === 'owner') {
+      return {
+        ok: false,
+        error:
+          "Le mot de passe de l'admin principal ne peut pas être réinitialisé " +
+          'ici : il doit passer par « Changer mon mot de passe ».',
       };
     }
     const password = this.generatePassword(8);

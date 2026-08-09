@@ -2,16 +2,21 @@ import { Controller, Get, Logger, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ShopifyService } from '../shared/shopify.service';
 import { AdminSessionGuard } from '../admin/admin-session.guard';
+import { PRODUCT_SHOPIFY_IDS } from '../admin/pricing.service';
 
-// Product IDs fournis pour le panier natif (drapeaux + textiles).
-// Coins = devis (draft order), donc pas de variant panier.
-const CONFIG_PRODUCTS: Record<string, string> = {
-  drapeaux: '9167767928995',
-  tshirt_polyester: '9167767732387',
-  tshirt: '9167767404707',
-  sweatshirt: '9167767240867',
-  patches: '9167772254371',
-};
+/**
+ * Produits interrogés par la route de debug `variants`.
+ *
+ * Réutilise `PRODUCT_SHOPIFY_IDS` au lieu d'en tenir une copie. Le doublon qui
+ * existait ici avait DÉJÀ dérivé : il ignorait la « Personnalisation manche »,
+ * ajoutée depuis. Deux listes d'identifiants Shopify qui divergent en silence,
+ * c'est exactement ce qui rend un diagnostic trompeur — la route de debug
+ * affirmait une configuration qui n'était plus celle du configurateur.
+ *
+ * `coins` en est absent (vente sur devis, aucun produit à synchroniser), ce
+ * qui reste le comportement voulu ici.
+ */
+const CONFIG_PRODUCTS: Record<string, string> = PRODUCT_SHOPIFY_IDS;
 
 @Controller('health')
 export class HealthController {

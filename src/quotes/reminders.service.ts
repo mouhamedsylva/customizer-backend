@@ -11,6 +11,16 @@ import { ShopifyService } from '../shared/shopify.service';
 import { SettingsService } from '../admin/settings.service';
 
 /**
+ * Devis examinés par passe de relance.
+ *
+ * Une relance = un appel Shopify + un e-mail RÉEL au client. Le lot est borné
+ * pour que la passe reste courte et, surtout, pour qu'aucun défaut de données
+ * ne puisse déclencher une rafale de messages. Le reliquat est traité à la
+ * passe suivante (toutes les heures), les plus en retard d'abord.
+ */
+const REMINDER_BATCH = 200;
+
+/**
  * Relance automatique des devis facturés mais impayés.
  *
  * Le rythme est défini par l'équipe dans le dashboard (ex. J+3, J+7, J+14).
@@ -80,6 +90,13 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
     try {
       candidates = await this.quotes.find({
         where: { draftStatus: 'invoice_sent', invoiceSentAt: Not(IsNull()) },
+        // Plafond : chaque relance déclenche un appel Shopify ET un e-mail
+        // RÉEL au client. Un lot borné limite autant la pression sur l'API que
+        // le risque d'une rafale de messages si un défaut de données rendait
+        // soudainement des centaines de devis « à relancer ».
+        take: REMINDER_BATCH,
+        // Les plus anciennement facturés d'abord : ce sont les plus en retard.
+        order: { invoiceSentAt: 'ASC' },
       });
     } catch (e) {
       this.logger.warn(`Lecture des devis impossible : ${(e as Error).message}`);

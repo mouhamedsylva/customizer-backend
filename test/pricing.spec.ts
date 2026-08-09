@@ -43,9 +43,18 @@ describe('PricingService.save', () => {
   it('accepte un enregistrement partiel sans toucher aux autres produits', async () => {
     const s = build();
     const avant = await s.get();
-    const apres = await s.save({ coins: 3.5 });
-    expect(apres.coins).toBe(3.5);
+    const apres = await s.save({ patches: 3.5 });
+    expect(apres.patches).toBe(3.5);
     expect(apres.drapeaux).toBe(avant.drapeaux);
+  });
+
+  it('refuse le prix d’un produit vendu sur devis (coins)', async () => {
+    // Les coins sont chiffrés à la main : un prix enregistré s'afficherait
+    // dans le configurateur sans qu'aucune commande ne puisse l'honorer.
+    const s = build();
+    const avant = await s.get();
+    const apres = await s.save({ coins: 3.5 });
+    expect(apres.coins).toBe(avant.coins);
   });
 });
 
@@ -87,6 +96,27 @@ describe('PricingService.saveTiers', () => {
       { min: 10, price: 26.5 },
       { min: 2, price: 20 },
     ]);
+  });
+
+  it('refuse AUSSI la grille d’un produit sur devis (coins)', async () => {
+    // `save()` excluait les coins mais pas `saveTiers()` : le prix de base
+    // était rejeté pendant que la grille, elle, s'enregistrait. Le
+    // configurateur servait alors un prix par défaut contredit par sa propre
+    // grille — et comme la ligne existait en base, l'état ne se réparait
+    // jamais. C'est le scénario que ce test interdit.
+    const s = build();
+    const tiers = await s.saveTiers({ coins: [{ min: 10, price: 3 }] });
+    expect(tiers.coins).toBeUndefined();
+  });
+
+  it('n’enregistre pas la grille des coins même mêlée à des produits valides', async () => {
+    const s = build();
+    const tiers = await s.saveTiers({
+      coins: [{ min: 10, price: 3 }],
+      tshirt: [{ min: 10, price: 26.5 }],
+    });
+    expect(tiers.coins).toBeUndefined();
+    expect(tiers.tshirt).toEqual([{ min: 10, price: 26.5 }]);
   });
 
   it('distingue « grille vide » de « jamais configurée »', async () => {

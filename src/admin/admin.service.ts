@@ -14,7 +14,26 @@ export interface OrderQuery {
   limit?: number;
 }
 
-/** Date de début d'une période (null = pas de filtre). */
+/**
+ * Date de début d'une période (null = pas de filtre).
+ *
+ * TOUT est ancré en UTC, délibérément.
+ *
+ * Les dates de commande sont stockées en colonne `datetime` MySQL, un type SANS
+ * fuseau : la valeur écrite est celle qu'on relit, telle quelle. Les bornes
+ * doivent donc être calculées dans le même référentiel, sinon le filtre décale.
+ *
+ * Les bornes calendaires (mois, trimestre, année) utilisaient `getFullYear()` /
+ * `getMonth()` et le constructeur `Date`, qui lisent et écrivent en heure
+ * LOCALE. Tant que le serveur tourne en UTC, local et UTC coïncident et rien ne
+ * se voit. Le jour où quelqu'un pose `TZ=Europe/Paris` sur le conteneur — un
+ * geste anodin — la borne du 1er août devient le 31 juillet à 22 h UTC : une
+ * commande passée le 31 juillet à 23 h apparaîtrait alors dans l'export
+ * comptable de juillet ET dans celui d'août, comptée deux fois.
+ *
+ * Les fenêtres glissantes (7d, 30d) étaient déjà correctes : un décalage à
+ * partir de `now` ne dépend d'aucun fuseau.
+ */
 export function periodStart(period?: string): Date | null {
   const now = new Date();
   switch (period) {
@@ -23,17 +42,29 @@ export function periodStart(period?: string): Date | null {
     case '30d':
       return new Date(now.getTime() - 30 * 86400000);
     case 'month':
-      return new Date(now.getFullYear(), now.getMonth(), 1);
+      return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
+      );
     case 'quarter': {
-      const q = Math.floor(now.getMonth() / 3) * 3;
-      return new Date(now.getFullYear(), q, 1);
+      const q = Math.floor(now.getUTCMonth() / 3) * 3;
+      return new Date(Date.UTC(now.getUTCFullYear(), q, 1, 0, 0, 0, 0));
     }
     case 'year':
-      return new Date(now.getFullYear(), 0, 1);
+      return new Date(Date.UTC(now.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
     default:
       return null; // 'all' ou non précisé
   }
 }
+
+/**
+ * Plafonds des listes servies au dashboard.
+ *
+ * Nommés plutôt que répétés en dur : `getStatus()` doit appliquer EXACTEMENT
+ * les mêmes bornes, sinon le compteur et la liste divergent en permanence et
+ * la bannière « nouvelles données » ne s'éteint plus jamais.
+ */
+export const ORDERS_LIMIT = 300;
+export const QUOTES_LIMIT = 500;
 
 /**
  * Accès aux données pour le dashboard admin.
@@ -96,7 +127,7 @@ export class AdminService {
     // d'abord, puis le plus grand ID Shopify (les IDs sont croissants).
     qb.addOrderBy('o.receivedAt', 'DESC')
       .addOrderBy('o.shopifyOrderId', 'DESC')
-      .limit(opts.limit ?? 300);
+      .limit(opts.limit ?? ORDERS_LIMIT);
 
     const ids = await qb.getRawMany<{ id: string }>();
     if (!ids.length) return [];
@@ -125,6 +156,13 @@ export class AdminService {
    * État LÉGER du dashboard, pour l'auto-rafraîchissement.
    * Renvoie des compteurs (sans charger le JSON lourd) : le front compare cet
    * état à celui de la page courante et ne recharge QUE s'il a changé.
+   *
+   * Les compteurs sont PLAFONNÉS aux mêmes limites que les listes affichées
+   * (voir ORDERS_LIMIT / QUOTES_LIMIT). Sans ce plafond, une boutique de 350
+   * commandes comparait 350 (compteur, table entière) à 300 (liste, tronquée) :
+   * l'écart était permanent, la bannière « De nouvelles données sont
+   * disponibles » réapparaissait toutes les 30 s et aucun rechargement ne la
+   * faisait taire. Les vraies notifications se noyaient dans ce bruit.
    */
   async getStatus(): Promise<{
     orders: number;
@@ -140,7 +178,13 @@ export class AdminService {
       this.orders.count({ where: { seen: false } }),
       this.quotes.count({ where: { seen: false } }),
     ]);
-    return { orders, quotes, designs, newOrders, newQuotes };
+    return {
+      orders: Math.min(orders, ORDERS_LIMIT),
+      quotes: Math.min(quotes, QUOTES_LIMIT),
+      designs,
+      newOrders,
+      newQuotes,
+    };
   }
 
   /**
@@ -156,7 +200,7 @@ export class AdminService {
   async getQuotes(
     period?: string,
     includePaid = true,
-    limit = 500,
+    limit = QUOTES_LIMIT,
   ): Promise<Quote[]> {
     const qb = this.quotes.createQueryBuilder('q').select('q.id', 'id');
     const since = periodStart(period);

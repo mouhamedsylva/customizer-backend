@@ -180,6 +180,25 @@ export const MULTI_VARIANT_KEYS: ProductKey[] = [
 ];
 
 /**
+ * Produits vendus UNIQUEMENT sur devis : aucun tarif n'est enregistrable.
+ *
+ * Les COINS MÉTAL sont chiffrés à la main sur chaque demande (finition,
+ * gravure, quantité). Un prix enregistré s'afficherait dans le configurateur
+ * sans qu'aucune commande ne puisse l'honorer.
+ *
+ * La règle est une CONSTANTE, et non un test répété : `save()` excluait les
+ * coins mais pas `saveTiers()`, si bien que le prix de base était rejeté
+ * pendant que la grille dégressive, elle, était écrite. Le configurateur
+ * servait alors un prix par défaut contredit par sa propre grille — et comme
+ * la ligne existait en base, l'état ne se réparait jamais tout seul.
+ *
+ * Le dashboard lit cette liste pour masquer les champs correspondants
+ * (cf. `quoteOnly` dans GET /api/admin/pricing) : l'interface ne propose donc
+ * plus une saisie que le serveur rejette en silence.
+ */
+export const QUOTE_ONLY_KEYS: ProductKey[] = ['coins'];
+
+/**
  * Prix unitaires du configurateur, modifiables depuis le dashboard.
  *
  * Stockés dans la table clé/valeur `settings` : pas de migration, et le
@@ -222,19 +241,10 @@ export class PricingService {
     const rows: Array<{ key: string; value: string }> = [];
     for (const key of PRODUCT_KEYS) {
       if (!(key in input)) continue;
-      /* Les COINS MÉTAL (clé `coins`, voir l'avertissement sur PRODUCT_KEYS) se
-         vendent UNIQUEMENT sur devis : leur prix dépend de la finition, de la
-         gravure et de la quantité, et il est chiffré à la main sur chaque
-         demande. Aucun prix fixe ne doit donc être enregistré.
-
-         Cette clé était déjà exclue de la synchronisation Shopify
-         (PRODUCT_SHOPIFY_IDS ne la contient pas), mais sa valeur restait
-         enregistrable en base — un prix saisi par mégarde s'affichait alors
-         dans le configurateur sans qu'aucune commande ne puisse l'honorer.
-
-         Le filtre est ici, au plus près de l'écriture : le poser dans le
-         contrôleur laisserait passer tout autre appelant de `save()`. */
-      if (key === 'coins') continue;
+      // Vendu sur devis : aucun prix ne doit être enregistré (cf.
+      // QUOTE_ONLY_KEYS). Le filtre est au plus près de l'écriture — le poser
+      // dans le contrôleur laisserait passer tout autre appelant de `save()`.
+      if (QUOTE_ONLY_KEYS.includes(key)) continue;
       const n = Number(input[key]);
       if (Number.isNaN(n) || n < 0) continue;
       // Deux décimales : un prix n'a pas plus de précision.
@@ -287,6 +297,9 @@ export class PricingService {
     const rows: Array<{ key: string; value: string }> = [];
     for (const key of PRODUCT_KEYS) {
       if (!(key in input)) continue;
+      // Même exclusion que `save()` : sans elle, la grille d'un produit sur
+      // devis s'enregistrait alors que son prix de base était rejeté.
+      if (QUOTE_ONLY_KEYS.includes(key)) continue;
       const clean = this.normalizeTiers(input[key]);
       rows.push({
         key: TIERS_PREFIX + key,

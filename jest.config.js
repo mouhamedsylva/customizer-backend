@@ -11,7 +11,9 @@ module.exports = {
   testEnvironment: 'node',
   rootDir: '.',
   roots: ['<rootDir>/test', '<rootDir>/src'],
-  testRegex: '.*\\.spec\\.ts$',
+  // `.spec.ts` (unitaires) et `.e2e-spec.ts` (bout en bout, application réelle
+  // sur SQLite en mémoire avec Shopify/Cloudinary simulés).
+  testRegex: '.*\\.(spec|e2e-spec)\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'json'],
   // `isolatedModules` est posé dans tsconfig.json : le dashboard fait 4 400
   // lignes, le typer entièrement à chaque test coûterait plus que les tests.

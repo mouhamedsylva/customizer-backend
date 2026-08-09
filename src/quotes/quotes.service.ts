@@ -14,12 +14,44 @@ import {
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { Quote } from '../database/entities/quote.entity';
 
+/**
+ * Devis traités par passe de synchronisation.
+ *
+ * Chaque devis coûte UN appel Shopify séquentiel, et Shopify plafonne à ~2
+ * requêtes/seconde : 200 devis représentent déjà ~100 s de passe. Au-delà, on
+ * dépasserait l'intervalle de 10 minutes et les passes se chevaucheraient.
+ *
+ * Le reliquat n'est pas perdu : la synchro est idempotente et reprend au tour
+ * suivant, les plus anciens d'abord.
+ */
+const SYNC_BATCH = 200;
+
+/** Même plafond pour le rattrapage des devis orphelins. */
+const ORPHAN_BATCH = 25;
+
+/** Plafond de la liste servie par `GET /api/quotes`. */
+const LIST_LIMIT = 500;
+
 @Injectable()
 export class QuotesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QuotesService.name);
   private syncTimer?: NodeJS.Timeout;
   /** Première synchro différée : annulée si l'app s'arrête avant son échéance. */
   private startTimer?: NodeJS.Timeout;
+
+  /**
+   * Une seule passe Shopify à la fois (même garde que WebhooksService).
+   *
+   * `syncStatuses` fait UN appel Shopify par devis non finalisé, en séquence.
+   * Passé quelques centaines de devis, une passe dépasse les 10 minutes de
+   * l'intervalle : `setInterval` déclenchait alors la suivante par-dessus, et
+   * les passes s'empilaient — chacune rejouant les mêmes appels, saturant le
+   * quota Shopify (~2 req/s) et se ralentissant mutuellement, sans fin.
+   *
+   * Le verrou est COMMUN à `syncStatuses` et `retryOrphanQuotes` : les deux
+   * puisent dans le même quota et sont lancées ensemble par le même timer.
+   */
+  private syncing = false;
 
   constructor(
     private readonly shopify: ShopifyService,
@@ -38,8 +70,10 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
     }, 12000);
 
     this.syncTimer = setInterval(() => {
-      void this.syncStatuses('périodique');
-      void this.retryOrphanQuotes();
+      // SÉQUENTIEL, pas parallèle : les deux partagent le même verrou, donc
+      // les lancer ensemble ferait rejeter la seconde à chaque passage — les
+      // devis orphelins n'auraient plus jamais été rattrapés.
+      void this.syncStatuses('périodique').then(() => this.retryOrphanQuotes());
     }, 10 * 60 * 1000);
   }
 
@@ -59,14 +93,50 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
    * montant. Robuste : n'interrompt jamais le backend en cas d'échec.
    */
   async syncStatuses(reason = 'manuel'): Promise<{ updated: number }> {
+    if (this.syncing) {
+      this.logger.warn(
+        `Synchro des devis (${reason}) ignorée : une passe est déjà en cours.`,
+      );
+      return { updated: 0 };
+    }
+    this.syncing = true;
+    try {
+      return await this.runSync(reason);
+    } finally {
+      // `finally` et non fin de bloc : une exception inattendue laisserait
+      // sinon le verrou fermé pour de bon, et plus aucune passe ne tournerait
+      // jusqu'au prochain redémarrage.
+      this.syncing = false;
+    }
+  }
+
+  /** Corps de la synchro, exécuté sous verrou (cf. `syncStatuses`). */
+  private async runSync(reason: string): Promise<{ updated: number }> {
     let quotes: Quote[] = [];
     try {
       quotes = await this.quotes.find({
-        where: { draftOrderId: Not(IsNull()) },
+        // Les devis finalisés ne changent plus : les écarter en SQL évite de
+        // charger leur colonne JSON (le devis complet, aperçus compris) pour
+        // les sauter aussitôt en mémoire.
+        where: { draftOrderId: Not(IsNull()), draftStatus: Not('completed') },
+        // Plafond : sans lui, toute la table passait en mémoire à chaque
+        // passe. Les devis au-delà sont traités au tour suivant — la synchro
+        // est idempotente, elle rattrape naturellement son retard.
+        take: SYNC_BATCH,
+        // Les plus anciens d'abord : sans ordre explicite, MySQL peut renvoyer
+        // toujours les mêmes lignes et laisser la queue jamais synchronisée.
+        order: { createdAt: 'ASC' },
       });
     } catch (e) {
       this.logger.warn(`Lecture des devis impossible : ${(e as Error).message}`);
       return { updated: 0 };
+    }
+
+    if (quotes.length === SYNC_BATCH) {
+      this.logger.log(
+        `Synchro des devis (${reason}) : lot plafonné à ${SYNC_BATCH}, ` +
+          `la suite sera traitée à la passe suivante.`,
+      );
     }
 
     let updated = 0;
@@ -187,12 +257,32 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
    * avec le traitement `setImmediate` d'un devis qui vient d'être créé.
    */
   async retryOrphanQuotes(): Promise<{ retried: number }> {
+    // Même verrou que `syncStatuses` : les deux sont lancées par le même timer
+    // et puisent dans le même quota Shopify. Sans cela, un rattrapage lancé
+    // pendant une synchro longue doublait la pression sur l'API.
+    if (this.syncing) {
+      this.logger.warn(
+        'Rattrapage des devis orphelins ignoré : une passe est déjà en cours.',
+      );
+      return { retried: 0 };
+    }
+    this.syncing = true;
+    try {
+      return await this.runOrphanRetry();
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  /** Corps du rattrapage, exécuté sous verrou (cf. `retryOrphanQuotes`). */
+  private async runOrphanRetry(): Promise<{ retried: number }> {
     const cutoff = new Date(Date.now() - 5 * 60 * 1000);
     let orphans: Quote[] = [];
     try {
       orphans = await this.quotes.find({
         where: { draftOrderId: IsNull(), createdAt: LessThan(cutoff) },
-        take: 25, // borne : on rattrape par lots, pas tout d'un coup
+        take: ORPHAN_BATCH, // borne : on rattrape par lots, pas tout d'un coup
+        order: { createdAt: 'ASC' }, // les plus anciens d'abord
       });
     } catch (e) {
       this.logger.warn(
@@ -335,7 +425,13 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Liste des devis en base — sert `GET /api/quotes` (réservé aux admins). */
-  async findAll(): Promise<Quote[]> {
-    return this.quotes.find({ order: { createdAt: 'DESC' } });
+  async findAll(limit = LIST_LIMIT): Promise<Quote[]> {
+    // Plafond : chaque devis porte son DTO complet en JSON (aperçus compris).
+    // Sans borne, cette route sérialisait toute la table dans une seule
+    // réponse — coûteux en mémoire, et de plus en plus lent avec le temps.
+    return this.quotes.find({
+      order: { createdAt: 'DESC' },
+      take: Math.max(1, Math.min(limit, LIST_LIMIT)),
+    });
   }
 }
