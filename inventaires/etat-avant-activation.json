@@ -1,0 +1,47 @@
+{
+ "date": "2026-08-10",
+ "produits": [
+  {
+   "id": "gid://shopify/Product/15982845854030",
+   "handle": "personnalisation-manche",
+   "status": "DRAFT",
+   "publishedAt": null
+  },
+  {
+   "id": "gid://shopify/Product/15982847033678",
+   "handle": "textile-sweatshirt",
+   "status": "DRAFT",
+   "publishedAt": null
+  },
+  {
+   "id": "gid://shopify/Product/15982848246094",
+   "handle": "textile-t-shirt-coton",
+   "status": "DRAFT",
+   "publishedAt": null
+  },
+  {
+   "id": "gid://shopify/Product/15982849130830",
+   "handle": "textile-t-shirt-polyester",
+   "status": "DRAFT",
+   "publishedAt": null
+  },
+  {
+   "id": "gid://shopify/Product/15982850572622",
+   "handle": "drapeau-personnalise",
+   "status": "DRAFT",
+   "publishedAt": null
+  },
+  {
+   "id": "gid://shopify/Product/15982850801998",
+   "handle": "patch-personnalise",
+   "status": "DRAFT",
+   "publishedAt": null
+  },
+  {
+   "id": "gid://shopify/Product/15982850998606",
+   "handle": "coin-metal-personnalise",
+   "status": "DRAFT",
+   "publishedAt": null
+  }
+ ]
+}
