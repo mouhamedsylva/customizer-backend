@@ -157,6 +157,7 @@ async function bootstrap(): Promise<void> {
     ...frontendUrls.map((u) => u.replace(/^https?:\/\//, 'https://')),
     'http://localhost:9292',    // shopify theme dev
     'http://127.0.0.1:9292',
+    'vps-c1a07d74.vps.ovh.net',
   ];
 
   /* Domaine de la boutique en production. Codé ici EN PLUS de FRONTEND_URL :
