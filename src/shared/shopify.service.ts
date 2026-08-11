@@ -57,12 +57,122 @@ export class ShopifyService {
     return `https://${storeUrl}/admin/api/${apiVersion}`;
   }
 
+  /* ── Jeton d'accès Admin ─────────────────────────────────────────────────
+     Depuis janvier 2026, Shopify ne délivre plus de jeton PERMANENT : les
+     applications du Dev Dashboard s'authentifient par `client_credentials` et
+     reçoivent un jeton valable 24 h (mesuré : `expires_in` = 86399).
+
+     Ce service doit donc l'obtenir puis le renouveler lui-même. Le jeton est
+     gardé en mémoire — pas en base : un redémarrage en redemande un, ce qui
+     coûte un aller-retour et évite de stocker un secret de plus.
+
+     `SHOPIFY_ACCESS_TOKEN` reste prioritaire s'il est renseigné : il couvre les
+     jetons « legacy » (permanents, créés avant 2026) et le test ponctuel avec
+     un jeton collé à la main. Sans lui, on passe par client_credentials. */
+
+  /** Jeton courant et son échéance (ms epoch). */
+  private jeton: string | null = null;
+  private jetonExpireA = 0;
+
+  /** Échange en cours, s'il y en a un. Voir obtenirJeton(). */
+  private jetonEnCours: Promise<string> | null = null;
+
+  /* Marge avant expiration. Un jeton renouvelé pile à l'échéance serait déjà
+     refusé par une requête partie une seconde plus tôt : on anticipe. */
+  private static readonly MARGE_MS = 5 * 60 * 1000;
+
+  /**
+   * Jeton Admin valide, renouvelé au besoin.
+   *
+   * Les appels concurrents partagent une SEULE promesse : au démarrage, une
+   * dizaine de requêtes simultanées déclencheraient sinon autant d'échanges
+   * OAuth — inutiles, et susceptibles de heurter une limite de débit.
+   */
+  private async obtenirJeton(): Promise<string> {
+    const fixe = this.config.get<string>('SHOPIFY_ACCESS_TOKEN');
+    if (fixe) return fixe;
+
+    if (this.jeton && Date.now() < this.jetonExpireA) return this.jeton;
+    if (this.jetonEnCours) return this.jetonEnCours;
+
+    this.jetonEnCours = this.echangerIdentifiants().finally(() => {
+      this.jetonEnCours = null;
+    });
+    return this.jetonEnCours;
+  }
+
+  /** Échange client_id + client_secret contre un jeton (flux OAuth Shopify). */
+  private async echangerIdentifiants(): Promise<string> {
+    const store = this.config.get<string>('SHOPIFY_STORE_URL');
+    const id = this.config.get<string>('SHOPIFY_CLIENT_ID');
+    const secret = this.config.get<string>('SHOPIFY_CLIENT_SECRET');
+
+    if (!store || !id || !secret) {
+      throw new Error(
+        'Accès Shopify non configuré : renseignez SHOPIFY_CLIENT_ID et ' +
+          'SHOPIFY_CLIENT_SECRET (application du Dev Dashboard), ou ' +
+          'SHOPIFY_ACCESS_TOKEN pour un jeton permanent.',
+      );
+    }
+
+    const res = await fetch(`https://${store}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: id,
+        client_secret: secret,
+        grant_type: 'client_credentials',
+      }),
+      signal: AbortSignal.timeout(ShopifyService.TIMEOUT_MS),
+    });
+
+    if (!res.ok) {
+      /* `app_not_installed` est l'erreur la plus probable et la moins parlante :
+         l'application existe dans le Dev Dashboard mais n'est pas installée sur
+         la boutique. On remonte le corps tel quel pour ne pas masquer la cause. */
+      const corps = await res.text().catch(() => '');
+      throw new Error(
+        `Jeton Shopify refusé (HTTP ${res.status}) : ${corps.slice(0, 200)}`,
+      );
+    }
+
+    const data = (await res.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      scope?: string;
+    };
+    if (!data.access_token) {
+      throw new Error('Réponse OAuth Shopify sans access_token.');
+    }
+
+    /* Un jeton sans portée est délivré NORMALEMENT (HTTP 200) mais se heurte à
+       un 403 sur le premier appel réel. La cause est toujours la même : les
+       portées ne sont pas déclarées dans la version PUBLIÉE de l'application.
+       On le signale ici, sinon le diagnostic se fait sur un 403 sans contexte. */
+    if (!data.scope) {
+      this.logger.error(
+        'Jeton Shopify obtenu SANS AUCUNE PORTÉE : les appels renverront 403. ' +
+          "Déclarez les portées dans la version publiée de l'application " +
+          '(Dev Dashboard → Versions), puis publiez-la.',
+      );
+    }
+
+    const dureeS = Number(data.expires_in) || 86400;
+    this.jeton = data.access_token;
+    this.jetonExpireA = Date.now() + dureeS * 1000 - ShopifyService.MARGE_MS;
+    this.logger.log(
+      `Jeton Shopify obtenu (valable ${Math.round(dureeS / 3600)} h, portées : ${
+        data.scope || 'AUCUNE'
+      }).`,
+    );
+    return this.jeton;
+  }
+
   /** Headers authentifies pour Shopify. */
-  private getHeaders(): Record<string, string> {
+  private async getHeaders(): Promise<Record<string, string>> {
     return {
       'Content-Type': 'application/json',
-      'X-Shopify-Access-Token':
-        this.config.get<string>('SHOPIFY_ACCESS_TOKEN') || '',
+      'X-Shopify-Access-Token': await this.obtenirJeton(),
     };
   }
 
@@ -160,7 +270,7 @@ export class ShopifyService {
 
     const response = await this.fetchShopify(`${this.getBaseUrl()}/draft_orders.json`, {
       method: 'POST',
-      headers: this.getHeaders(),
+      headers: await this.getHeaders(),
       body: JSON.stringify(body),
     });
 
@@ -182,7 +292,7 @@ export class ShopifyService {
   async getDraftOrder(draftOrderId: string | number): Promise<Record<string, any>> {
     const response = await this.fetchShopify(
       `${this.getBaseUrl()}/draft_orders/${draftOrderId}.json`,
-      { method: 'GET', headers: this.getHeaders() },
+      { method: 'GET', headers: await this.getHeaders() },
     );
 
     if (!response.ok) {
@@ -213,7 +323,7 @@ export class ShopifyService {
       `${this.getBaseUrl()}/draft_orders/${draftOrderId}/send_invoice.json`,
       {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: await this.getHeaders(),
         body: JSON.stringify({ draft_order_invoice: invoice }),
       },
     );
@@ -240,7 +350,7 @@ export class ShopifyService {
   async listDraftOrders(limit = 50): Promise<Record<string, any>[]> {
     const response = await this.fetchShopify(
       `${this.getBaseUrl()}/draft_orders.json?limit=${limit}`,
-      { method: 'GET', headers: this.getHeaders() },
+      { method: 'GET', headers: await this.getHeaders() },
     );
 
     if (!response.ok) {
@@ -308,7 +418,7 @@ export class ShopifyService {
     for (let page = 0; url && page < maxPages; page++) {
       const response: Response = await this.fetchShopify(url, {
         method: 'GET',
-        headers: this.getHeaders(),
+        headers: await this.getHeaders(),
       });
 
       if (!response.ok) {
@@ -349,7 +459,7 @@ export class ShopifyService {
   ): Promise<Record<string, any>[]> {
     const response = await this.fetchShopify(
       `${this.getBaseUrl()}/orders/${orderId}/fulfillment_orders.json`,
-      { method: 'GET', headers: this.getHeaders() },
+      { method: 'GET', headers: await this.getHeaders() },
     );
 
     if (!response.ok) {
@@ -384,7 +494,7 @@ export class ShopifyService {
         `${this.getBaseUrl()}/fulfillment_orders/${fo.id}/move.json`,
         {
           method: 'POST',
-          headers: this.getHeaders(),
+          headers: await this.getHeaders(),
           body: JSON.stringify({
             fulfillment_order: { new_location_id: fo.assigned_location_id },
           }),
@@ -472,7 +582,7 @@ export class ShopifyService {
 
       const response = await this.fetchShopify(`${this.getBaseUrl()}/fulfillments.json`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: await this.getHeaders(),
         body: JSON.stringify(body),
       });
 
@@ -506,7 +616,7 @@ export class ShopifyService {
       `${this.getBaseUrl()}/draft_orders/${draftOrderId}.json`,
       {
         method: 'PUT',
-        headers: this.getHeaders(),
+        headers: await this.getHeaders(),
         body: JSON.stringify({ draft_order: { line_items: lineItems } }),
       },
     );
@@ -709,7 +819,7 @@ export class ShopifyService {
   }> {
     const response = await this.fetchShopify(
       `${this.getBaseUrl()}/products/${productId}.json`,
-      { method: 'GET', headers: this.getHeaders() },
+      { method: 'GET', headers: await this.getHeaders() },
     );
 
     if (!response.ok) {
@@ -753,7 +863,7 @@ export class ShopifyService {
     try {
       const response = await this.fetchShopify(`${this.getBaseUrl()}/shop.json`, {
         method: 'GET',
-        headers: this.getHeaders(),
+        headers: await this.getHeaders(),
       });
 
       if (!response.ok) {
@@ -797,7 +907,7 @@ export class ShopifyService {
     try {
       const response = await this.fetchShopify(this.getGraphqlUrl(), {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: await this.getHeaders(),
         body: JSON.stringify({ query, variables }),
       });
 

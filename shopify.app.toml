@@ -1,0 +1,51 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "5e5098a85e731844674e5b2fcdfbb1cb"
+application_url = "https://example.com"
+embedded = true
+name = "Configurateur Backend"
+
+[webhooks]
+api_version = "2026-07"
+
+# Abonnements aux commandes. C'est le SEUL chemin par lequel une commande entre
+# dans le backend : le theme n'appelle jamais /api/orders (verifie). Sans eux,
+# aucune commande payee n'arrive dans le dashboard — donc pas de fiche de
+# production ni de ZIP des visuels client.
+#
+# `orders/updated` compte autant que `orders/create` : c'est lui qui repercute un
+# changement de statut de paiement ou de livraison.
+#
+# La signature HMAC de ces appels se verifie avec le CLIENT SECRET de l'app
+# (= SHOPIFY_WEBHOOK_SECRET dans .env), pas avec la cle des webhooks manuels.
+[[webhooks.subscriptions]]
+topics = [ "orders/create" ]
+uri = "https://customizer-backend-production-4c83.up.railway.app/api/webhooks/orders-create"
+
+[[webhooks.subscriptions]]
+topics = [ "orders/updated" ]
+uri = "https://customizer-backend-production-4c83.up.railway.app/api/webhooks/orders-updated"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+#
+# Portees requises par le backend. Reprises de l'ancien jeton de la boutique de
+# developpement (relevees via /admin/oauth/access_scopes.json) : c'est la
+# reference de ce que le code utilise reellement.
+#
+#   produits          lecture/ecriture des produits, variants, prix, images
+#   draft_orders      les devis passent par des brouillons de commande
+#   orders            suivi des commandes (webhooks orders/create, orders/updated)
+#   customers         fiches client rattachees aux devis
+#   publications      activer/desactiver les 7 produits du configurateur
+#   inventory         stock des variants
+#
+# `scopes = ""` (valeur generee par defaut) delivre un jeton SANS permission :
+# l'echange client_credentials renvoie bien 200, mais le premier appel reel
+# echoue en 403. Mesure du 10/08/2026.
+scopes = "read_products,write_products,read_draft_orders,write_draft_orders,read_orders,read_customers,write_customers,read_publications,write_publications,read_inventory,write_inventory"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [ ]

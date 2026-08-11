@@ -88,11 +88,18 @@ const DEFAULTS: Pricing = {
   sweatshirt: 60,
   tshirt: 29.5,
   tshirt_polyester: 29.5,
-  coins: 2.45,
+  /* COINS MÉTAL (clé `coins`) : vendus SUR DEVIS, chiffrés à la main selon la
+     finition, la gravure et la quantité. Aucun prix fixe n'a de sens — d'où 0,
+     et le blocage par QUOTE_ONLY_KEYS.
+
+     La valeur précédente (2,45 €) faisait afficher un tarif au tiroir du panier
+     pour un article qu'aucune commande en ligne n'honore. */
+  coins: 0,
   drapeaux: 19.9,
-  /* 20 € = premier palier de la grille atelier (10 articles, le minimum de
-     commande). La valeur précédente (2,45 €) était celle des coins, restée là
-     par copie : elle contredisait la grille dégressive. */
+  /* PATCHS (clé `patches`) : 20 € = premier palier de leur grille atelier, à
+     10 pièces, qui est le minimum de commande. Toute valeur inférieure
+     contredirait la grille — le configurateur annoncerait un prix puis
+     facturerait celui du palier atteint. */
   patches: 20,
   /* Prix du variant Shopify `personnalisation-manche` au moment du câblage.
      Cette valeur ne sert que tant que l'admin n'a rien enregistré ; dès le
@@ -131,7 +138,20 @@ const DEFAULT_TIERS: Tiers = {
     { min: 5, price: 28.9 },
     { min: 1, price: 29.5 },
   ],
-  // Grille atelier : au-delà de 100, le devis prend le relais (géré côté UI).
+  /* Grille des PATCHS BRODÉS — reprise du PDF « TARIFS PATCHS 2026 » du
+     commerçant (5 paliers identiques). Au-delà de 100, le devis prend le relais
+     (géré côté UI).
+
+     Clé `patches`, vérifié par mesure le 10/08/2026 : côté frontend,
+     `#coins-unit-price` — alimenté par `tierUnitPrice('patches')` — appartient
+     au template titré « Patch personnalisé » (min="10"). C'est donc bien cette
+     clé qui porte les patchs, malgré l'inversion des LIBELLÉS d'écran.
+
+     Ne pas la déplacer sous `coins` : les articles COIN MÉTAL du panier portent
+     `productType = 'coins'`, et `effectiveUnitPrice()` les tarifierait alors
+     avec cette grille. Constaté à l'écran : un coin affichait 5,00 €/u à 50
+     pièces et 12,50 €/u à 24 — les paliers exacts de cette grille — alors qu'un
+     coin se chiffre à la main sur devis. */
   patches: [
     { min: 100, price: 3.5 },
     { min: 50, price: 5.0 },
@@ -151,21 +171,33 @@ const TIERS_PREFIX = 'tiers_';
  * PRODUIT Shopify de chaque type du configurateur.
  *
  * On cible le PRODUIT (et non un variant) pour deux raisons :
- *  - les textiles ont 15 variants (un par couleur) : changer le prix doit tous
+ *  - les textiles ont 40 variants (un par couleur) : changer le prix doit tous
  *    les mettre à jour, pas un seul ;
  *  - les ids de variants changent quand on régénère les déclinaisons, alors que
  *    l'id du produit reste stable.
  *
- * `coins` est inclus : son produit existe, même si la vente passe par un devis.
+ * Ids et nombres de variants RELEVÉS SUR LA BOUTIQUE le 10/08/2026, pas recopiés
+ * d'un inventaire : les valeurs précédentes appartenaient à la boutique de
+ * développement `customizer-fh5lguwi` et renvoyaient toutes 404 sur `38cca3`,
+ * si bien qu'aucun changement de prix du dashboard n'atteignait Shopify.
+ *
+ * Le `handle` est indiqué en commentaire plutôt qu'un libellé déduit : c'est lui
+ * qui tranche l'inversion `coins`/`patches` (voir l'avertissement sur
+ * PRODUCT_KEYS). L'ancien commentaire annonçait « Patch personnalisé » en face de
+ * `patches`, alors que cette clé désigne le produit `coin-metal-personnalise`.
  */
 export const PRODUCT_SHOPIFY_IDS: Partial<Record<ProductKey, string>> = {
-  sweatshirt: '9167767240867', // Textile - Sweatshirt        (15 variants)
-  tshirt: '9167767404707', // Textile - T-shirt Coton     (15 variants)
-  tshirt_polyester: '9167767732387', // Textile - T-shirt Polyester (15 variants)
-  drapeaux: '9167767928995', // Drapeau personnalisé        (1 variant)
-  patches: '9167772254371', // Patch personnalisé          (1 variant)
-  manche: '9203358924963', // Personnalisation manche     (1 variant)
-  // coins : vendu via devis (draft order), prix chiffré à la main -> non synchronisé.
+  sweatshirt: '15982847033678', //       textile-sweatshirt         (40 variants)
+  tshirt: '15982848246094', //           textile-t-shirt-coton      (40 variants)
+  tshirt_polyester: '15982849130830', // textile-t-shirt-polyester  (40 variants)
+  drapeaux: '15982850572622', //         drapeau-personnalise        (1 variant)
+  coins: '15982850801998', //            patch-personnalise          (1 variant)
+  manche: '15982845854030', //           personnalisation-manche     (1 variant)
+  /* `patches` (= produit `coin-metal-personnalise`, vos COINS MÉTAL) est
+     volontairement ABSENT : ces coins se vendent sur devis, leur prix est
+     chiffré à la main sur chaque demande. `save()` refuse d'ailleurs
+     d'enregistrer un prix pour cette clé. Son id, s'il devenait utile un jour :
+     15982850998606. */
 };
 
 /**
@@ -196,6 +228,23 @@ export const MULTI_VARIANT_KEYS: ProductKey[] = [
  * (cf. `quoteOnly` dans GET /api/admin/pricing) : l'interface ne propose donc
  * plus une saisie que le serveur rejette en silence.
  */
+/* `patches` et non `coins` : à cause de l'inversion des noms côté frontend
+   (voir l'avertissement sur PRODUCT_KEYS), la clé `patches` désigne vos COINS
+   MÉTAL — produit `coin-metal-personnalise`, vérifié sur la boutique.
+
+   Ce sont eux qui se vendent sur devis. La clé `coins`, elle, porte vos PATCHS
+   (`patch-personnalise`) : ils partent au panier natif avec le variant
+   60327529939278, leur prix DOIT donc rester enregistrable.
+
+   La valeur précédente (`['coins']`) bloquait l'inverse : le dashboard refusait
+   le prix des patchs vendus au panier, et acceptait celui des coins qu'aucune
+   commande en ligne n'honore.
+
+   À savoir sur le parcours : les coins PEUVENT être ajoutés au panier du
+   configurateur, mais `variantForItem()` ne leur associe aucun variant — ils
+   sont retirés au checkout et orientés vers une demande de devis
+   (recapitulatif.liquid, garde-fous sur `skipped`). Le prix reste donc chiffré
+   à la main sur chaque demande. */
 export const QUOTE_ONLY_KEYS: ProductKey[] = ['coins'];
 
 /**
@@ -219,6 +268,20 @@ export class PricingService {
     const map = new Map(rows.map((r) => [r.key, r.value]));
     const out = { ...DEFAULTS };
     for (const key of PRODUCT_KEYS) {
+      /* Un produit SUR DEVIS vaut 0, quoi que dise la base.
+
+         `save()` refuse d'écrire ces clés, mais des lignes antérieures à cette
+         règle subsistent : `price_coins = 2.45`, héritée de la boutique de
+         développement, était encore servie au configurateur — qui affichait donc
+         2,45 € l'unité pour un coin métal chiffré à la main sur devis. Et comme
+         l'écriture est bloquée, la ligne ne pouvait plus être corrigée depuis le
+         dashboard : elle se serait propagée indéfiniment.
+         Ignorer la base ici est plus sûr que de la nettoyer par migration — le
+         résultat ne dépend plus de l'état des données. */
+      if (QUOTE_ONLY_KEYS.includes(key)) {
+        out[key] = 0;
+        continue;
+      }
       const raw = map.get(KEY_PREFIX + key);
       const n = raw != null ? Number(raw) : NaN;
       if (!Number.isNaN(n) && n >= 0) out[key] = n;
@@ -270,6 +333,15 @@ export class PricingService {
     const out: Tiers = {};
 
     for (const key of PRODUCT_KEYS) {
+      /* Un produit SUR DEVIS n'a JAMAIS de grille dégressive : son prix dépend
+         de la finition et de la gravure, pas seulement de la quantité. Même
+         garde que dans get() — `saveTiers()` refuse ces clés, mais une ligne
+         antérieure à la règle resterait servie au configurateur, qui
+         tarifierait alors un article censé passer par un devis. */
+      if (QUOTE_ONLY_KEYS.includes(key)) {
+        out[key] = [];
+        continue;
+      }
       const raw = map.get(TIERS_PREFIX + key);
       if (raw == null) {
         // Rien en base : on retombe sur la grille d'origine, s'il y en a une.
