@@ -15,6 +15,10 @@ import {
   ProductionStatus,
   ShippingState,
 } from '../shared/shipping-status';
+import {
+  CONFIGURATOR_PRODUCT_IDS,
+  CONFIGURATOR_PRODUCT_TITLES,
+} from '../admin/pricing.service';
 
 @Injectable()
 export class WebhooksService implements OnModuleInit, OnModuleDestroy {
@@ -207,9 +211,30 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
           quantity: li.quantity,
           price: li.price,
           sku: li.sku,
+          /* AJOUTÉS le 11/08/2026 : identifient le produit sans dépendre de son
+             titre, qui se renomme dans l'admin Shopify. Servent à marquer
+             `fromConfigurator` (voir ci-dessous) et manquaient à toutes les
+             commandes reçues avant cette date. */
+          productId: li.product_id != null ? String(li.product_id) : null,
+          variantId: li.variant_id != null ? String(li.variant_id) : null,
           properties: li.properties, // [{name, value}, …]
         }))
       : [];
+
+    /* La commande vient-elle du CONFIGURATEUR ?
+       Calculé ici, une fois, plutôt qu'à chaque affichage : `lineItems` est une
+       colonne JSON, un filtre y serait coûteux et non indexable.
+
+       `product_id` d'abord, `title` en repli : le premier est stable, le second
+       ne sert qu'aux lignes sans id (commandes d'avant ce correctif, rejouées
+       par la synchro périodique). */
+    const fromConfigurator = lineItems.some(
+      (li) =>
+        (li.productId != null &&
+          CONFIGURATOR_PRODUCT_IDS.includes(li.productId)) ||
+        (typeof li.title === 'string' &&
+          CONFIGURATOR_PRODUCT_TITLES.includes(li.title)),
+    );
 
     const entity = this.orders.create({
       shopifyOrderId,
@@ -221,6 +246,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       totalPrice: payload.total_price ?? null,
       currency: payload.currency ?? null,
       lineItems,
+      fromConfigurator,
       financialStatus: payload.financial_status ?? null,
       // Statut d'exécution : Shopify est la source de vérité. null = non traitée.
       fulfillmentStatus: payload.fulfillment_status ?? null,

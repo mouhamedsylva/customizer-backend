@@ -92,6 +92,16 @@ export class AdminService {
       .createQueryBuilder('o')
       .select('o.shopifyOrderId', 'id');
 
+    /* SEULES les commandes du CONFIGURATEUR.
+       Le dashboard est l'écran de travail de l'atelier : il servait les 300
+       ventes courantes de la boutique (chaussettes, jeux…), dont aucune n'a de
+       flocage à produire — les commandes à personnaliser y étaient noyées.
+
+       Le marqueur est posé à l'enregistrement (WebhooksService.saveOrder) et
+       vaut `false` par défaut : l'historique déjà en base reste donc masqué,
+       sans reprise de données. */
+    qb.andWhere('o.fromConfigurator = TRUE');
+
     // Filtre par période (sur la date réelle de commande).
     const since = periodStart(opts.period);
     if (since) qb.andWhere('o.shopifyCreatedAt >= :since', { since });
@@ -171,11 +181,15 @@ export class AdminService {
     newOrders: number;
     newQuotes: number;
   }> {
+    /* Même périmètre que getOrders() : seules les commandes du configurateur.
+       Sans ce filtre, le badge annoncerait « 300 commandes » et « 375
+       nouvelles » pour une liste vide — l'équipe chercherait des commandes
+       inatteignables. */
     const [orders, quotes, designs, newOrders, newQuotes] = await Promise.all([
-      this.orders.count(),
+      this.orders.count({ where: { fromConfigurator: true } }),
       this.quotes.count(),
       this.designs.count(),
-      this.orders.count({ where: { seen: false } }),
+      this.orders.count({ where: { fromConfigurator: true, seen: false } }),
       this.quotes.count({ where: { seen: false } }),
     ]);
     return {

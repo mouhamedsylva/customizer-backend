@@ -196,9 +196,56 @@ export const PRODUCT_SHOPIFY_IDS: Partial<Record<ProductKey, string>> = {
   /* `patches` (= produit `coin-metal-personnalise`, vos COINS MÉTAL) est
      volontairement ABSENT : ces coins se vendent sur devis, leur prix est
      chiffré à la main sur chaque demande. `save()` refuse d'ailleurs
-     d'enregistrer un prix pour cette clé. Son id, s'il devenait utile un jour :
-     15982850998606. */
+     d'enregistrer un prix pour cette clé. Son id figure dans
+     CONFIGURATOR_PRODUCT_IDS ci-dessous. */
 };
+
+/**
+ * TOUS les produits Shopify du configurateur — les 7, contrairement à
+ * PRODUCT_SHOPIFY_IDS qui n'en liste que 6.
+ *
+ * Deux tables et non une : elles répondent à deux questions différentes.
+ * PRODUCT_SHOPIFY_IDS sert à POUSSER un prix vers Shopify, et exclut donc les
+ * coins métal (vendus sur devis, sans prix fixe). Celle-ci sert à RECONNAÎTRE
+ * une commande venant du configurateur — un coin commandé en fait évidemment
+ * partie.
+ *
+ * Sert à marquer `Order.fromConfigurator` : le dashboard de l'atelier ne doit
+ * afficher que ce qu'il a à floquer, pas les 300 ventes courantes de la
+ * boutique (chaussettes, jeux…).
+ *
+ * Ids relevés sur la boutique le 10/08/2026.
+ */
+export const CONFIGURATOR_PRODUCT_IDS: readonly string[] = [
+  '15982847033678', // textile-sweatshirt
+  '15982848246094', // textile-t-shirt-coton
+  '15982849130830', // textile-t-shirt-polyester
+  '15982850572622', // drapeau-personnalise
+  '15982850801998', // patch-personnalise      (clé `coins`)
+  '15982850998606', // coin-metal-personnalise (clé `patches`, sur devis)
+  '15982845854030', // personnalisation-manche
+];
+
+/**
+ * Titres des mêmes produits, pour les commandes DÉJÀ en base.
+ *
+ * Jusqu'au 11/08/2026, `saveOrder()` ne conservait pas `product_id` par ligne
+ * (ni de SKU : les 7 produits n'en ont aucun — vérifié). Le titre est donc le
+ * seul point d'accroche sur l'historique.
+ *
+ * Repli et non critère principal : un titre se renomme dans l'admin Shopify,
+ * un id non. Toute commande reçue après cette date est reconnue par son
+ * `product_id`.
+ */
+export const CONFIGURATOR_PRODUCT_TITLES: readonly string[] = [
+  'Textile - Sweatshirt',
+  'Textile - T-shirt Coton',
+  'Textile - T-shirt Polyester',
+  'Drapeau personnalisé',
+  'Patch personnalisé',
+  'Coin métal personnalisé',
+  'Personnalisation manche',
+];
 
 /**
  * Produits à DÉCLINAISONS (couleurs/tailles) : leur prix est unique et

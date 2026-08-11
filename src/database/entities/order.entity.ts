@@ -43,6 +43,25 @@ export class Order {
   @Column({ type: 'json' })
   lineItems: unknown[];
 
+  /**
+   * La commande contient-elle au moins un article du CONFIGURATEUR ?
+   *
+   * Le dashboard de l'atelier ne montre que ces commandes : il servait
+   * auparavant les 300 ventes courantes de la boutique (chaussettes, jeux…),
+   * dont aucune n'a de flocage à produire.
+   *
+   * Colonne calculée à l'ÉCRITURE, et non à l'affichage : `lineItems` est du
+   * JSON, un filtre y serait coûteux et non indexable. `getOrders()` reste ainsi
+   * une requête SQL simple.
+   *
+   * Défaut `false` : une commande dont on ne sait rien n'est PAS présumée venir
+   * du configurateur — mieux vaut une liste trop courte, qui se remarque, qu'une
+   * liste polluée où l'atelier chercherait ses commandes.
+   */
+  @Index()
+  @Column({ type: 'boolean', default: false })
+  fromConfigurator: boolean;
+
   /** Statut financier Shopify (paid, pending…). */
   @Column({ type: 'varchar', length: 32, nullable: true })
   financialStatus: string | null;
