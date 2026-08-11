@@ -1030,9 +1030,16 @@ export class AdminController {
       res.status(400).json({ ok: false, error: result.error });
       return;
     }
-    // Le changement révoque toutes les sessions du compte (y compris celle-ci) :
-    // on repose immédiatement un cookie frais pour que l'admin qui vient de
-    // changer son mot de passe ne soit pas déconnecté de son propre dashboard.
+    /* Le changement révoque toutes les sessions du compte, y compris celle-ci.
+       On repose un cookie frais pour que la réponse HTTP puisse être lue et le
+       message de confirmation affiché — sans lui, l'appel suivant échouerait en
+       401 avant même que l'admin sache si l'opération a réussi.
+
+       Ce cookie est de courte utilité : le dashboard déconnecte volontairement
+       l'admin 5 secondes après (voir saveOwnPassword dans admin.view.ts), en
+       redirigeant vers /api/admin/logout qui le supprime. Garder la session
+       reviendrait à laisser active une authentification ouverte avec l'ANCIEN
+       mot de passe. */
     if (result.token) {
       res.cookie(this.auth.cookieName, result.token, {
         ...ADMIN_COOKIE,

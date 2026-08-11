@@ -2992,7 +2992,11 @@ export function dashboardPage(
     <div class="alert-box">
       <div class="alert-ico" id="alert-ico"></div>
       <h4 id="alert-title">Enregistré</h4>
-      <p id="alert-text"></p>
+      <!-- pre-line : le texte est pose via textContent (jamais innerHTML, pour
+           ne pas exposer une injection depuis un message serveur), or un saut
+           de ligne y serait sinon replie. Le compte a rebours de deconnexion
+           apres changement de mot de passe occupe ainsi sa propre ligne. -->
+      <p id="alert-text" style="white-space:pre-line"></p>
       <button class="btn primary" onclick="closeAlert()">OK</button>
     </div>
   </div>
@@ -3008,14 +3012,20 @@ export function dashboardPage(
         <input type="password" id="acc-cur" class="price-input" autocomplete="current-password"
                style="width:100%;text-align:left">
 
+        <!-- minlength double le controle JS de saveOwnPassword() : le
+             navigateur signale la saisie trop courte des la frappe, sans
+             attendre le clic. Les deux restent necessaires : hors formulaire
+             cet attribut ne bloque pas la soumission, et le JS seul ne
+             previent qu apres coup. Le serveur revalide de toute facon
+             (admin-auth.service.ts:475). -->
         <label class="lbl" style="margin-top:12px" for="acc-new">Nouveau mot de passe</label>
         <input type="password" id="acc-new" class="price-input" autocomplete="new-password"
-               style="width:100%;text-align:left">
+               minlength="8" required style="width:100%;text-align:left">
         <p class="hint">8 caractères minimum.</p>
 
         <label class="lbl" style="margin-top:12px" for="acc-new2">Confirmer le nouveau mot de passe</label>
         <input type="password" id="acc-new2" class="price-input" autocomplete="new-password"
-               style="width:100%;text-align:left">
+               minlength="8" required style="width:100%;text-align:left">
       </div>
 
       <div class="modal-actions">
@@ -3673,8 +3683,39 @@ export function dashboardPage(
         btn.disabled=false;
         if(!d.ok){ showAlert('Échec', d.error||'Le mot de passe n\\'a pas été changé.','error'); return; }
         closeAccount();
-        showAlert('Mot de passe changé',
-          'Utilisez le nouveau mot de passe à votre prochaine connexion.');
+
+        /* Déconnexion après changement de mot de passe.
+
+           La session en cours reste techniquement valide, mais elle a été
+           ouverte avec l'ANCIEN mot de passe : la garder revient à laisser
+           active une authentification que l'admin vient justement de révoquer.
+           C'est le comportement attendu partout ailleurs, et il compte
+           doublement si le changement fait suite à une compromission.
+
+           5 secondes affichées plutôt qu'une redirection sèche : l'admin doit
+           voir que l'opération a réussi avant de se retrouver sur l'écran de
+           connexion — sinon le retour au login se lit comme un échec. */
+        var reste = 5;
+        var msg = function () {
+          return 'Utilisez le nouveau mot de passe à votre prochaine connexion.\\n' +
+                 'Déconnexion dans ' + reste + ' seconde' + (reste > 1 ? 's' : '') + '…';
+        };
+        showAlert('Mot de passe changé', msg());
+
+        /* Le bouton de la modale d'alerte fermerait la fenêtre sans annuler le
+           compte à rebours : on le neutralise, la déconnexion étant de toute
+           façon inévitable. */
+        var btnAlert = document.querySelector('#alert-modal .btn');
+        if (btnAlert) { btnAlert.disabled = true; btnAlert.style.opacity = '.5'; }
+
+        var tic = setInterval(function () {
+          reste--;
+          if (reste > 0) { showAlert('Mot de passe changé', msg()); return; }
+          clearInterval(tic);
+          /* Même route que le lien « Déconnexion » de l'en-tête : elle supprime
+             le cookie côté serveur puis redirige vers l'écran de connexion. */
+          window.location.href = '/api/admin/logout';
+        }, 1000);
       }catch(e){
         btn.disabled=false;
         showAlert('Erreur réseau', e.message, 'error');
