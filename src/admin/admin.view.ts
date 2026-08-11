@@ -3223,7 +3223,16 @@ export function dashboardPage(
       newOrders: newOrders.length,
       newQuotes: newQuotes.length,
     })};
-    var AUTO_REFRESH_MS=20000;   // fréquence de vérification (20 s)
+    /* Fréquence de vérification : 5 s (était 20 s).
+
+       Le webhook orders/create fait entrer la commande en base immédiatement,
+       mais l'atelier ne la voyait qu'au tick suivant — jusqu'à 20 s d'attente
+       devant un écran qui semblait figé.
+
+       Le coût reste négligeable : /api/admin/status ne renvoie que cinq
+       compteurs, et dashCheck() s'abstient dès que l'onglet passe en
+       arrière-plan (document.hidden). */
+    var AUTO_REFRESH_MS=5000;
 
     /* dashBusy() a été retiré avec le rechargement automatique : il servait à
        repérer les moments « occupés » (champ focalisé, modale ouverte) pour

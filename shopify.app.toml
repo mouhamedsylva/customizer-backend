@@ -18,13 +18,23 @@ api_version = "2026-07"
 #
 # La signature HMAC de ces appels se verifie avec le CLIENT SECRET de l'app
 # (= SHOPIFY_WEBHOOK_SECRET dans .env), pas avec la cle des webhooks manuels.
+#
+# URI : le VPS OVH depuis le 11/08/2026 (auparavant Railway). Ces URL etaient
+# restees sur l'ancien hebergeur, et `shopify app deploy` n'avait jamais ete
+# relance depuis l'ajout de ces abonnements : mesure sur la boutique, ZERO
+# webhook etait enregistre. Le backend ne decouvrait donc les commandes que par
+# sa synchro periodique de 2 minutes, alors qu'il est concu pour recevoir le
+# temps reel du webhook (cf. webhooks.service.ts:88).
+#
+# A CHANGER ICI si le backend demenage, puis relancer `shopify app deploy` :
+# modifier le fichier ne suffit pas, Shopify ne connait que la version deployee.
 [[webhooks.subscriptions]]
 topics = [ "orders/create" ]
-uri = "https://customizer-backend-production-4c83.up.railway.app/api/webhooks/orders-create"
+uri = "https://vps-c1a07d74.vps.ovh.net/api/webhooks/orders-create"
 
 [[webhooks.subscriptions]]
 topics = [ "orders/updated" ]
-uri = "https://customizer-backend-production-4c83.up.railway.app/api/webhooks/orders-updated"
+uri = "https://vps-c1a07d74.vps.ovh.net/api/webhooks/orders-updated"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
