@@ -222,9 +222,52 @@ export class CloudinaryService implements OnModuleInit {
     // images de fond du configurateur.
     if (store && host === store) return true;
 
+    /* Le DOMAINE PERSONNALISÉ de la boutique, aussi.
+       `SHOPIFY_STORE_URL` ne vaut que le `.myshopify.com`, alors que le thème
+       sert ses visuels depuis le domaine public : ses `asset_url` pointent vers
+       massacre-officiel.com. Toute composition d'aperçu échouait donc en
+       « Source d'image non autorisée » — mesuré le 11/08/2026 : la commande
+       #19200 n'avait ni planche ni logos, et le tiroir du panier affichait
+       l'image nue du produit.
+
+       On lit FRONTEND_URL, déjà la liste des origines autorisées par CORS
+       (src/main.ts) : un seul endroit à tenir à jour, et la garde reste STRICTE
+       — des domaines nommés, jamais un motif ouvert. C'est ce qui distingue
+       cette entrée de l'ancien `.myshopify.com` retiré pour cause de SSRF :
+       n'importe qui ouvre une boutique de développement, personne ne contrôle
+       le domaine du commerçant sans son accord. */
+    if (this.hotesFrontend().includes(host)) return true;
+
     return CloudinaryService.ALLOWED_IMAGE_HOSTS.some(
       (d) => host === d || host.endsWith('.' + d),
     );
+  }
+
+  /** Cache : FRONTEND_URL ne change pas en cours d'exécution, et
+   *  isAllowedImageUrl() est appelée une fois par image composée. */
+  private hotesFrontendCache: string[] | null = null;
+
+  /**
+   * Hôtes extraits de `FRONTEND_URL` (plusieurs origines séparées par des
+   * virgules). Une entrée illisible est ignorée sans faire échouer les autres :
+   * une virgule en trop ne doit pas priver le configurateur de ses aperçus.
+   */
+  private hotesFrontend(): string[] {
+    if (this.hotesFrontendCache) return this.hotesFrontendCache;
+    const brut = this.config.get<string>('FRONTEND_URL') || '';
+    this.hotesFrontendCache = brut
+      .split(',')
+      .map((u) => u.trim())
+      .filter(Boolean)
+      .map((u) => {
+        try {
+          return new URL(u).hostname.toLowerCase();
+        } catch {
+          return '';
+        }
+      })
+      .filter(Boolean);
+    return this.hotesFrontendCache;
   }
 
   /**
