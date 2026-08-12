@@ -34,6 +34,9 @@
 import { COULEURS } from './couleurs-textiles.mjs';
 
 const ECRIRE = process.argv.includes('--ecrire');
+/* Refait l'assignation même si les variants ont déjà une image : purge les
+   anciennes, repose les bonnes. À utiliser quand les VISUELS ont changé. */
+const REMPLACER = process.argv.includes('--remplacer');
 const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').slice(7);
 
 const STORE = process.env.SHOPIFY_STORE_URL;
@@ -129,11 +132,20 @@ async function traiter(cle, def) {
       aCreer.get(fichier).push(v.id);
     }
   } else if (def.prefixe) {
-    // Textiles : la correspondance passe par couleurs-textiles.mjs.
+    /* Textiles : le fichier porte le SLUG ANGLAIS de la couleur.
+
+       C'était `slugImage` — le slug français des 15 visuels livrés à l'origine.
+       Les 25 autres couleurs n'en avaient pas et retombaient sur l'image
+       générique. Depuis le 12/08/2026 les 360 visuels existent, nommés
+       `{prefixe}-{slug}-{vue}.png` (scripts/renommer-images-textiles.mjs) : le
+       `slug` suffit, et chaque couleur a son propre visuel.
+
+       `def.image` reste le repli — utile si un fichier manque encore : mieux
+       vaut une vignette approximative qu'un variant sans image. */
     for (const v of variants) {
       const couleur = COULEURS.find((c) => c.nom === v.title || c.nom === v.option1);
-      const fichier = couleur?.slugImage
-        ? `${def.prefixe}-${couleur.slugImage}-face.png`
+      const fichier = couleur
+        ? `${def.prefixe}-${couleur.slug}-face.png`
         : def.image;
       if (!aCreer.has(fichier)) aCreer.set(fichier, []);
       aCreer.get(fichier).push(v.id);
@@ -158,17 +170,36 @@ async function traiter(cle, def) {
     return;
   }
 
-  /* Garde d'idempotence : on saute le produit seulement si TOUS ses variants
-     sont déjà rattachés à une image. Tester la simple présence d'images ne
-     suffisait pas — un produit dont on vient d'ajouter des variants couleur a
-     bien une image, mais ces nouveaux variants n'y sont pas rattachés. */
+  /* Garde d'idempotence : on saute le produit si TOUS ses variants sont déjà
+     rattachés à une image. Tester la simple présence d'images ne suffisait pas —
+     un produit dont on vient d'ajouter des variants couleur a bien une image,
+     mais ces nouveaux variants n'y sont pas rattachés.
+
+     `--remplacer` la contourne : utile quand les visuels ont CHANGÉ sans que le
+     rattachement bouge. C'est le cas après l'arrivée des 360 fichiers du
+     12/08/2026 — 25 couleurs sur 40 pointaient encore vers l'image générique. */
   const orphelins = variants.filter((v) => !v.image_id);
-  if (!orphelins.length) {
-    console.log(`    ${variants.length} variant(s) déjà rattaché(s) — produit ignoré`);
+  if (!orphelins.length && !REMPLACER) {
+    console.log(
+      `    ${variants.length} variant(s) déjà rattaché(s) — produit ignoré` +
+        ' (--remplacer pour refaire)',
+    );
     return;
   }
   if ((p.images || []).length) {
     console.log(`    ${p.images.length} image(s) présente(s), ${orphelins.length} variant(s) sans image`);
+  }
+
+  /* Purge AVANT de reposer : sans elle, les anciennes images s'ajouteraient aux
+     nouvelles (16 + 40 = 56 médias par produit), et l'admin Shopify afficherait
+     une galerie encombrée de doublons approximatifs. Supprimer une image détache
+     automatiquement ses variants — ils seront rerattachés juste après. */
+  if (REMPLACER && (p.images || []).length) {
+    for (const im of p.images) {
+      const d = await api(`/products/${p.id}/images/${im.id}.json`, { method: 'DELETE' });
+      if (!d.ok) console.log(`      purge ECHEC image ${im.id} : ${d.status}`);
+    }
+    console.log(`    ${p.images.length} ancienne(s) image(s) supprimée(s)`);
   }
 
   for (const [fichier, ids] of valides) {
