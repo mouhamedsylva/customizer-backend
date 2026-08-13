@@ -333,6 +333,20 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
     coin.details.forEach((d, i) => {
       properties.push({ name: `Détail ${i + 1}`, value: d });
     });
+    /* Fichier joint par le client : remonte en propriete de ligne, comme les
+       apercus juste en dessous. Deux raisons de le faire ici :
+         - il apparait dans la commande Shopify, donc l atelier le voit ;
+         - le ZIP de production ne collecte que les proprietes en http(s), une
+           URL Cloudinary y sera donc captee automatiquement. */
+    if (customer.fichierUrl) {
+      properties.push({
+        name: customer.fichierNom
+          ? `Fichier client (${customer.fichierNom})`
+          : 'Fichier client',
+        value: customer.fichierUrl,
+      });
+    }
+
     coin.previews.forEach((p) => {
       if (p.base) properties.push({ name: `Aperçu ${p.label}`, value: p.base });
       if (p.logo) properties.push({ name: `Logo ${p.label}`, value: p.logo });

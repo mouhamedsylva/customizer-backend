@@ -2126,6 +2126,20 @@ function quoteCard(q: Quote, shopDomain: string): string {
         ${c.telephone ? `<div class="kv"><span class="k">Téléphone</span><a href="tel:${esc(c.telephone)}">${esc(c.telephone)}</a></div>` : ''}
         ${c.entreprise ? `<div class="kv"><span class="k">Société</span>${esc(c.entreprise)}</div>` : ''}
         ${c.message ? `<div class="kv" style="grid-column:1/-1"><span class="k">Message</span>${esc(c.message)}</div>` : ''}
+          ${
+            /* Fichier joint par le client (logo, visuel de reference).
+               Deux rendus selon le type, car cette route accepte aussi le PDF :
+                 - image        -> vignette cliquable, avec le zoom deja en place
+                                   (classe js-zoom + data-zoom, comme `thumbs`)
+                 - PDF ou autre -> lien d ouverture, une vignette serait vide.
+               isImg() filtre l URL, esc() echappe : memes garde-fous que
+               partout ailleurs dans cette vue. */
+            c.fichierUrl
+              ? (isImg(c.fichierUrl)
+                  ? `<div class="kv" style="grid-column:1/-1"><span class="k">Fichier joint</span><img class="thumb js-zoom" src="${esc(c.fichierUrl)}" data-zoom="${esc(c.fichierUrl)}" alt="fichier joint" style="max-width:120px;max-height:120px;cursor:zoom-in;vertical-align:middle"><a href="${esc(c.fichierUrl)}" target="_blank" rel="noopener" style="margin-left:10px">${esc(c.fichierNom || 'Telecharger')}</a></div>`
+                  : `<div class="kv" style="grid-column:1/-1"><span class="k">Fichier joint</span><a href="${esc(c.fichierUrl)}" target="_blank" rel="noopener">📎 ${esc(c.fichierNom || 'Ouvrir le fichier')}</a></div>`)
+              : ''
+          }
       </div>` : ''}
       <div class="section-lbl lbl">${group ? 'Design commun' : 'Détail du produit'}</div>
       <div class="item">

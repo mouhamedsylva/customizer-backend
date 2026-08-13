@@ -47,6 +47,28 @@ export class QuoteCustomerDto {
   @IsString()
   @MaxLength(2000)
   message?: string;
+
+  /**
+   * URL Cloudinary du fichier joint par le client (logo, visuel de référence…).
+   *
+   * DOIT figurer ici : le ValidationPipe tourne avec `whitelist: true`
+   * (main.ts), donc un champ absent du DTO serait silencieusement supprimé —
+   * la demande arriverait sans son fichier, sans la moindre erreur.
+   *
+   * C'est une URL, pas le fichier : le client l'uploade d'abord via
+   * `POST /api/uploads/piece-jointe`, puis n'envoie que l'adresse obtenue.
+   * 500 caractères suffisent largement à une URL Cloudinary.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  fichierUrl?: string;
+
+  /** Nom d'origine du fichier, pour l'afficher tel que le client l'a envoyé. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  fichierNom?: string;
 }
 
 /** Apercu d'un coin (base + logo optionnel). */
