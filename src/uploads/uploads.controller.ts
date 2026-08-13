@@ -81,6 +81,51 @@ export class UploadsController {
   }
 
   /**
+   * POST /api/uploads/piece-jointe
+   * Pièce jointe d'une demande de devis : images ET PDF, envoyés tels quels.
+   *
+   * Route distincte de /logo parce que ce dernier passe par sharp, qui échoue
+   * sur un PDF. Publique comme les deux autres : le visiteur qui demande un
+   * devis n'est pas authentifié.
+   */
+  @Post('piece-jointe')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPieceJointe(
+    @UploadedFile() file: UploadedMulterFile,
+  ): Promise<UploadResult> {
+    this.assertFile(file);
+
+    /* Contrôle de type MIME — les routes /logo et /preview n'en font AUCUN, la
+       validation y est purement cliente. Ici on l'ajoute côté serveur : cette
+       route accepte le PDF, donc la liste des types autorisés doit être fermée
+       explicitement plutôt que laissée ouverte à n'importe quel binaire. */
+    const TYPES_AUTORISES = [
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
+      'application/pdf',
+    ];
+    const type = String(file.mimetype || '').toLowerCase();
+    if (!TYPES_AUTORISES.includes(type)) {
+      throw new HttpException(
+        `Type de fichier non accepté (${type || 'inconnu'}). ` +
+          'Formats acceptés : JPG, PNG, WEBP, GIF, SVG, PDF.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    try {
+      return await this.cloudinary.uploadPieceJointe(
+        file.buffer,
+        file.originalname,
+      );
+    } catch (error) {
+      throw new HttpException(
+        `Echec upload piece jointe: ${(error as Error).message}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
+  /**
    * DELETE /api/uploads/:publicId — RÉSERVÉ AUX ADMINS.
    *
    * Supprime définitivement une image de Cloudinary. Cette route était

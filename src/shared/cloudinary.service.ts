@@ -137,6 +137,57 @@ export class CloudinaryService implements OnModuleInit {
   }
 
   /**
+   * Pièce jointe d'une demande de devis : envoyée TELLE QUELLE, sans sharp.
+   *
+   * `uploadLogo` ne convient pas ici : il fait passer le buffer par sharp, qui
+   * échoue sur un PDF. Or les clients joignent souvent leur logo en PDF à une
+   * demande de devis — c'est même le cas le plus fréquent après le PNG.
+   *
+   * `resource_type: 'auto'` laisse Cloudinary reconnaître le type : une image
+   * reste une image (donc affichable en vignette dans le dashboard), un PDF est
+   * stocké tel quel et reste téléchargeable. Pas de `format` imposé, sinon un
+   * PDF serait converti.
+   */
+  async uploadPieceJointe(
+    fileBuffer: Buffer,
+    nomOriginal = 'fichier',
+  ): Promise<UploadResult> {
+    /* Le nom d'origine sert seulement à rendre l'URL lisible côté atelier. On
+       le réduit à des caractères sûrs : Cloudinary rejette certains signes dans
+       un public_id, et un nom client peut contenir n'importe quoi. */
+    const base = String(nomOriginal)
+      .replace(/\.[^.]+$/, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .slice(0, 60) || 'fichier';
+
+    return new Promise<UploadResult>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'customizer/devis',
+          public_id: `${base}_${Date.now()}`,
+          resource_type: 'auto',
+        },
+        (error, result?: UploadApiResponse) => {
+          if (error || !result) {
+            reject(error || new Error('Upload Cloudinary sans resultat'));
+            return;
+          }
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+            width: result.width,
+            height: result.height,
+            format: result.format,
+            bytes: result.bytes,
+          });
+        },
+      );
+
+      uploadStream.end(fileBuffer);
+    });
+  }
+
+  /**
    * Optimise un logo (resize <= 2000x2000, PNG q90) et l'envoie sur Cloudinary.
    */
   async uploadLogo(
