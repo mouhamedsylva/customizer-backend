@@ -9,6 +9,7 @@
  * Ce qu'il remplace
  * -----------------
  *   sections/recapitulatif.liquid   CONF_VARIANTS (5 clés) + CONF_COLOR_VARIANTS
+ *                                  + CONF_SLEEVE_VARIANT
  *   assets/conf-main-inline.js      CONF_VARIANTS + CONF_SLEEVE_VARIANT
  *
  * Pourquoi un script et pas une édition à la main
@@ -164,6 +165,21 @@ main = main.replace(/window\.CONF_SLEEVE_VARIANT\s*=\s*\d+;/,
   `window.CONF_SLEEVE_VARIANT = ${V.CONF_SLEEVE_VARIANT};`);
 if (main === avantSleeve) { console.error('❌ CONF_SLEEVE_VARIANT introuvable'); process.exit(1); }
 modifs.push(`conf-main-inline.js   CONF_SLEEVE_VARIANT → ${V.CONF_SLEEVE_VARIANT}`);
+
+/* Le RÉCAPITULATIF porte lui aussi cet ID depuis le 14/08/2026, et doit donc
+   être réécrit ici : sans quoi les deux valeurs divergeraient au premier export
+   suivant un changement de variant.
+
+   Pourquoi la duplication : /pages/recapitulatif passe par theme.liquid, qui ne
+   charge AUCUN asset conf-* — conf-main-inline.js n'y est donc pas disponible.
+   L'ID y manquait, la ligne du supplément manches n'était jamais ajoutée au
+   panier Shopify, et le client était facturé le textile nu. La page duplique
+   déjà CONF_VARIANTS et CONF_COLOR_VARIANTS pour la même raison. */
+const avantSleeveRecap = recap;
+recap = recap.replace(/window.CONF_SLEEVE_VARIANTs*=s*d+;/,
+  `window.CONF_SLEEVE_VARIANT = ${V.CONF_SLEEVE_VARIANT};`);
+if (recap === avantSleeveRecap) { console.error('❌ CONF_SLEEVE_VARIANT introuvable dans recapitulatif.liquid'); process.exit(1); }
+modifs.push(`recapitulatif.liquid  CONF_SLEEVE_VARIANT → ${V.CONF_SLEEVE_VARIANT}`);
 
 modifs.forEach((m) => console.log('  ' + m));
 

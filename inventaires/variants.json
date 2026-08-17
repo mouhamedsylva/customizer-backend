@@ -1,14 +1,14 @@
 {
-  "date": "2026-08-07",
+  "date": "2026-08-14",
   "boutique": "38cca3.myshopify.com",
   "CONF_VARIANTS": {
     "sweatshirt": 60327512342862,
     "tshirt": 60327514669390,
     "tshirt_polyester": 60327519224142,
-    "drapeaux": 60327528563022,
+    "drapeaux": 60352869663054,
     "coins": 60327529939278
   },
-  "CONF_SLEEVE_VARIANT": 60327504183630,
+  "CONF_SLEEVE_VARIANT": 60386849685838,
   "CONF_COLOR_VARIANTS": {
     "sweatshirt": {
       "Apricot": 60327512342862,
@@ -141,37 +141,42 @@
     "sweatshirt": {
       "id": "15982847033678",
       "handle": "textile-sweatshirt",
-      "statut": "DRAFT"
+      "statut": "ACTIVE"
     },
     "tshirt": {
       "id": "15982848246094",
       "handle": "textile-t-shirt-coton",
-      "statut": "DRAFT"
+      "statut": "ACTIVE"
     },
     "tshirt_polyester": {
       "id": "15982849130830",
       "handle": "textile-t-shirt-polyester",
-      "statut": "DRAFT"
+      "statut": "ACTIVE"
     },
     "drapeaux": {
       "id": "15982850572622",
       "handle": "drapeau-personnalise",
-      "statut": "DRAFT"
+      "statut": "ACTIVE"
     },
     "coins": {
       "id": "15982850801998",
       "handle": "patch-personnalise",
-      "statut": "DRAFT"
+      "statut": "ACTIVE"
     },
     "patches": {
       "id": "15982850998606",
       "handle": "coin-metal-personnalise",
-      "statut": "DRAFT"
+      "statut": "ACTIVE"
     },
     "manche": {
       "id": "15982845854030",
       "handle": "personnalisation-manche",
-      "statut": "DRAFT"
+      "statut": "ACTIVE"
+    },
+    "manchePoly": {
+      "id": "15996670869838",
+      "handle": "personnalisation-manche-polyester",
+      "statut": "ACTIVE"
     }
   }
 }

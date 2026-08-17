@@ -46,6 +46,10 @@ const CIBLES = [
   ...Object.entries(TEXTILES).map(([cle, p]) => ({ cle, handle: p.handle, textile: true })),
   ...Object.entries(SIMPLES).map(([cle, p]) => ({ cle, handle: p.handle, textile: false })),
   { cle: 'manche', handle: 'personnalisation-manche', textile: false },
+  /* Le supplément manches est réparti sur DEUX produits : le plan Basic limite
+     un produit à 100 variants, et 3 textiles × 40 couleurs en font 120. Le
+     polyester a donc son propre produit (voir create-sleeve-polyester-product.mjs). */
+  { cle: 'manchePoly', handle: 'personnalisation-manche-polyester', textile: false },
 ];
 
 console.log(`Boutique : ${STORE}\n`);
@@ -93,6 +97,46 @@ const m = resultats.manche;
 if (m) {
   console.log('\n// assets/conf-main-inline.js (juste après CONF_VARIANTS)');
   console.log(`    window.CONF_SLEEVE_VARIANT = ${num(m.produit.variants.nodes[0].id)};`);
+}
+
+/* ── CONF_SLEEVE_COLOR_VARIANTS ──────────────────────────────────────────
+   Variant du supplément manches PAR TEXTILE ET COULEUR : c'est ce qui fait que
+   la vignette du checkout montre la manche à la bonne teinte, au lieu d'un
+   visuel unique pour toutes les commandes.
+
+   Les clés produit sont celles de `it.productType` côté thème (sweatshirt,
+   tshirt, tshirt_polyester), pour que sleeveVariantForItem() les retrouve sans
+   traduction. Le polyester vient d'un AUTRE produit Shopify — d'où la lecture
+   de deux résultats distincts. */
+const mp = resultats.manchePoly;
+if (m || mp) {
+  console.log(String.fromCharCode(10) + '// sections/recapitulatif.liquid (a cote de CONF_SLEEVE_VARIANT)');
+  console.log('  window.CONF_SLEEVE_COLOR_VARIANTS = {');
+
+  /* Produit principal : option1 = titre du textile, option2 = couleur. */
+  const parTextile = { 'Textile - Sweatshirt': 'sweatshirt', 'Textile - T-shirt Coton': 'tshirt' };
+  for (const [titre, cle] of Object.entries(parTextile)) {
+    const noeuds = (m ? m.produit.variants.nodes : [])
+      .filter((v) => (v.selectedOptions || [])[0] && v.selectedOptions[0].value === titre);
+    if (!noeuds.length) continue;
+    console.log(`    '${cle}': {`);
+    noeuds.forEach((v) => {
+      const couleur = v.selectedOptions[1] ? v.selectedOptions[1].value : '';
+      if (couleur) console.log(`      '${couleur}': ${num(v.id)},`);
+    });
+    console.log('    },');
+  }
+
+  /* Polyester : produit séparé, une seule option (la couleur). */
+  if (mp) {
+    console.log("    'tshirt_polyester': {");
+    mp.produit.variants.nodes.forEach((v) => {
+      const couleur = (v.selectedOptions || [])[0] ? v.selectedOptions[0].value : '';
+      if (couleur) console.log(`      '${couleur}': ${num(v.id)},`);
+    });
+    console.log('    },');
+  }
+  console.log('  };');
 }
 
 /* ── CONF_COLOR_VARIANTS ─────────────────────────────────────────────────
