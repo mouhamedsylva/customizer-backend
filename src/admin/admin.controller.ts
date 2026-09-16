@@ -840,6 +840,26 @@ export class AdminController {
    * Les relances elles-mêmes partent de Shopify (renvoi de la facture du
    * brouillon) : ces réglages n'en pilotent que le déclenchement.
    */
+  /**
+   * GET /api/admin/settings — état courant des réglages, pour la modale.
+   *
+   * Sans lui, la modale s'ouvrait sur des cases vides et ne pouvait pas montrer
+   * ce qui est réellement en vigueur : l'admin aurait dû se fier à sa mémoire
+   * pour savoir si le configurateur est ouvert.
+   *
+   * Protégé comme l'écriture : ces réglages décrivent le fonctionnement de
+   * l'atelier. Le seul qui ait à sortir publiquement est le mode maintenance,
+   * servi à part par GET /api/maintenance.
+   */
+  @Get('settings')
+  async getSettings(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    res.json({ ok: true, settings: await this.settings.get() });
+  }
+
   @Post('settings')
   async saveSettings(
     @Req() req: Request,
@@ -850,14 +870,28 @@ export class AdminController {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
-    // `reminderDays` n'est transmis QUE s'il figure dans le corps reçu.
-    // Le transmettre systématiquement écrivait une liste vide en base dès
-    // qu'un appel partiel ne le mentionnait pas — et depuis que « vide » est
-    // distingué de « absent », cela revenait à désactiver les paliers à
-    // l'insu de l'admin.
-    const patch: Parameters<SettingsService['save']>[0] = {
-      reminderEnabled: body.reminderEnabled === true || body.reminderEnabled === '1',
-    };
+    // AUCUN champ n'est transmis s'il ne figure pas dans le corps reçu.
+    //
+    // La règle valait déjà pour `reminderDays` : le transmettre
+    // systématiquement écrivait une liste vide en base dès qu'un appel partiel
+    // ne le mentionnait pas — et depuis que « vide » est distingué de
+    // « absent », cela revenait à désactiver les paliers à l'insu de l'admin.
+    //
+    // `reminderEnabled`, lui, y échappait encore : il était écrit à CHAQUE
+    // appel, et donc remis à `false` dès qu'un appel ne le portait pas. Sans
+    // conséquence tant que ce point d'entrée n'avait qu'un seul appelant ;
+    // avec l'arrivée du mode maintenance, régler l'un aurait éteint l'autre.
+    const patch: Parameters<SettingsService['save']>[0] = {};
+
+    if (body.reminderEnabled !== undefined) {
+      patch.reminderEnabled =
+        body.reminderEnabled === true || body.reminderEnabled === '1';
+    }
+
+    if (body.maintenanceEnabled !== undefined) {
+      patch.maintenanceEnabled =
+        body.maintenanceEnabled === true || body.maintenanceEnabled === '1';
+    }
 
     if (body.reminderDays !== undefined) {
       patch.reminderDays = String(body.reminderDays || '')

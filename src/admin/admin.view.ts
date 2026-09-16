@@ -2802,6 +2802,13 @@ export function dashboardPage(
         </svg>
         Prix
       </button>
+      <button class="theme-btn" onclick="openSettings()" title="Réglages de l'atelier">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Paramètres
+      </button>
       ${
         isOwner
           ? `<button class="theme-btn" onclick="openAdmins()" title="Gérer les administrateurs">
@@ -3080,6 +3087,41 @@ export function dashboardPage(
         <button class="btn primary" id="price-save" onclick="savePricing()">Enregistrer</button>
       </div>
       <p class="hint" id="price-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <!-- Modale : réglages de l'atelier -->
+  <div class="modal" id="set-modal" onclick="if(event.target===this)closeSettings()">
+    <div class="modal-box" style="max-width:520px">
+      <h3>Paramètres</h3>
+      <p class="sub">Réglages de l'atelier de personnalisation.</p>
+
+      <div class="set-block">
+        <label class="switch">
+          <input type="checkbox" id="set-maintenance">
+          <span>Mode maintenance du configurateur</span>
+        </label>
+        <p class="hint" style="margin-top:10px">
+          Une fois activé, la page de personnalisation affiche un écran
+          d'attente au lieu du configurateur. Le <strong>reste de la boutique
+          continue de fonctionner</strong> : catalogue, panier, et les commandes
+          déjà composées peuvent être réglées.
+        </p>
+        <p class="hint" style="margin-top:6px">
+          Les clients déjà sur la page basculent d'eux-mêmes en moins d'une
+          minute, sans avoir à recharger.
+        </p>
+        <p class="hint" style="margin-top:6px">
+          Pour travailler sur le configurateur pendant la fermeture, ajoutez
+          <strong>?apercu=1</strong> à l'adresse de la page.
+        </p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeSettings()">Annuler</button>
+        <button class="btn primary" id="set-save" onclick="saveSettingsModal()">Enregistrer</button>
+      </div>
+      <p class="hint" id="set-status" style="margin-top:12px"></p>
     </div>
   </div>
 
@@ -3757,6 +3799,72 @@ export function dashboardPage(
     }
     function closePricing(){
       document.getElementById('price-modal').classList.remove('open');
+    }
+
+    /* ── Réglages de l'atelier ─────────────────────────────────────────────
+       Nommée saveSettingsModal et non saveSettings : ce script est inline et
+       vit dans la portée globale de la page, où un nom générique finit par
+       rencontrer son homonyme. Le suffixe dit d'où vient la fonction.
+
+       (Aucun accent grave dans ce fichier : tout le dashboard est un template
+       string TypeScript, une paire de backticks y refermerait la chaîne.) */
+    function openSettings(){
+      document.getElementById('set-modal').classList.add('open');
+      loadSettings();
+    }
+    function closeSettings(){
+      document.getElementById('set-modal').classList.remove('open');
+    }
+
+    async function loadSettings(){
+      var box=document.getElementById('set-maintenance');
+      var st=document.getElementById('set-status');
+      if(st) st.textContent='';
+      if(!box) return;
+      /* Désactivée le temps du chargement : cocher avant que l'état réel soit
+         connu aurait enregistré une valeur devinée. */
+      box.disabled=true;
+      try{
+        var r=await fetch('/api/admin/settings',{credentials:'same-origin'});
+        var d=await r.json();
+        if(!d.ok||!d.settings){ if(st) st.textContent=d.error||'Réglages indisponibles.'; return; }
+        box.checked=!!d.settings.maintenanceEnabled;
+        box.disabled=false;
+      }catch(e){
+        if(st) st.textContent='Réglages indisponibles — vérifiez la connexion.';
+      }
+    }
+
+    async function saveSettingsModal(){
+      var box=document.getElementById('set-maintenance');
+      var btn=document.getElementById('set-save');
+      var st=document.getElementById('set-status');
+      if(!box) return;
+      if(btn){ btn.disabled=true; btn.textContent='Enregistrement…'; }
+      if(st) st.textContent='';
+      try{
+        /* SEUL le mode maintenance est transmis : le point d'entrée n'écrit
+           que les clés reçues, les relances de devis restent donc intactes. */
+        var r=await fetch('/api/admin/settings',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({ maintenanceEnabled: box.checked })
+        });
+        var d=await r.json();
+        if(!d.ok){ showAlert('Enregistrement impossible', d.error||'Erreur inconnue.', 'error'); return; }
+        closeSettings();
+        showAlert(
+          box.checked ? 'Configurateur fermé' : 'Configurateur rouvert',
+          box.checked
+            ? "Les visiteurs voient désormais l'écran de maintenance. Les clients déjà sur la page basculeront en moins d'une minute."
+            : 'Le configurateur est de nouveau accessible.'
+        );
+      }catch(e){
+        showAlert('Enregistrement impossible', 'Le serveur ne répond pas.', 'error');
+      }finally{
+        if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; }
+      }
     }
 
     async function loadPricing(){

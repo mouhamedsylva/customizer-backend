@@ -13,6 +13,7 @@ import { HealthModule } from './health/health.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AdminModule } from './admin/admin.module';
 import { PricingModule } from './pricing/pricing.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
 import { Design } from './database/entities/design.entity';
 import { Quote } from './database/entities/quote.entity';
 import { Order } from './database/entities/order.entity';
@@ -66,6 +67,7 @@ import { Admin } from './database/entities/admin.entity';
     WebhooksModule,
     AdminModule,
     PricingModule,
+    MaintenanceModule,
   ],
   providers: [
     // Applique le rate limiting à toutes les routes.
