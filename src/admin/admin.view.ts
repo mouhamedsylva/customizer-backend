@@ -454,6 +454,9 @@ body{
   display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;
   box-shadow:0 2px 8px rgba(194,65,12,.3);
 }
+/* La pastille portait un caractère texte ; elle accueille désormais une icône,
+   qui a besoin d'une taille explicite. */
+.brand-mark svg{width:18px;height:18px;display:block}
 .brand-txt b{font-size:14px;font-weight:800;letter-spacing:-.01em;display:block}
 .brand-txt span{font-size:11px;color:var(--muted)}
 .topbar-actions{display:flex;align-items:center;gap:14px}
@@ -468,30 +471,120 @@ body{
 .logout:hover{color:#fff;background:var(--danger)}
 .logout svg{flex:none}
 
+/* ── Menu « Paramètres » ─────────────────────────────────────────────────
+   Regroupe Prix, Réglages, Admins, Mon compte et Thème. Même vocabulaire
+   visuel que le panneau des notifications : même rayon, même ombre, même
+   flèche d'ancrage — deux panneaux voisins dans la barre, ils doivent se
+   ressembler. */
+.menu-wrap{position:relative}
+.menu-caret{flex:none;opacity:.6;transition:transform .15s ease}
+.menu-wrap.open .menu-caret{transform:rotate(180deg)}
+/* Déclencheur ouvert : il reste allumé tant que son panneau l'est. */
+.menu-wrap.open #cog-btn{color:var(--ink);background:var(--raise)}
+.cog-menu{
+  display:none;position:absolute;right:0;top:calc(100% + 10px);z-index:60;
+  width:262px;max-width:calc(100vw - 32px);padding:6px;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 18px 44px rgba(0,0,0,.18);
+}
+.cog-menu.open{display:block;animation:notifIn .16s ease-out}
+.cog-menu::before{
+  content:'';position:absolute;top:-6px;right:18px;width:11px;height:11px;
+  background:var(--surface);border-left:1px solid var(--line);border-top:1px solid var(--line);
+  transform:rotate(45deg);
+}
+.cog-item{
+  position:relative;                        /* passe au-dessus de la flèche */
+  display:flex;align-items:center;gap:11px;width:100%;
+  padding:9px 10px;border:none;background:none;cursor:pointer;
+  font:inherit;color:var(--ink);text-align:left;border-radius:9px;
+}
+.cog-item:hover{background:var(--paper)}
+.cog-item:hover svg{color:var(--accent)}
+.cog-item svg{flex:none;color:var(--muted)}
+.cog-item span{display:flex;flex-direction:column;gap:1px;min-width:0}
+.cog-item b{font-size:13px;font-weight:600}
+/* L'adresse e-mail peut être longue : elle se coupe plutôt que d'élargir. */
+.cog-item small{
+  font-size:11px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cog-sep{height:1px;background:var(--line-soft);margin:5px 8px}
+
 .wrap{max-width:1080px;margin:0 auto;padding:clamp(20px,4vw,34px) clamp(16px,4vw,32px) 80px}
 
 /* Stat strip */
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:26px}
+/* Le minimum de colonne tient compte du plus long libellé (~150px à 10px en
+   capitales), du médaillon (42px) et des marges : en dessous, l'étiquette
+   serait tronquée avant que la grille ne se réorganise. */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:14px;margin-bottom:26px}
+
+/* Chaque carte porte sa propre teinte via --t : quatre mesures distinctes se
+   reconnaissent alors à la couleur, sans lire le libellé. La teinte est posée
+   par les classes .t-* plus bas ; l'orange de la marque reste sur la carte
+   « À fabriquer », la seule qui appelle une action. */
 .stat{
+  --t:var(--accent);
+  position:relative;overflow:hidden;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
-  padding:16px 18px;box-shadow:var(--shadow);
+  /* Le filet coloré occupe 3px à gauche : le contenu est décalé d'autant. */
+  padding:17px 18px 17px 21px;box-shadow:var(--shadow);
   display:flex;align-items:center;justify-content:space-between;gap:12px;
-  transition:border-color .15s, transform .15s;
+  transition:border-color .16s, transform .16s, box-shadow .16s;
 }
-.stat:hover{border-color:var(--accent);transform:translateY(-1px)}
-.stat-body{min-width:0}
-.stat .num{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1}
-.stat .cap{margin-top:6px;color:var(--muted);font-size:12px}
-.stat.accent .num{color:var(--accent)}
-/* Médaillon de l'icône : discret par défaut, coloré sur la carte accentuée. */
+/* Filet coloré à gauche : il signe la carte sans peser sur le fond. */
+.stat::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--t);opacity:.85;
+}
+.stat:hover{
+  border-color:color-mix(in srgb,var(--t) 42%,var(--line));
+  transform:translateY(-2px);
+  box-shadow:0 10px 26px rgba(0,0,0,.09);
+}
+/* L'écart sépare le chiffre de son étiquette. Trop serré, les deux se lisent
+   comme un seul bloc ; il respire à 9px. */
+.stat-body{min-width:0;display:flex;flex-direction:column-reverse;gap:9px}
+.stat .num{font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.05;color:var(--ink)}
+/* Libellé en capitales : il devient une étiquette, le chiffre garde la vedette.
+
+   Taille et espacement sont calés sur le plus long des quatre — « Chiffre
+   d'affaires estimé », 25 caractères — pour qu'il tienne sur une seule ligne.
+   D'où 10px et un interlettrage réduit, appliqués à TOUTES les cartes : des
+   étiquettes de tailles différentes dans une même rangée se verraient. */
+.stat .cap{
+  color:var(--muted);font-size:10px;font-weight:700;
+  letter-spacing:.03em;text-transform:uppercase;line-height:1.35;
+  /* Une ligne, toujours. Si la colonne devient trop étroite pour le tenir,
+     l'ellipse vaut mieux qu'un débordement hors de la carte. */
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.stat.accent .num{color:var(--t)}
+
+/* Médaillon de l'icône, teinté par la carte. */
 .stat-ico{
-  flex:none;width:40px;height:40px;border-radius:11px;
+  flex:none;width:42px;height:42px;border-radius:12px;
   display:grid;place-items:center;
-  background:var(--raise);color:var(--muted);
+  background:color-mix(in srgb,var(--t) 12%,transparent);
+  color:var(--t);
+  transition:background .16s, transform .16s;
 }
 .stat-ico svg{width:20px;height:20px}
-.stat.accent .stat-ico{background:rgba(194,65,12,.12);color:var(--accent)}
-.stat:hover .stat-ico{color:var(--accent)}
+.stat:hover .stat-ico{
+  background:color-mix(in srgb,var(--t) 19%,transparent);
+  transform:scale(1.06);
+}
+
+/* Les teintes, calibrées pour le fond clair : assez sombres pour rester
+   lisibles sur blanc. */
+.stat.t-blue{--t:#2f74d0}
+.stat.t-green{--t:#18915f}
+.stat.t-violet{--t:#7a5af0}
+/* Sur le fond nuit de Night Owl, ces mêmes tons s'éteindraient. On reprend
+   les couleurs claires de sa propre palette. */
+:root[data-theme="dark"] .stat.t-blue{--t:#82aaff}
+:root[data-theme="dark"] .stat.t-green{--t:#addb67}
+:root[data-theme="dark"] .stat.t-violet{--t:#c792ea}
 
 /* Tabs */
 .tabs{display:inline-flex;background:var(--raise);border-radius:11px;padding:4px;gap:2px;margin-bottom:16px}
@@ -809,11 +902,19 @@ body{
 /* Notifications */
 .bell-wrap{position:relative}
 #bell-btn{position:relative}
+/* Pastille de comptage. Elle chevauche la cloche : un liseré de la couleur de
+   la barre la détache du tracé, sans quoi les deux se confondent. */
 .bell-dot{
-  position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;padding:0 4px;
-  background:var(--accent);color:#fff;border-radius:9px;
-  font-size:10.5px;font-weight:800;line-height:17px;text-align:center;
+  position:absolute;top:-3px;right:-3px;
+  min-width:15px;height:15px;padding:0 3px;
+  background:var(--accent);color:#fff;border-radius:8px;
+  border:2px solid var(--surface);
+  font-size:9.5px;font-weight:800;line-height:15px;text-align:center;
+  font-variant-numeric:tabular-nums;
 }
+/* Sans contenu, min-width laissait un disque nu de la taille du badge —
+   visible alors qu'il n'y a rien à signaler. */
+.bell-dot:empty{display:none}
 /* Rappel visuel quand une nouvelle commande arrive (badge live). */
 @keyframes bellRing{
   0%,100%{transform:rotate(0)}
@@ -1242,13 +1343,32 @@ body{
   /* La cloche reste en tête de ligne, toujours accessible. */
   .bell-wrap{order:-1}
 
+  /* La barre défile horizontalement (overflow-x:auto) : un panneau en
+     position:absolute y serait rogné. On le sort du flux de la barre et on
+     l'ancre au bord droit de l'écran. La barre a ici une hauteur libre
+     (deux lignes) : le décalage vertical est mesuré à l'ouverture et posé
+     dans --cog-top plutôt que deviné. */
+  .cog-menu{
+    position:fixed;top:var(--cog-top,60px);right:12px;
+    width:auto;min-width:242px;
+  }
+  .cog-menu::before{display:none}
+
   /* — Stats : 2 colonnes. Le chiffre est réduit et ne se coupe plus
        (« 4510,60 € » passait sur 2 lignes). — */
   .stats{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px}
-  .stat{padding:13px;gap:8px}
-  .stat-body{min-width:0}
+  /* Le filet coloré occupe 3px à gauche : on décale le contenu d'autant. */
+  .stat{padding:13px 13px 13px 15px;gap:8px}
+  /* Cartes plus compactes ici : un écart intermédiaire, sinon elles s'étirent. */
+  .stat-body{min-width:0;gap:7px}
   .stat .num{font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stat .cap{font-size:11px}
+  /* Deux colonnes étroites ne peuvent pas tenir 25 caractères sur une ligne :
+     l'ellipse du desktop couperait « estimé ». Ici on laisse le libellé se
+     replier — mieux vaut deux lignes lisibles qu'un mot amputé. */
+  .stat .cap{
+    font-size:9.5px;letter-spacing:.02em;line-height:1.3;
+    white-space:normal;overflow:visible;text-overflow:clip;
+  }
   .stat-ico{width:34px;height:34px;flex:none}
 
   /* — Barre d'outils : recherche pleine largeur — */
@@ -1310,28 +1430,61 @@ body{
 .lg-card{
   width:100%; max-width:400px;
   background:var(--surface); border:1px solid var(--line);
-  border-radius:20px; padding:34px 32px 32px;
-  box-shadow:var(--shadow);
+  border-radius:20px; padding:36px 32px 32px;
+  /* Ombre en TROIS couches plutôt qu'une : un trait de lumière en haut, un
+     contact rapproché, une portée large. C'est ce qui donne à la carte
+     l'impression de reposer sur la page au lieu d'y être collée. */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.7),
+    0 1px 2px rgba(27,31,36,.05),
+    0 12px 32px rgba(27,31,36,.07);
+  /* Entrée discrète : la page de connexion est la première chose que voit
+     l'équipe, un surgissement brut la rend abrupte. */
+  animation:lg-in .32s cubic-bezier(.22,1,.36,1);
+}
+:root[data-theme="dark"] .lg-card{
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.04),
+    0 1px 2px rgba(0,0,0,.3),
+    0 12px 36px rgba(0,0,0,.35);
+}
+@keyframes lg-in{
+  from{opacity:0; transform:translateY(8px) scale(.99)}
+  to{opacity:1; transform:none}
+}
+/* Le mouvement est un confort : qui l'a désactivé au niveau du système ne
+   doit pas le subir ici. */
+@media (prefers-reduced-motion:reduce){
+  .lg-card{animation:none}
 }
 
 /* Marque : le logo passe en pastille pleine — c'est le seul élément
-   coloré avec le bouton, il ancre le regard en haut de carte. */
-.lg-brand{display:flex; align-items:center; gap:11px; margin-bottom:26px}
-.lg-mark{
-  width:40px; height:40px; flex:none; display:grid; place-items:center;
-  border-radius:12px; background:var(--accent); color:#fff;
-  font-size:17px; line-height:1;
-  box-shadow:0 4px 12px rgba(194,65,12,.28);
-}
-:root[data-theme="dark"] .lg-mark{
-  color:#05202b; box-shadow:0 4px 14px rgba(127,219,202,.22);
-}
-.lg-brand-txt{display:flex; flex-direction:column; gap:1px; min-width:0}
-.lg-brand-txt b{font-size:14.5px; font-weight:800; letter-spacing:-.01em}
-.lg-brand-txt span{font-size:11.5px; color:var(--muted)}
+   coloré avec le bouton, il ancre le regard en haut de carte.
 
-.lg-title{font-size:21px; font-weight:800; letter-spacing:-.025em; margin-bottom:5px}
-.lg-sub{font-size:13px; color:var(--muted); margin-bottom:22px}
+   Séparée du titre par un filet : l'identité de l'outil et l'action demandée
+   sont deux choses distinctes, et la carte gagne en structure. */
+.lg-brand{
+  display:flex; align-items:center; gap:12px;
+  padding-bottom:22px; margin-bottom:24px;
+  border-bottom:1px solid var(--line);
+}
+.lg-mark{
+  width:42px; height:42px; flex:none; display:grid; place-items:center;
+  border-radius:13px; background:var(--accent); color:#fff;
+  /* Dégradé très léger : une pastille en aplat paraît plate à cette taille. */
+  background-image:linear-gradient(160deg, rgba(255,255,255,.18), transparent 60%);
+  box-shadow:0 4px 14px rgba(194,65,12,.3), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.lg-mark svg{width:21px; height:21px; display:block}
+:root[data-theme="dark"] .lg-mark{
+  color:#05202b; box-shadow:0 4px 16px rgba(127,219,202,.24);
+}
+.lg-brand-txt{display:flex; flex-direction:column; gap:2px; min-width:0}
+.lg-brand-txt b{font-size:15px; font-weight:800; letter-spacing:-.015em}
+.lg-brand-txt span{font-size:11.5px; color:var(--muted); letter-spacing:.01em}
+
+.lg-title{font-size:22px; font-weight:800; letter-spacing:-.028em; margin-bottom:6px}
+.lg-sub{font-size:13px; color:var(--muted); margin-bottom:24px; line-height:1.5}
 
 /* Messages d'erreur : barre latérale colorée plutôt qu'un aplat, plus
    lisible et moins agressif que le bloc plein d'origine. */
@@ -1351,11 +1504,15 @@ body{
 }
 
 .lg-form{display:flex; flex-direction:column; gap:15px}
-.lg-field{display:flex; flex-direction:column; gap:7px}
+.lg-field{display:flex; flex-direction:column; gap:8px}
 .lg-lbl{
   font-size:10.5px; font-weight:700; letter-spacing:.07em;
   text-transform:uppercase; color:var(--muted);
+  transition:color .15s;
 }
+/* L'étiquette s'allume avec son champ : le regard sait où il est, même sur
+   un formulaire de deux lignes. */
+.lg-field:focus-within .lg-lbl{color:var(--accent)}
 
 /* Champ + icône : l'icône est posée DANS le champ, d'où le padding
    gauche de l'input et le positionnement absolu. */
@@ -1365,17 +1522,20 @@ body{
   color:var(--faint); pointer-events:none; transition:color .15s;
 }
 .lg-input-wrap input{
-  width:100%; padding:13px 14px 13px 40px;
-  border:1px solid var(--line); border-radius:11px;
+  width:100%; padding:14px 14px 14px 42px;
+  border:1px solid var(--line); border-radius:12px;
   background:var(--paper); color:var(--ink);
-  font:inherit; font-size:14px; outline:none;
-  transition:border-color .15s, box-shadow .15s, background .15s;
+  font:inherit; font-size:14.5px; outline:none;
+  transition:border-color .16s, box-shadow .16s, background .16s;
 }
 .lg-input-wrap input::placeholder{color:var(--faint)}
 .lg-input-wrap input:hover{border-color:var(--faint)}
 .lg-input-wrap input:focus{
   border-color:var(--accent); background:var(--surface);
-  box-shadow:0 0 0 3px var(--accent-soft);
+  /* Anneau plus large qu'un simple trait : à 3 px il se confondait avec la
+     bordure, à 4 il se lit franchement — y compris pour qui distingue mal
+     les nuances de couleur. */
+  box-shadow:0 0 0 4px var(--accent-soft);
 }
 .lg-input-wrap input:focus + .lg-icon,
 .lg-input-wrap:focus-within .lg-icon{color:var(--accent)}
@@ -1411,16 +1571,24 @@ body{
 }
 
 .lg-submit{
-  margin-top:4px; width:100%; padding:13px;
-  border:none; border-radius:11px;
+  margin-top:8px; width:100%; padding:14px;
+  border:none; border-radius:12px;
   background:var(--accent); color:#fff;
-  font:inherit; font-size:14px; font-weight:700; letter-spacing:.01em;
+  /* Même dégradé que la pastille de marque : les deux seuls éléments colorés
+     de la page se répondent. */
+  background-image:linear-gradient(180deg, rgba(255,255,255,.14), transparent 55%);
+  font:inherit; font-size:14.5px; font-weight:700; letter-spacing:.01em;
   cursor:pointer; transition:filter .15s, transform .12s, box-shadow .15s;
-  box-shadow:0 4px 14px rgba(194,65,12,.24);
+  box-shadow:0 4px 14px rgba(194,65,12,.26), inset 0 1px 0 rgba(255,255,255,.2);
 }
 .lg-submit:hover{filter:brightness(1.06); transform:translateY(-1px);
-  box-shadow:0 6px 18px rgba(194,65,12,.3)}
-.lg-submit:active{transform:translateY(0)}
+  box-shadow:0 7px 20px rgba(194,65,12,.32), inset 0 1px 0 rgba(255,255,255,.2)}
+.lg-submit:active{transform:translateY(0); filter:brightness(.98)}
+/* Anneau de focus visible au clavier : le bouton est la seule action de la
+   page, on ne doit jamais perdre sa trace en tabulant. */
+.lg-submit:focus-visible{
+  outline:none; box-shadow:0 0 0 4px var(--accent-soft), 0 4px 14px rgba(194,65,12,.26);
+}
 :root[data-theme="dark"] .lg-submit{
   color:#05202b; box-shadow:0 4px 14px rgba(127,219,202,.2);
 }
@@ -1487,7 +1655,7 @@ function shell(body: string, nonce = ''): string {
   const n = nonce ? ` nonce="${nonce}"` : '';
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Administration — Custom Textile</title>
+<title>Administration du configurateur — Massacre</title>
 <style${n}>${STYLE}</style></head><body>${body}
 <script${n}>
 (function(){
@@ -1546,10 +1714,23 @@ export function loginPage(
 
     <main class="lg-card">
       <div class="lg-brand">
-        <div class="lg-mark">✦</div>
+        <!-- UN VÊTEMENT, ET LE MÊME QUE DANS LE CONFIGURATEUR.
+
+             Le tracé est repris tel quel des onglets de vue du configurateur
+             (sections/configurateur.liquid) : les deux interfaces pilotent le
+             même atelier, elles doivent parler le même langage visuel. Une
+             étoile, puis des curseurs de réglage, ne disaient ni l'un ni
+             l'autre ce que cet espace administre. -->
+        <div class="lg-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 3 4 5.5 5.5 10 7 9.5V21h10V9.5L18.5 10 20 5.5 15 3"/>
+            <path d="M9 3a3 3 0 0 0 6 0"/>
+          </svg>
+        </div>
         <div class="lg-brand-txt">
-          <b>Custom Textile</b>
-          <span>Espace de production</span>
+          <b>Administration</b>
+          <span>Configurateur Massacre</span>
         </div>
       </div>
 
@@ -1592,7 +1773,7 @@ export function loginPage(
       </form>
     </main>
 
-    <p class="lg-foot">Custom Textile · Espace de production</p>
+    <p class="lg-foot">Administration du configurateur · Massacre Officiel</p>
   </div>
 
   <script${nonce ? ` nonce="${nonce}"` : ''}>
@@ -1698,21 +1879,25 @@ const svg = (d: string): string =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
      stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 
-/** Atelier / à fabriquer : machine à coudre stylisée (aiguille + fil). */
+/* Ces icônes sont lues à 20 px. Une machine à coudre détaillée y devient une
+   tache : chaque tracé ci-dessous reste lisible à cette taille. */
+
+/** À fabriquer : le vêtement de l'atelier, celui de la marque. */
 const ICO_MAKE = svg(
-  '<path d="M3 20h18"/><path d="M6 20v-5a3 3 0 013-3h7"/><path d="M16 5v7"/><circle cx="16" cy="4" r="1.6"/><path d="M9 12V9a3 3 0 016 0"/>',
+  '<path d="M9 3 4 5.5 5.5 10 7 9.5V21h10V9.5L18.5 10 20 5.5 15 3"/><path d="M9 3a3 3 0 0 0 6 0"/>',
 );
-/** Commandes reçues : carton. */
+/** Commandes reçues : carton d'expédition. */
 const ICO_BOX = svg(
   '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
 );
-/** Chiffre d'affaires : euro. */
+/** Chiffre d'affaires : courbe ascendante — la progression, pas l'unité,
+    déjà portée par le « € » du chiffre lui-même. */
 const ICO_EURO = svg(
-  '<path d="M17 6.3A6.5 6.5 0 007.5 12a6.5 6.5 0 009.5 5.7"/><path d="M4 10.5h8"/><path d="M4 13.5h8"/>',
+  '<path d="M3 17l5.5-5.5 3.5 3.5L21 6"/><path d="M15 6h6v6"/>',
 );
-/** Devis : enveloppe. */
+/** Devis à traiter : document chiffré. L'enveloppe d'avant disait « e-mail ». */
 const ICO_QUOTE = svg(
-  '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+  '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/>',
 );
 
 /** Carte du bandeau de statistiques : valeur, libellé et icône. */
@@ -1722,10 +1907,13 @@ function statCard(
   icon: string,
   cls = '',
 ): string {
+  /* Le libellé passe AVANT le chiffre : on lit d'abord ce qu'on mesure, puis
+     la valeur. L'ordre visuel est rétabli en CSS (flex-direction:column-reverse),
+     pour que l'ordre du DOM — celui qu'entend un lecteur d'écran — reste juste. */
   return `<div class="stat ${cls}">
     <div class="stat-body">
-      <div class="num mono">${value}</div>
       <div class="cap">${caption}</div>
+      <div class="num mono">${value}</div>
     </div>
     <div class="stat-ico" aria-hidden="true">${icon}</div>
   </div>`;
@@ -2777,8 +2965,16 @@ export function dashboardPage(
   return shell(`
   <div class="topbar">
     <div class="brand">
-      <div class="brand-mark">✦</div>
-      <div class="brand-txt"><b>Custom Textile</b><span>Production &amp; commandes</span></div>
+      <!-- Même vêtement que sur l'écran de connexion et dans le configurateur :
+           une seule marque pour tout l'atelier. -->
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 3 4 5.5 5.5 10 7 9.5V21h10V9.5L18.5 10 20 5.5 15 3"/>
+          <path d="M9 3a3 3 0 0 0 6 0"/>
+        </svg>
+      </div>
+      <div class="brand-txt"><b>Administration</b><span>Configurateur Massacre</span></div>
     </div>
     <div class="topbar-actions">
       <div class="bell-wrap">
@@ -2794,37 +2990,54 @@ export function dashboardPage(
           <div class="notif-list" id="notif-list">${notifList}</div>
         </div>
       </div>
-      <button class="theme-btn" onclick="openPricing()" title="Modifier les prix du configurateur">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 7a6 6 0 1 0 0 10"/>
-          <path d="M6 10h8"/>
-          <path d="M6 14h8"/>
-        </svg>
-        Prix
-      </button>
-      <button class="theme-btn" onclick="openSettings()" title="Réglages de l'atelier">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-        Paramètres
-      </button>
-      ${
-        isOwner
-          ? `<button class="theme-btn" onclick="openAdmins()" title="Gérer les administrateurs">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-        Admins
-      </button>`
-          : ''
-      }
-      <button class="theme-btn" onclick="openAccount()" title="${esc(me?.email || 'Mon compte')} — changer mon mot de passe">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Mon compte
-      </button>
-      <button class="theme-btn" onclick="toggleTheme()" title="Basculer le thème">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-        Thème
-      </button>
+      <!-- Réglages regroupés : Prix, Paramètres, Admins, Mon compte et Thème
+           vivaient côte à côte dans la barre. Cinq boutons pour des actions
+           occasionnelles, quand seules la cloche et la sortie servent au
+           quotidien. Ils passent sous un seul déclencheur. -->
+      <div class="menu-wrap">
+        <button class="theme-btn" id="cog-btn" onclick="toggleCog(event)"
+                aria-haspopup="true" aria-expanded="false" aria-controls="cog-menu"
+                title="Prix, réglages, compte et thème">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Paramètres
+          <svg class="menu-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="cog-menu" id="cog-menu" role="menu" aria-labelledby="cog-btn">
+          <button class="cog-item" role="menuitem" onclick="fromCog(openPricing)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 7a6 6 0 1 0 0 10"/><path d="M6 10h8"/><path d="M6 14h8"/>
+            </svg>
+            <span><b>Prix</b><small>Tarifs du configurateur</small></span>
+          </button>
+          <button class="cog-item" role="menuitem" onclick="fromCog(openSettings)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <span><b>Réglages de l'atelier</b><small>Délais, maintenance, options</small></span>
+          </button>
+          ${
+            isOwner
+              ? `<button class="cog-item" role="menuitem" onclick="fromCog(openAdmins)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            <span><b>Admins</b><small>Gérer les accès</small></span>
+          </button>`
+              : ''
+          }
+          <div class="cog-sep"></div>
+          <button class="cog-item" role="menuitem" onclick="fromCog(openAccount)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span><b>Mon compte</b><small>${esc(me?.email || 'Changer mon mot de passe')}</small></span>
+          </button>
+          <button class="cog-item" role="menuitem" onclick="fromCog(toggleTheme)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <span><b>Thème</b><small>Basculer clair / sombre</small></span>
+          </button>
+        </div>
+      </div>
       <a class="logout" href="/api/admin/logout" title="Se déconnecter">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
         Déconnexion
@@ -2835,9 +3048,9 @@ export function dashboardPage(
   <div class="wrap">
     <div class="stats">
       ${statCard(nbToMake, 'À fabriquer', ICO_MAKE, 'accent')}
-      ${statCard(orders.length, 'Commandes reçues', ICO_BOX)}
-      ${statCard(money(revenue), "Chiffre d'affaires", ICO_EURO)}
-      ${statCard(nbOpen, 'Devis à traiter', ICO_QUOTE)}
+      ${statCard(orders.length, 'Commandes reçues', ICO_BOX, 't-blue')}
+      ${statCard(money(revenue), "Chiffre d'affaires estimé", ICO_EURO, 't-green')}
+      ${statCard(nbOpen, 'Devis à traiter', ICO_QUOTE, 't-violet')}
     </div>
 
     ${
@@ -3601,21 +3814,54 @@ export function dashboardPage(
       return false;
     }
 
+    /* ── Menu « Paramètres » : Prix, Réglages, Admins, Compte, Thème ── */
+    function closeCog(){
+      var m=document.getElementById('cog-menu');
+      if(!m) return;
+      m.classList.remove('open');
+      m.parentNode.classList.remove('open');
+      document.getElementById('cog-btn').setAttribute('aria-expanded','false');
+    }
+    function toggleCog(e){
+      e.stopPropagation();                              // sinon le doc referme aussitôt
+      var m=document.getElementById('cog-menu');
+      var ouvert=m.classList.toggle('open');
+      m.parentNode.classList.toggle('open',ouvert);
+      document.getElementById('cog-btn').setAttribute('aria-expanded',ouvert?'true':'false');
+      /* En mobile le panneau est en position:fixed et la barre a une hauteur
+         libre (deux lignes) : on mesure plutôt que de supposer. Inutilisé sur
+         grand écran, où le panneau est ancré sur son bouton. */
+      if(ouvert){
+        var bar=document.querySelector('.topbar');
+        if(bar) m.style.setProperty('--cog-top',(bar.getBoundingClientRect().bottom+8)+'px');
+      }
+      /* Un seul panneau ouvert à la fois dans la barre. */
+      document.getElementById('notif-pop').classList.remove('open');
+    }
+    /* Toute entrée du menu referme d'abord : sans quoi le panneau resterait
+       ouvert derrière la modale, et réapparaîtrait à sa fermeture. */
+    function fromCog(action){ closeCog(); action(); }
+
     /* ── Notifications : panneau déroulant sous la cloche ── */
     function toggleNotifs(e){
       e.stopPropagation();                              // sinon le doc referme aussitôt
       document.getElementById('notif-pop').classList.toggle('open');
       document.getElementById('export-menu').classList.remove('open');
+      closeCog();
     }
     /* Clic à l'extérieur, ou Échap : on referme. */
     document.addEventListener('click',function(e){
       var w=document.querySelector('.bell-wrap');
       if(w && !w.contains(e.target))
         document.getElementById('notif-pop').classList.remove('open');
+      var c=document.querySelector('.menu-wrap');
+      if(c && !c.contains(e.target)) closeCog();
     });
     document.addEventListener('keydown',function(e){
-      if(e.key==='Escape')
+      if(e.key==='Escape'){
         document.getElementById('notif-pop').classList.remove('open');
+        closeCog();
+      }
     });
 
     /* Depuis une notification : ouvrir le bon onglet, dérouler la carte. */

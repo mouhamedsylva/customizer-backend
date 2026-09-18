@@ -30,3 +30,4 @@ docker-compose.override.yml
 .idea
 .vscode
 *.sublime-workspace
+.env.prod.backup
