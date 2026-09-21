@@ -46,6 +46,7 @@ export class CloudinaryService implements OnModuleInit {
   private static readonly ALLOWED_IMAGE_HOSTS = [
     'res.cloudinary.com',
     'cdn.shopify.com',
+    'massacre-officiel.com'
   ];
 
   constructor(private readonly config: ConfigService) {}

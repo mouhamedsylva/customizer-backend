@@ -55,7 +55,11 @@ function esc(s: unknown): string {
  * qui lui révélait l'IP, l'User-Agent et le Referer de l'administrateur.
  * Même raisonnement pour les apex `cloudinary.com` / `shopifycdn.*`.
  */
-const IMG_HOSTS = ['res.cloudinary.com', 'cdn.shopify.com'];
+const IMG_HOSTS = [
+  'res.cloudinary.com', 
+  'cdn.shopify.com', 
+  'massacre-officiel.com'
+];
 
 function isAllowedImgHost(u: string): boolean {
   try {
