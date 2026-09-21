@@ -259,6 +259,26 @@ export class AdminService {
     await this.quotes.update(id, patch);
   }
 
+  /** Met à jour les pièces jointes temporaires d'un devis. */
+  async updateQuoteAttachments(
+    id: string,
+    attachments: Array<{
+      name: string;
+      url: string;
+      type: string;
+      size?: string;
+    }>,
+  ): Promise<void> {
+    const attachmentsWithTimestamp = attachments.map(att => ({
+      ...att,
+      uploadedAt: new Date().toISOString()
+    }));
+    
+    await this.quotes.update(id, {
+      tempAttachments: attachmentsWithTimestamp
+    });
+  }
+
   /** Une commande par son id Shopify. */
   async getOrder(shopifyOrderId: string): Promise<Order | null> {
     return this.orders.findOne({ where: { shopifyOrderId } });

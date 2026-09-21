@@ -720,3 +720,71 @@ export class CloudinaryService implements OnModuleInit {
     }
   }
 }
+
+  /**
+   * Upload temporaire de pièce jointe pour devis/facture.
+   * Stocké dans un dossier temporaire avec TTL automatique (24h).
+   */
+  async uploadQuoteAttachment(
+    fileBuffer: Buffer,
+    nomOriginal = 'attachment',
+  ): Promise<UploadResult> {
+    /* Nom d'origine sécurisé pour l'URL */
+    const base = String(nomOriginal)
+      .replace(/\.[^.]+$/, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .slice(0, 60) || 'attachment';
+
+    return new Promise<UploadResult>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'customizer/temp-attachments',
+          public_id: `${base}_${Date.now()}`,
+          resource_type: 'auto',
+          // TTL de 24h pour nettoyage automatique
+          invalidate: true,
+          overwrite: true,
+          // Tags pour identification et nettoyage
+          tags: ['temp-attachment', 'quote-invoice']
+        },
+        (error, result?: UploadApiResponse) => {
+          if (error || !result) {
+            reject(error || new Error('Upload Cloudinary sans resultat'));
+            return;
+          }
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+            width: result.width || 0,
+            height: result.height || 0,
+            format: result.format,
+            bytes: result.bytes,
+          });
+        },
+      );
+
+      uploadStream.end(fileBuffer);
+    });
+  }
+  /**
+   * Supprime une ressource de Cloudinary par son public_id.
+   * Utilisé pour le nettoyage des pièces jointes temporaires.
+   */
+  async deleteResource(publicId: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      cloudinary.uploader.destroy(publicId, (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        
+        if (result?.result !== 'ok' && result?.result !== 'not found') {
+          reject(new Error(`Échec suppression Cloudinary: ${result?.result || 'inconnu'}`));
+          return;
+        }
+        
+        // 'not found' n'est pas une erreur - le fichier était déjà supprimé
+        resolve();
+      });
+    });
+  }

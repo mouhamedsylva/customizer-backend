@@ -998,6 +998,52 @@ body{
 .grp-list td{padding:7px 10px;border-bottom:1px solid var(--line-soft)}
 .grp-list tr:last-child td{border-bottom:none}
 .grp-list .num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* Upload de fichiers dans le modal de devis/facturation */
+.attach-section{margin-top:16px}
+.drop-zone{
+  border:2px dashed var(--line);border-radius:12px;padding:32px 20px;
+  background:var(--paper);cursor:pointer;transition:all .2s ease;
+  text-align:center;margin-top:8px;
+}
+.drop-zone:hover{border-color:var(--accent);background:var(--accent-soft)}
+.drop-zone.drag-over{border-color:var(--accent);background:var(--accent-soft);transform:scale(1.02)}
+.drop-content{pointer-events:none}
+.files-list{margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.file-item{
+  display:flex;align-items:center;gap:12px;padding:12px 14px;
+  border-bottom:1px solid var(--line-soft);background:var(--surface);
+}
+.file-item:last-child{border-bottom:none}
+.file-item.uploading{background:var(--warn-soft)}
+.file-item.uploaded{background:var(--ok-soft)}
+.file-item.error{background:var(--danger-soft)}
+.file-icon{
+  flex:none;width:24px;height:24px;display:grid;place-items:center;
+  background:var(--line);border-radius:6px;font-size:12px;color:var(--surface);
+}
+.file-icon.pdf{background:#e53e3e;color:#fff}
+.file-icon.doc{background:#2b6cb0;color:#fff}
+.file-icon.xls{background:#38a169;color:#fff}
+.file-icon.img{background:#805ad5;color:#fff}
+.file-info{flex:1;min-width:0}
+.file-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-size{font-size:11px;color:var(--muted);margin-top:2px}
+.file-actions{flex:none;display:flex;gap:8px}
+.file-remove{
+  width:28px;height:28px;border:none;background:var(--danger);color:#fff;
+  border-radius:6px;cursor:pointer;display:grid;place-items:center;
+  font-size:16px;line-height:1;transition:.2s;
+}
+.file-remove:hover{background:#c53030}
+.upload-progress{
+  width:100%;height:3px;background:var(--line-soft);border-radius:2px;
+  margin-top:6px;overflow:hidden;
+}
+.upload-bar{
+  height:100%;background:var(--accent);border-radius:2px;
+  transition:width .3s ease;transform-origin:left;
+}
 .grp-list tfoot td{font-weight:800;background:var(--raise)}
 .grp-list .empty{color:var(--faint)}
 /* 🆕 Récap commande groupée par tailles (modal quantités) */
@@ -3261,6 +3307,31 @@ export function dashboardPage(
       <label class="lbl" style="margin-top:16px">Message au client</label>
       <textarea id="inv-msg"></textarea>
 
+      <!-- Section pièces jointes -->
+      <div class="attach-section" style="margin-top:16px">
+        <label class="lbl">Pièces jointes <span style="color:var(--muted);font-weight:400">(optionnel, max 5 fichiers)</span></label>
+        
+        <!-- Zone de drop pour upload -->
+        <div id="inv-drop-zone" class="drop-zone" onclick="document.getElementById('inv-file-input').click()"
+             ondrop="handleFileDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+          <div class="drop-content">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style="color:var(--muted);margin-bottom:8px">
+              <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+            </svg>
+            <p style="margin:0 0 4px;font-size:13px;font-weight:600">Glisser-déposer ou cliquer</p>
+            <p style="margin:0;font-size:11px;color:var(--muted)">PDF, DOC, XLS, images (max 10 MB par fichier)</p>
+          </div>
+          <input type="file" id="inv-file-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.webp,.gif" 
+                 style="display:none" onchange="handleFileSelect(event)">
+        </div>
+
+        <!-- Liste des fichiers sélectionnés -->
+        <div id="inv-files-list" class="files-list" style="display:none"></div>
+        
+        <!-- Status upload -->
+        <p id="inv-upload-status" class="hint" style="margin-top:8px;display:none"></p>
+      </div>
+
       <div class="modal-actions">
         <button class="btn" onclick="closeInvoice()">Annuler</button>
         <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer la facture</button>
@@ -4864,7 +4935,202 @@ export function dashboardPage(
 
     function closeInvoice(){
       document.getElementById('inv-modal').classList.remove('open');
+      // Nettoie les pièces jointes temporaires
+      window.invoiceAttachments = [];
+      updateAttachmentsList();
       invQuoteId=null;
+    }
+
+    /* ── Gestion des pièces jointes ── */
+    window.invoiceAttachments = [];  // Stockage des fichiers uploadés
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function getFileIcon(type) {
+      if (type.startsWith('image/')) return 'img';
+      if (type === 'application/pdf') return 'pdf';
+      if (type.includes('word') || type.includes('document')) return 'doc';
+      if (type.includes('sheet') || type.includes('excel')) return 'xls';
+      return 'file';
+    }
+
+    function updateAttachmentsList() {
+      const list = document.getElementById('inv-files-list');
+      const status = document.getElementById('inv-upload-status');
+      
+      if (!window.invoiceAttachments || window.invoiceAttachments.length === 0) {
+        list.style.display = 'none';
+        status.style.display = 'none';
+        return;
+      }
+
+      list.style.display = 'block';
+      list.innerHTML = window.invoiceAttachments.map((file, index) => {
+        const icon = getFileIcon(file.type);
+        const statusClass = file.error ? 'error' : (file.uploaded ? 'uploaded' : 'uploading');
+        
+        return `
+          <div class="file-item ${statusClass}">
+            <div class="file-icon ${icon}">${icon.toUpperCase()[0]}</div>
+            <div class="file-info">
+              <div class="file-name" title="${file.name}">${file.name}</div>
+              <div class="file-size">${formatFileSize(file.size || 0)}${file.error ? ' - ' + file.error : ''}</div>
+              ${!file.uploaded && !file.error ? '<div class="upload-progress"><div class="upload-bar" style="width:' + (file.progress || 0) + '%"></div></div>' : ''}
+            </div>
+            <div class="file-actions">
+              <button type="button" class="file-remove" onclick="removeAttachment(${index})" title="Supprimer">×</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Status global
+      const uploaded = window.invoiceAttachments.filter(f => f.uploaded).length;
+      const total = window.invoiceAttachments.length;
+      const errors = window.invoiceAttachments.filter(f => f.error).length;
+      
+      if (errors > 0) {
+        status.className = 'hint err';
+        status.textContent = `${errors} fichier${errors > 1 ? 's' : ''} en erreur sur ${total}`;
+        status.style.display = 'block';
+      } else if (uploaded === total && total > 0) {
+        status.className = 'hint ok';
+        status.textContent = `${uploaded} fichier${uploaded > 1 ? 's' : ''} prêt${uploaded > 1 ? 's' : ''} à envoyer`;
+        status.style.display = 'block';
+      } else if (uploaded < total) {
+        status.className = 'hint';
+        status.textContent = `Upload en cours... ${uploaded}/${total}`;
+        status.style.display = 'block';
+      } else {
+        status.style.display = 'none';
+      }
+    }
+
+    function removeAttachment(index) {
+      if (window.invoiceAttachments && window.invoiceAttachments[index]) {
+        window.invoiceAttachments.splice(index, 1);
+        updateAttachmentsList();
+      }
+    }
+
+    async function uploadFile(file) {
+      // Validation côté client
+      if (file.size > 10 * 1024 * 1024) {
+        return { error: 'Fichier trop volumineux (max 10 MB)' };
+      }
+
+      const allowedTypes = [
+        'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+        'application/pdf', 'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/plain'
+      ];
+      
+      if (!allowedTypes.includes(file.type)) {
+        return { error: 'Type de fichier non autorisé' };
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/uploads/quote-attachment', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          return { error: error.message || 'Erreur d\\'upload' };
+        }
+
+        const result = await response.json();
+        return {
+          name: result.name || file.name,
+          url: result.url,
+          type: result.type || file.type,
+          size: result.size || file.size
+        };
+      } catch (e) {
+        return { error: 'Erreur réseau: ' + e.message };
+      }
+    }
+
+    async function handleFiles(files) {
+      if (!files || files.length === 0) return;
+
+      // Limite à 5 fichiers au total
+      const currentCount = window.invoiceAttachments ? window.invoiceAttachments.length : 0;
+      const filesToProcess = Array.from(files).slice(0, 5 - currentCount);
+      
+      if (filesToProcess.length < files.length) {
+        document.getElementById('inv-upload-status').textContent = 'Maximum 5 fichiers autorisés';
+        document.getElementById('inv-upload-status').className = 'hint err';
+        document.getElementById('inv-upload-status').style.display = 'block';
+      }
+
+      for (const file of filesToProcess) {
+        const fileObj = {
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          progress: 0,
+          uploaded: false,
+          error: null
+        };
+
+        window.invoiceAttachments.push(fileObj);
+        updateAttachmentsList();
+
+        // Upload async
+        const result = await uploadFile(file);
+        const index = window.invoiceAttachments.length - 1;
+        
+        if (result.error) {
+          window.invoiceAttachments[index].error = result.error;
+        } else {
+          window.invoiceAttachments[index] = {
+            ...window.invoiceAttachments[index],
+            ...result,
+            uploaded: true,
+            progress: 100
+          };
+        }
+        
+        updateAttachmentsList();
+      }
+    }
+
+    function handleFileSelect(event) {
+      handleFiles(event.target.files);
+      event.target.value = ''; // Reset pour permettre le même fichier
+    }
+
+    function handleDragOver(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('inv-drop-zone').classList.add('drag-over');
+    }
+
+    function handleDragLeave(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('inv-drop-zone').classList.remove('drag-over');
+    }
+
+    function handleFileDrop(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('inv-drop-zone').classList.remove('drag-over');
+      handleFiles(event.dataTransfer.files);
     }
 
     function sendInvoice(){
@@ -4896,7 +5162,8 @@ export function dashboardPage(
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           unitPrice:unitToSend,
-          message:document.getElementById('inv-msg').value
+          message:document.getElementById('inv-msg').value,
+          attachments: window.invoiceAttachments || []
         })
       })
       .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j};});})

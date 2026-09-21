@@ -176,10 +176,10 @@ export class AdminController {
 
   /**
    * POST /api/admin/quotes/:id/invoice — définit le prix puis envoie la facture.
-   * Body : { unitPrice: number, message?: string }
+   * Body : { unitPrice: number, message?: string, attachments?: QuoteAttachmentDto[] }
    * Le prix unitaire est appliqué à la ligne du brouillon Shopify (le total est
    * recalculé par Shopify), puis le client reçoit l'e-mail de facture avec un
-   * lien de paiement. Tout se fait sans quitter le dashboard.
+   * lien de paiement. Les pièces jointes sont ajoutées comme propriétés Shopify.
    */
   @Post('quotes/:id/invoice')
   async sendQuoteInvoice(
@@ -187,6 +187,7 @@ export class AdminController {
     @Param('id') quoteId: string,
     @Body('message') message: string,
     @Body('unitPrice') unitPrice: unknown,
+    @Body('attachments') attachments: any[],
     @Res() res: Response,
   ): Promise<void> {
     if (!(await this.isAuthed(req))) {
@@ -244,6 +245,30 @@ export class AdminController {
         quote.draftOrderId,
         price,
       );
+
+      // 1.5) Ajoute les pièces jointes comme propriétés du draft order si présentes
+      if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+        // Validation des pièces jointes
+        const validAttachments = attachments.filter(att => 
+          att && typeof att.name === 'string' && typeof att.url === 'string'
+        ).slice(0, 5); // Maximum 5 pièces jointes
+
+        if (validAttachments.length > 0) {
+          // Stockage temporaire des pièces jointes dans l'entité Quote
+          await this.data.updateQuoteAttachments(quoteId, validAttachments);
+
+          // Ajout des URLs comme propriétés Shopify (visibles dans l'admin)
+          const attachmentProperties: Record<string, string> = {};
+          validAttachments.forEach((att, index) => {
+            attachmentProperties[`_PièceJointe_${index + 1}_Nom`] = att.name;
+            attachmentProperties[`_PièceJointe_${index + 1}_URL`] = att.url;
+            if (att.type) attachmentProperties[`_PièceJointe_${index + 1}_Type`] = att.type;
+          });
+
+          // Mise à jour du draft order avec les propriétés
+          await this.shopify.updateDraftOrderProperties(quote.draftOrderId, attachmentProperties);
+        }
+      }
 
       // 2) Envoie la facture au client.
       await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {

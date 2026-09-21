@@ -50,6 +50,16 @@ export class Quote {
   @Column({ type: 'datetime', nullable: true })
   lastReminderAt: Date | null;
 
+  /** Pièces jointes temporaires pour la facturation (URLs Cloudinary) */
+  @Column({ type: 'json', nullable: true })
+  tempAttachments: Array<{
+    name: string;
+    url: string;
+    type: string;
+    size?: string;
+    uploadedAt: string;
+  }> | null;
+
   /** Faux tant que l'équipe n'a pas ouvert le devis (marqueur « nouveau »). */
   @Column({ type: 'boolean', default: false })
   seen: boolean;

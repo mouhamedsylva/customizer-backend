@@ -1124,3 +1124,69 @@ export class ShopifyService {
   }
 
 }
+  /**
+   * Met à jour les propriétés d'un draft order (pièces jointes, notes, etc.)
+   * Sans modifier le prix ou la structure des lignes.
+   * Ajoute les nouvelles propriétés sans écraser les existantes.
+   */
+  async updateDraftOrderProperties(
+    draftOrderId: string | number,
+    properties: Record<string, string>
+  ): Promise<Record<string, any>> {
+    const draft = await this.getDraftOrder(draftOrderId);
+    
+    if (!draft.line_items || draft.line_items.length === 0) {
+      throw new Error('Ce brouillon ne contient aucune ligne pour ajouter des propriétés.');
+    }
+
+    // Conversion des propriétés en format Shopify line item properties
+    const newProperties = Object.entries(properties).map(([name, value]) => ({
+      name,
+      value: String(value)
+    }));
+
+    // Mise à jour seulement de la première ligne avec ajout des nouvelles propriétés
+    const updatedLineItems = draft.line_items.map((item: any, index: number) => {
+      if (index === 0) {
+        const existingProperties = item.properties || [];
+        // Évite les doublons en filtrant les propriétés avec le même nom
+        const filteredExisting = existingProperties.filter((prop: any) => 
+          !newProperties.some(newProp => newProp.name === prop.name)
+        );
+        
+        return {
+          ...item,
+          properties: [...filteredExisting, ...newProperties]
+        };
+      }
+      return item;
+    });
+
+    // Mise à jour du draft order avec les nouvelles propriétés
+    const response = await this.fetchShopify(
+      `${this.getBaseUrl()}/draft_orders/${draftOrderId}.json`,
+      {
+        method: 'PUT',
+        headers: await this.getHeaders(),
+        body: JSON.stringify({
+          draft_order: {
+            id: draftOrderId,
+            line_items: updatedLineItems
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      this.logger.error(
+        `Echec mise à jour propriétés draft ${draftOrderId}: ${response.status} ${text}`
+      );
+      throw new Error(
+        `Erreur Shopify (${response.status}) : ${response.statusText}. ${text}`
+      );
+    }
+
+    const result = (await response.json()) as { draft_order: Record<string, any> };
+    return result.draft_order;
+  }

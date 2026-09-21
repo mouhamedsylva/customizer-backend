@@ -215,3 +215,60 @@ export class UploadsController {
     }
   }
 }
+  /**
+   * POST /api/uploads/quote-attachment
+   * Upload temporaire de pièce jointe pour devis/facture.
+   * Fichiers stockés temporairement (24h) puis nettoyés automatiquement.
+   */
+  @Post('quote-attachment')
+  @UseGuards(AdminSessionGuard) // Seuls les admins peuvent uploader
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadQuoteAttachment(
+    @UploadedFile() file: UploadedMulterFile,
+  ): Promise<UploadResult & { name: string; type: string; size: number }> {
+    this.assertFile(file);
+
+    // Types de fichiers autorisés pour les pièces jointes
+    const TYPES_AUTORISES = [
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain'
+    ];
+    
+    const type = String(file.mimetype || '').toLowerCase();
+    if (!TYPES_AUTORISES.includes(type)) {
+      throw new HttpException(
+        `Type de fichier non accepté (${type || 'inconnu'}). ` +
+          'Formats acceptés : JPG, PNG, WEBP, GIF, PDF, DOC, DOCX, XLS, XLSX, TXT.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Limite de taille : 10 MB par fichier
+    if (file.size > 10 * 1024 * 1024) {
+      throw new HttpException(
+        'Fichier trop volumineux (max 10 MB par fichier).',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    try {
+      // Upload vers Cloudinary dans un dossier temporaire
+      const result = await this.cloudinary.uploadQuoteAttachment(file.buffer, file.originalname);
+      return {
+        ...result,
+        name: file.originalname,
+        type: file.mimetype,
+        size: file.size
+      };
+    } catch (error) {
+      throw new HttpException(
+        `Echec upload pièce jointe: ${(error as Error).message}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
