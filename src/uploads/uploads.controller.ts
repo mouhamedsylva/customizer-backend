@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   HttpException,
@@ -16,7 +17,9 @@ import {
   CloudinaryService,
   UploadResult,
 } from '../shared/cloudinary.service';
+import { TextSvgService } from '../shared/text-svg.service';
 import { AdminSessionGuard } from '../admin/admin-session.guard';
+import { UploadTextSvgDto } from './dto/upload-text-svg.dto';
 
 // Type minimal du fichier multer (evite la dependance forte a @types/multer dans la signature).
 interface UploadedMulterFile {
@@ -31,6 +34,7 @@ export class UploadsController {
   constructor(
     private readonly cloudinary: CloudinaryService,
     private readonly config: ConfigService,
+    private readonly textSvg: TextSvgService,
   ) {}
 
   private get maxFileSize(): number {
@@ -124,6 +128,53 @@ export class UploadsController {
       );
     }
   }
+
+
+  /**
+   * POST /api/uploads/text-svg
+   * Upload de texte haute résolution via génération SVG côté serveur.
+   * Remplace la rasterisation canvas côté client par un rendu vectoriel.
+   */
+  @Post('text-svg')
+  async uploadTextSvg(
+    @Body() dto: UploadTextSvgDto,
+  ): Promise<UploadResult> {
+    try {
+      // Normalisation et validation des segments
+      const normalizedSegments = dto.segments.map(seg => 
+        this.textSvg.normalizeFontParams(seg)
+      );
+
+      // Génération SVG avec options de rendu
+      const svgString = await this.textSvg.generateTextSvg(
+        normalizedSegments,
+        {
+          scale: dto.renderOptions?.scale || 4,
+          padding: dto.renderOptions?.padding || 32,
+          backgroundColor: dto.renderOptions?.backgroundColor
+        }
+      );
+
+      // Conversion SVG → PNG haute résolution
+      const pngBuffer = await this.textSvg.renderSvgToPng(svgString, {
+        scale: dto.renderOptions?.scale || 4,
+        padding: dto.renderOptions?.padding || 32
+      });
+
+      // Upload sur Cloudinary
+      return await this.cloudinary.uploadTextAsset(
+        pngBuffer,
+        dto.productType || 'generic',
+        dto.placement || 'front',
+      );
+    } catch (error) {
+      throw new HttpException(
+        `Echec generation texte SVG: ${(error as Error).message}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
 
   /**
    * DELETE /api/uploads/:publicId — RÉSERVÉ AUX ADMINS.

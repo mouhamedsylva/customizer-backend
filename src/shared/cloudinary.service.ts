@@ -227,6 +227,141 @@ export class CloudinaryService implements OnModuleInit {
   }
 
   /**
+   * Upload un asset texte haute résolution généré depuis SVG.
+   * Utilise PNG sans compression pour qualité maximale.
+   */
+  async uploadTextAsset(
+    pngBuffer: Buffer,
+    productType = 'generic',
+    placement = 'front',
+  ): Promise<UploadResult> {
+    try {
+      return this.uploadImage(pngBuffer, {
+        folder: `customizer/text/${productType}`,
+        public_id: `text_${placement}_${Date.now()}`,
+        format: 'png',
+      });
+    } catch (error) {
+      this.logger.error(`Erreur upload texte: ${(error as Error).message}`);
+      throw new Error(`Échec upload texte: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Génère un SVG haute résolution depuis métadonnées texte.
+   * Réutilise le pattern checkFonts() pour la gestion des polices.
+   */
+  async generateHighResTextSvg(
+    segments: Array<{
+      text: string;
+      fontFamily: string;
+      fontSize: number;
+      fontWeight: string;
+      fontStyle?: string;
+      color: string;
+      underline?: boolean;
+    }>,
+  ): Promise<Buffer> {
+    if (!segments || segments.length === 0) {
+      throw new Error('Aucun segment de texte fourni');
+    }
+
+    // Vérification disponibilité des polices (réutilise checkFonts)
+    if (!this.canRenderText) {
+      this.logger.warn('Polices système indisponibles, utilisation de sans-serif');
+    }
+
+    // Calcul dimensions (basé sur la logique canvas existante mais 2x plus grand)
+    const baseSize = 320; // 2x la résolution actuelle (160px)
+    const padding = baseSize * 0.15;
+
+    // Construction SVG
+    const svgContent = this.buildTextSvgFromSegments(segments, baseSize, padding);
+    
+    return Buffer.from(svgContent, 'utf-8');
+  }
+
+  /**
+   * Construit le SVG à partir des segments (méthode privée).
+   */
+  private buildTextSvgFromSegments(
+    segments: any[], 
+    fontSize: number, 
+    padding: number
+  ): string {
+    // Calcul de largeur totale (même logique que canvas)
+    let totalWidth = 0;
+    const segmentWidths: number[] = [];
+    
+    segments.forEach(seg => {
+      // Estimation largeur (0.6 * taille pour largeur moyenne caractère)
+      const avgCharWidth = fontSize * 0.6;
+      const weightMultiplier = (seg.fontWeight === 'bold' || parseInt(seg.fontWeight) >= 600) ? 1.1 : 1.0;
+      const styleMultiplier = seg.fontStyle === 'italic' ? 1.05 : 1.0;
+      
+      const segWidth = seg.text.length * avgCharWidth * weightMultiplier * styleMultiplier;
+      segmentWidths.push(segWidth);
+      totalWidth += segWidth;
+    });
+
+    // Dimensions SVG
+    const svgWidth = Math.ceil(totalWidth + padding * 2);
+    const svgHeight = Math.ceil(fontSize + padding * 2);
+    
+    // Position baseline
+    const baseY = svgHeight / 2 + fontSize * 0.35;
+    let currentX = padding;
+
+    // Construction éléments SVG
+    const textElements: string[] = [];
+    const underlineElements: string[] = [];
+
+    segments.forEach((seg, i) => {
+      const fontStyle = seg.fontStyle === 'italic' ? 'italic' : 'normal';
+      
+      // Élément texte
+      textElements.push(`
+        <text 
+          x="${currentX}" 
+          y="${baseY}"
+          font-family="${this.escapeXml(seg.fontFamily || 'sans-serif')}"
+          font-size="${fontSize}"
+          font-weight="${seg.fontWeight || '400'}"
+          font-style="${fontStyle}"
+          fill="${this.escapeXml(seg.color || '#000000')}"
+          dominant-baseline="alphabetic"
+        >${this.escapeXml(seg.text)}</text>
+      `);
+      
+      // Soulignement manuel si nécessaire
+      if (seg.underline) {
+        const underlineY = baseY + fontSize * 0.1;
+        const strokeWidth = Math.max(1, fontSize * 0.05);
+        
+        underlineElements.push(`
+          <line 
+            x1="${currentX}" 
+            y1="${underlineY}" 
+            x2="${currentX + segmentWidths[i]}" 
+            y2="${underlineY}"
+            stroke="${this.escapeXml(seg.color || '#000000')}"
+            stroke-width="${strokeWidth}"
+          />
+        `);
+      }
+      
+      currentX += segmentWidths[i];
+    });
+
+    // SVG final
+    return `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+      ${textElements.join('')}
+      ${underlineElements.join('')}
+    </svg>`.trim();
+  }
+
+
+  /**
    * Un hostname pointe-t-il vers une adresse interne (privée, loopback,
    * link-local) ? Bloque la forme littérale-IP la plus courante d'une SSRF.
    *

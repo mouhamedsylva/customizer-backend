@@ -1615,16 +1615,23 @@ body{
 .refresh-bar{
   position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
   z-index:4000;display:flex;align-items:center;gap:10px;
-  padding:10px 12px 10px 14px;border-radius:999px;
+  padding:12px 14px 12px 16px;border-radius:999px;
   background:var(--ink);color:var(--paper);
   box-shadow:0 8px 28px rgba(0,0,0,.28);
-  font-size:12.5px;font-weight:600;
-  max-width:calc(100vw - 24px);
+  font-size:13px;font-weight:600;
+  max-width:calc(100vw - 40px);
+  min-width:320px;
   animation:refreshIn .22s ease;
 }
 @keyframes refreshIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}}
-.refresh-bar>svg{width:15px;height:15px;flex:none;opacity:.8}
-.refresh-bar>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.refresh-bar>svg{width:16px;height:16px;flex:none;opacity:.8}
+.refresh-bar>span{
+  white-space:nowrap;
+  overflow:visible;
+  text-overflow:clip;
+  flex:1;
+  min-width:0;
+}
 .refresh-bar button{
   flex:none;border:none;border-radius:999px;cursor:pointer;
   font:inherit;font-size:12px;font-weight:700;
@@ -1649,6 +1656,12 @@ body{
   .refresh-bar{
     left:12px;right:12px;bottom:12px;border-radius:12px;
     transform:none;animation:none;
+    min-width:auto;
+    padding:12px 14px;
+  }
+  .refresh-bar>span{
+    white-space:normal;
+    line-height:1.3;
   }
 }
 
@@ -1961,12 +1974,43 @@ function groupRowsFromItems(items: any[]): { rows: any[]; label: string } | null
     const liste = propVal(li, 'Liste');
     if (!liste) continue; // item hors groupe (ex. add-on manche)
     if (!label) label = liste;
+    
+    // 🆕 RECONSTRUCTION DES PROPRIÉTÉS TYPOGRAPHIQUES COMPLÈTES
+    const textProperties: any = {};
+    
+    // Récupérer toutes les propriétés de texte personnalisé
+    const textProps = [
+      'TexteFontFamily', 'TexteFontSize', 'TexteFontWeight', 'TexteFontStyle',
+      'TexteColor', 'TexteDecoration', 'TexteAlign', 'TexteLineHeight',
+      'TexteLetterSpacing', 'TexteTransform', 'TexteLeft', 'TexteTop',
+      'TexteWidth', 'TexteHeight', 'TexteMaxWidth', 'TexteDataW',
+      'TexteDataWantedSize', 'TexteDataMaxFit', 'TexteZone', 'TexteCurved'
+    ];
+    
+    let hasTextProps = false;
+    textProps.forEach(prop => {
+      const value = propVal(li, '_' + prop); // Propriétés préfixées par "_"
+      if (value) {
+        hasTextProps = true;
+        // Convertir les noms de propriétés en camelCase
+        const key = prop.charAt(0).toLowerCase() + prop.slice(1).replace('Texte', '');
+        textProperties[key] = value;
+      }
+    });
+    
+    // Convertir 'curved' en booléen
+    if (textProperties.curved) {
+      textProperties.curved = textProperties.curved === 'true';
+    }
+
     rows.push({
       name: propVal(li, 'Personne') || '—',
       size: propVal(li, 'Taille'),
       // Détails = « Couleur : X » côté panier ; on isole le nom lisible.
       color: (propVal(li, 'Détails') || '').replace(/^\s*couleur\s*:\s*/i, ''),
       flock: propVal(li, 'Personne'), // nom floqué = identifiant de la ligne
+      // 🆕 PROPRIÉTÉS TYPOGRAPHIQUES COMPLÈTES
+      textProperties: hasTextProps ? textProperties : null,
       qty: Number(li.quantity) || 1,
     });
   }
