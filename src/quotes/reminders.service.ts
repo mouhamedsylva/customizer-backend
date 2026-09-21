@@ -9,6 +9,7 @@ import { Repository, Not, IsNull } from 'typeorm';
 import { Quote } from '../database/entities/quote.entity';
 import { ShopifyService } from '../shared/shopify.service';
 import { SettingsService } from '../admin/settings.service';
+import { MessageTemplateService } from '../admin/message-template.service';
 
 /**
  * Devis examinés par passe de relance.
@@ -39,6 +40,7 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly shopify: ShopifyService,
     private readonly settings: SettingsService,
+    private readonly messageTemplates: MessageTemplateService,
     @InjectRepository(Quote)
     private readonly quotes: Repository<Quote>,
   ) {}
@@ -163,20 +165,40 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
     const customer = data.customer || {};
     const productName = data.coin?.name || 'votre commande personnalisée';
 
-    const intro =
-      index === 1
-        ? `Nous revenons vers vous au sujet de votre devis pour ${productName}, qui reste en attente de règlement.`
-        : `Sauf erreur de notre part, votre devis pour ${productName} n'a pas encore été réglé.`;
+    // Essaie d'utiliser un template personnalisé
+    let customMessage: string;
+    try {
+      // Génère le message de relance personnalisé
+      const template = await this.messageTemplates.getDefaultTemplate('reminder');
+      if (template) {
+        customMessage = this.messageTemplates.replaceVariables(template.content, {
+          nom: customer.nom,
+          produit: productName,
+          quantite: data.coin?.qty,
+          total: q.totalPrice ? `${q.totalPrice} €` : undefined,
+          entreprise: customer.entreprise
+        });
+      } else {
+        throw new Error('Aucun template de relance configuré');
+      }
+    } catch (error) {
+      // Fallback vers l'ancien message codé en dur
+      const intro =
+        index === 1
+          ? `Nous revenons vers vous au sujet de votre devis pour ${productName}, qui reste en attente de règlement.`
+          : `Sauf erreur de notre part, votre devis pour ${productName} n'a pas encore été réglé.`;
+
+      customMessage = `Bonjour ${customer.nom || ''},\n\n` +
+        `${intro}\n\n` +
+        `Vous pouvez le régler directement via le lien ci-dessous. ` +
+        `N'hésitez pas à nous écrire si vous avez la moindre question.\n\n` +
+        `Bien cordialement,\nL'équipe Custom Textile`;
+    }
 
     await this.shopify.sendDraftOrderInvoice(q.draftOrderId as string, {
       to: customer.email,
       subject: `Relance — votre devis ${productName}`,
-      custom_message:
-        `Bonjour ${customer.nom || ''},\n\n` +
-        `${intro}\n\n` +
-        `Vous pouvez le régler directement via le lien ci-dessous. ` +
-        `N'hésitez pas à nous écrire si vous avez la moindre question.\n\n` +
-        `Bien cordialement,\nL'équipe Custom Textile`,
+      custom_message: customMessage,
     });
   }
 }

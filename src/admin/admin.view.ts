@@ -1095,6 +1095,40 @@ body{
 .mail-row .price-input{flex:1;min-width:0}
 .mail-row .btn{flex:none;white-space:nowrap}
 
+/* ── Modale Messages ── */
+.msg-panel{display:none}
+.msg-panel.active{display:block}
+.msg-template{
+  border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;
+  background:var(--surface);transition:border-color .2s ease;
+}
+.msg-template:hover{border-color:var(--accent)}
+.msg-template.default{border-color:var(--accent);background:var(--accent-soft)}
+.msg-template-header{
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;
+}
+.msg-template-name{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.msg-template-badge{
+  font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+  background:var(--accent);color:#fff;padding:2px 6px;border-radius:4px;
+}
+.msg-template-actions{display:flex;gap:6px}
+.msg-template-btn{
+  width:28px;height:28px;border:none;background:var(--raise);color:var(--muted);
+  border-radius:6px;cursor:pointer;display:grid;place-items:center;
+  font-size:16px;line-height:1;transition:.2s;
+}
+.msg-template-btn:hover{background:var(--accent);color:#fff}
+.msg-template-btn.danger:hover{background:var(--danger);color:#fff}
+.msg-template-content{
+  font-size:13px;color:var(--muted);line-height:1.4;
+  max-height:60px;overflow:hidden;position:relative;
+}
+.msg-template-content::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:20px;
+  background:linear-gradient(transparent,var(--surface));
+}
+
 /* ── Modale Prix ── */
 .price-line{
   display:flex;align-items:center;justify-content:space-between;gap:14px;
@@ -3113,6 +3147,12 @@ export function dashboardPage(
             </svg>
             <span><b>Réglages de l'atelier</b><small>Délais, maintenance, options</small></span>
           </button>
+          <button class="cog-item" role="menuitem" onclick="fromCog(openMessages)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span><b>Messages</b><small>Personnaliser les e-mails de facturation</small></span>
+          </button>
           ${
             isOwner
               ? `<button class="cog-item" role="menuitem" onclick="fromCog(openAdmins)">
@@ -3454,6 +3494,150 @@ export function dashboardPage(
         <button class="btn primary" id="set-save" onclick="saveSettingsModal()">Enregistrer</button>
       </div>
       <p class="hint" id="set-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <!-- Modale : gestion des messages personnalisables -->
+  <div class="modal" id="msg-modal" onclick="if(event.target===this)closeMessages()">
+    <div class="modal-box" style="max-width:720px">
+      <h3>Messages personnalisables</h3>
+      <p class="sub">Personnalisez les messages envoyés aux clients lors de la facturation et des relances.</p>
+
+      <!-- Onglets pour les différents types de messages -->
+      <div class="tabs" style="margin-top:20px">
+        <button class="tab active" onclick="switchMessageType('invoice')" id="tab-invoice">
+          Factures
+        </button>
+        <button class="tab" onclick="switchMessageType('reminder')" id="tab-reminder">
+          Relances
+        </button>
+      </div>
+
+      <!-- Panneau Factures -->
+      <div class="msg-panel active" id="panel-invoice">
+        <div class="set-block">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <label class="lbl">Modèles de message pour les factures</label>
+            <button class="btn" onclick="addMessageTemplate('invoice')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Nouveau modèle
+            </button>
+          </div>
+          
+          <div id="invoice-templates" style="margin-bottom:16px">
+            <p class="hint">Chargement des modèles...</p>
+          </div>
+
+          <div class="hint" style="background:var(--raise);padding:12px;border-radius:8px">
+            <strong>Variables disponibles :</strong><br>
+            <code>{nom}</code> - Nom du client<br>
+            <code>{produit}</code> - Nom du produit<br>
+            <code>{quantite}</code> - Quantité commandée<br>
+            <code>{total}</code> - Montant total<br>
+            <code>{entreprise}</code> - Entreprise du client
+          </div>
+        </div>
+      </div>
+
+      <!-- Panneau Relances -->
+      <div class="msg-panel" id="panel-reminder" style="display:none">
+        <div class="set-block">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <label class="lbl">Modèles de message pour les relances</label>
+            <button class="btn" onclick="addMessageTemplate('reminder')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Nouveau modèle
+            </button>
+          </div>
+          
+          <div id="reminder-templates" style="margin-bottom:16px">
+            <p class="hint">Chargement des modèles...</p>
+          </div>
+
+          <div class="hint" style="background:var(--raise);padding:12px;border-radius:8px">
+            <strong>Variables disponibles :</strong><br>
+            <code>{nom}</code> - Nom du client<br>
+            <code>{produit}</code> - Nom du produit<br>
+            <code>{quantite}</code> - Quantité commandée<br>
+            <code>{total}</code> - Montant total<br>
+            <code>{entreprise}</code> - Entreprise du client
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeMessages()">Fermer</button>
+        <button class="btn primary" onclick="previewMessage()">Aperçu</button>
+      </div>
+      <p class="hint" id="msg-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <!-- Modale : édition d'un modèle de message -->
+  <div class="modal" id="msg-edit-modal" onclick="if(event.target===this)closeMessageEdit()">
+    <div class="modal-box" style="max-width:600px">
+      <h3 id="msg-edit-title">Nouveau modèle de message</h3>
+      <p class="sub">Personnalisez le message en utilisant les variables disponibles.</p>
+
+      <div class="set-block">
+        <label class="lbl" for="msg-edit-name">Nom du modèle</label>
+        <input type="text" id="msg-edit-name" class="price-input" style="width:100%;text-align:left" placeholder="Ex: Facture standard">
+        
+        <label class="lbl" style="margin-top:16px" for="msg-edit-content">Contenu du message</label>
+        <textarea id="msg-edit-content" style="width:100%;min-height:200px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font:inherit;font-size:13.5px;outline:none;resize:vertical;line-height:1.5" placeholder="Bonjour {nom},
+
+Voici votre message personnalisé..."></textarea>
+
+        <div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label class="switch">
+            <input type="checkbox" id="msg-edit-active" checked>
+            <span>Modèle actif</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="msg-edit-default">
+            <span>Modèle par défaut</span>
+          </label>
+        </div>
+
+        <div class="hint" style="margin-top:12px;background:var(--raise);padding:12px;border-radius:8px">
+          <strong>Variables disponibles :</strong><br>
+          <code>{nom}</code> - Nom du client<br>
+          <code>{produit}</code> - Nom du produit<br>
+          <code>{quantite}</code> - Quantité commandée<br>
+          <code>{total}</code> - Montant total<br>
+          <code>{entreprise}</code> - Entreprise du client
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeMessageEdit()">Annuler</button>
+        <button class="btn primary" id="msg-edit-save" onclick="saveMessageTemplate()">Enregistrer</button>
+      </div>
+      <p class="hint" id="msg-edit-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <!-- Modale : aperçu d'un message -->
+  <div class="modal" id="msg-preview-modal" onclick="if(event.target===this)closeMessagePreview()">
+    <div class="modal-box" style="max-width:500px">
+      <h3>Aperçu du message</h3>
+      <p class="sub">Voici comment le message apparaîtra au client avec des données d'exemple.</p>
+
+      <div class="set-block">
+        <div style="background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:16px;white-space:pre-line;font-family:ui-sans-serif,system-ui;line-height:1.5" id="msg-preview-content">
+          Chargement de l'aperçu...
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn primary" onclick="closeMessagePreview()">Fermer</button>
+      </div>
     </div>
   </div>
 
@@ -4888,6 +5072,24 @@ export function dashboardPage(
         'Voici votre devis pour '+(produit||'votre commande personnalisée')+'. '+
         'Vous pouvez le régler directement via le lien ci-dessous.\\n\\n'+
         'Merci de votre confiance.\\nL\\'équipe Custom Textile';
+      
+      // Essaye de charger le message personnalisé depuis les templates
+      fetch('/api/admin/message-templates/preview/invoice',{credentials:'same-origin'})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(d.ok && d.preview){
+            // Remplace les variables d'exemple par les vraies données
+            var customMessage = d.preview
+              .replace(/Jean Dupont/g, nom || '')
+              .replace(/Sweatshirt personnalisé "Équipe Dev"/g, produit || 'votre commande personnalisée')
+              .replace(/5/g, qty || '1')
+              .replace(/TechCorp Solutions/g, '');
+            document.getElementById('inv-msg').value = customMessage;
+          }
+        })
+        .catch(function(){
+          // En cas d'erreur, on garde le message par défaut déjà défini
+        });
       var st=document.getElementById('inv-status');
       st.textContent=''; st.className='hint';
       var btn=document.getElementById('inv-send');
@@ -5276,5 +5478,233 @@ export function dashboardPage(
     })();
 
     filterCards(true);
+
+    /* ── Gestion des modèles de messages ── */
+    var currentMessageType='invoice';
+    var currentEditingTemplate=null;
+
+    function openMessages(){
+      document.getElementById('msg-modal').classList.add('open');
+      loadMessageTemplates();
+    }
+
+    function closeMessages(){
+      document.getElementById('msg-modal').classList.remove('open');
+    }
+
+    function switchMessageType(type){
+      currentMessageType=type;
+      
+      // Mise à jour des onglets
+      var tabs=document.querySelectorAll('#msg-modal .tab');
+      tabs.forEach(function(tab){tab.classList.remove('active');});
+      document.getElementById('tab-'+type).classList.add('active');
+
+      // Mise à jour des panneaux
+      var panels=document.querySelectorAll('.msg-panel');
+      panels.forEach(function(panel){panel.classList.remove('active');});
+      document.getElementById('panel-'+type).classList.add('active');
+
+      loadMessageTemplates();
+    }
+
+    async function loadMessageTemplates(){
+      try{
+        var r=await fetch('/api/admin/message-templates/'+currentMessageType,{credentials:'same-origin'});
+        var d=await r.json();
+        if(!d.ok) throw new Error(d.error||'Erreur lors du chargement');
+
+        var container=document.getElementById(currentMessageType+'-templates');
+        if(!container) return;
+
+        if(!d.templates || d.templates.length===0){
+          container.innerHTML='<p class="hint">Aucun modèle configuré. Créez votre premier modèle pour personnaliser vos messages.</p>';
+          return;
+        }
+
+        container.innerHTML=d.templates.map(function(t){
+          return '<div class="msg-template'+(t.isDefault?' default':'')+'">'+
+            '<div class="msg-template-header">'+
+              '<div class="msg-template-name">'+
+                escapeHtml(t.name)+
+                (t.isDefault ? '<span class="msg-template-badge">Par défaut</span>':'') +
+                (!t.isActive ? '<span class="msg-template-badge" style="background:var(--muted)">Inactif</span>':'') +
+              '</div>'+
+              '<div class="msg-template-actions">'+
+                '<button class="msg-template-btn" onclick="editMessageTemplate(\\''+t.id+'\\')" title="Modifier">✎</button>'+
+                '<button class="msg-template-btn" onclick="duplicateMessageTemplate(\\''+t.id+'\\')" title="Dupliquer">⧉</button>'+
+                (t.isDefault ? '' : '<button class="msg-template-btn danger" onclick="deleteMessageTemplate(\\''+t.id+'\\')" title="Supprimer">🗑</button>')+
+              '</div>'+
+            '</div>'+
+            '<div class="msg-template-content">'+escapeHtml(t.content.slice(0,200))+(t.content.length>200?'...':'')+'</div>'+
+          '</div>';
+        }).join('');
+      }catch(e){
+        var container=document.getElementById(currentMessageType+'-templates');
+        if(container) container.innerHTML='<p class="hint err">Erreur : '+escapeHtml(e.message)+'</p>';
+      }
+    }
+
+    function addMessageTemplate(type){
+      currentEditingTemplate=null;
+      currentMessageType=type;
+      
+      document.getElementById('msg-edit-title').textContent='Nouveau modèle de message';
+      document.getElementById('msg-edit-name').value='';
+      document.getElementById('msg-edit-content').value='';
+      document.getElementById('msg-edit-active').checked=true;
+      document.getElementById('msg-edit-default').checked=false;
+      
+      document.getElementById('msg-edit-modal').classList.add('open');
+      setTimeout(function(){document.getElementById('msg-edit-name').focus();},100);
+    }
+
+    function editMessageTemplate(id){
+      // Trouve le modèle dans les données chargées
+      fetch('/api/admin/message-templates/'+currentMessageType,{credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(!d.ok) throw new Error(d.error);
+        var template=d.templates.find(function(t){return t.id===id;});
+        if(!template) throw new Error('Modèle introuvable');
+        
+        currentEditingTemplate=template;
+        
+        document.getElementById('msg-edit-title').textContent='Modifier le modèle';
+        document.getElementById('msg-edit-name').value=template.name;
+        document.getElementById('msg-edit-content').value=template.content;
+        document.getElementById('msg-edit-active').checked=template.isActive;
+        document.getElementById('msg-edit-default').checked=template.isDefault;
+        
+        document.getElementById('msg-edit-modal').classList.add('open');
+        setTimeout(function(){document.getElementById('msg-edit-name').focus();},100);
+      })
+      .catch(function(e){
+        showAlert('Erreur','Impossible de charger le modèle : '+e.message,true);
+      });
+    }
+
+    function duplicateMessageTemplate(id){
+      fetch('/api/admin/message-templates/'+currentMessageType,{credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(!d.ok) throw new Error(d.error);
+        var template=d.templates.find(function(t){return t.id===id;});
+        if(!template) throw new Error('Modèle introuvable');
+        
+        currentEditingTemplate=null;
+        
+        document.getElementById('msg-edit-title').textContent='Dupliquer le modèle';
+        document.getElementById('msg-edit-name').value=template.name+' (copie)';
+        document.getElementById('msg-edit-content').value=template.content;
+        document.getElementById('msg-edit-active').checked=true;
+        document.getElementById('msg-edit-default').checked=false;
+        
+        document.getElementById('msg-edit-modal').classList.add('open');
+        setTimeout(function(){document.getElementById('msg-edit-name').focus();},100);
+      })
+      .catch(function(e){
+        showAlert('Erreur','Impossible de dupliquer le modèle : '+e.message,true);
+      });
+    }
+
+    function deleteMessageTemplate(id){
+      if(!confirm('Êtes-vous sûr de vouloir supprimer ce modèle de message ?')) return;
+      
+      fetch('/api/admin/message-templates/'+id+'/delete',{
+        method:'POST',
+        credentials:'same-origin'
+      })
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(!d.ok) throw new Error(d.error);
+        loadMessageTemplates();
+        showAlert('Supprimé','Le modèle a été supprimé avec succès.',false);
+      })
+      .catch(function(e){
+        showAlert('Erreur','Impossible de supprimer le modèle : '+e.message,true);
+      });
+    }
+
+    function closeMessageEdit(){
+      document.getElementById('msg-edit-modal').classList.remove('open');
+      currentEditingTemplate=null;
+    }
+
+    function saveMessageTemplate(){
+      var name=document.getElementById('msg-edit-name').value.trim();
+      var content=document.getElementById('msg-edit-content').value.trim();
+      var isActive=document.getElementById('msg-edit-active').checked;
+      var isDefault=document.getElementById('msg-edit-default').checked;
+
+      if(!name || !content){
+        document.getElementById('msg-edit-status').textContent='Le nom et le contenu sont requis.';
+        document.getElementById('msg-edit-status').className='hint err';
+        return;
+      }
+
+      var payload={
+        type:currentMessageType,
+        name:name,
+        content:content,
+        isActive:isActive,
+        isDefault:isDefault
+      };
+
+      if(currentEditingTemplate){
+        payload.id=currentEditingTemplate.id;
+      }
+
+      var btn=document.getElementById('msg-edit-save');
+      btn.disabled=true;
+      btn.textContent='Enregistrement...';
+
+      fetch('/api/admin/message-templates',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'same-origin',
+        body:JSON.stringify(payload)
+      })
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(!d.ok) throw new Error(d.error);
+        
+        closeMessageEdit();
+        loadMessageTemplates();
+        showAlert('Enregistré','Le modèle a été enregistré avec succès.',false);
+      })
+      .catch(function(e){
+        document.getElementById('msg-edit-status').textContent=e.message;
+        document.getElementById('msg-edit-status').className='hint err';
+      })
+      .finally(function(){
+        btn.disabled=false;
+        btn.textContent='Enregistrer';
+      });
+    }
+
+    function previewMessage(){
+      fetch('/api/admin/message-templates/preview/'+currentMessageType,{credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(!d.ok) throw new Error(d.error);
+        
+        document.getElementById('msg-preview-content').textContent=d.preview;
+        document.getElementById('msg-preview-modal').classList.add('open');
+      })
+      .catch(function(e){
+        showAlert('Erreur','Impossible de générer l\\'aperçu : '+e.message,true);
+      });
+    }
+
+    function closeMessagePreview(){
+      document.getElementById('msg-preview-modal').classList.remove('open');
+    }
+
+    function escapeHtml(text){
+      var div=document.createElement('div');
+      div.textContent=text;
+      return div.innerHTML;
+    }
   </script>`, nonce);
 }

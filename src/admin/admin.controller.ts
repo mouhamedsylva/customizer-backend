@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Req,
   Res,
   Body,
@@ -14,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService, ORDERS_LIMIT, QUOTES_LIMIT } from './admin.service';
 import { SettingsService } from './settings.service';
+import { MessageTemplateService } from './message-template.service';
 import {
   PricingService,
   PRODUCT_KEYS,
@@ -67,6 +69,7 @@ export class AdminController {
     private readonly data: AdminService,
     private readonly settings: SettingsService,
     private readonly pricing: PricingService,
+    private readonly messageTemplates: MessageTemplateService,
     private readonly shopify: ShopifyService,
     private readonly config: ConfigService,
   ) {}
@@ -270,19 +273,27 @@ export class AdminController {
         }
       }
 
-      // 2) Envoie la facture au client.
+      // 2) Génère le message personnalisé ou utilise le message fourni.
+      let finalMessage = (message || '').trim();
+      if (!finalMessage) {
+        // Pas de message fourni, utilise le template par défaut
+        finalMessage = await this.messageTemplates.generateInvoiceMessage({
+          nom: customer.nom,
+          produit: productName,
+          quantite: data.coin?.qty,
+          total: draft?.total_price ? `${draft.total_price} €` : undefined,
+          entreprise: customer.entreprise
+        });
+      }
+
+      // 3) Envoie la facture au client.
       await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
         to: customer.email,
         subject: `Votre devis — ${productName}`,
-        custom_message:
-          (message || '').trim() ||
-          `Bonjour ${customer.nom || ''},\n\n` +
-            `Voici votre devis pour ${productName}. ` +
-            `Vous pouvez le régler directement via le lien ci-dessous.\n\n` +
-            `Merci de votre confiance.\nL'équipe Custom Textile`,
+        custom_message: finalMessage,
       });
 
-      // 3) Reflète immédiatement l'état « facture envoyée » dans le dashboard.
+      // 4) Reflète immédiatement l'état « facture envoyée » dans le dashboard.
       //    invoiceSentAt sert de point de départ aux relances automatiques ;
       //    le compteur repart à zéro (nouveau cycle de relances).
       await this.data.updateQuoteStatus(quoteId, {
@@ -684,16 +695,35 @@ export class AdminController {
     const productName = data.coin?.name || 'votre commande personnalisée';
 
     try {
-      await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
-        to: customer.email,
-        subject: `Relance — votre devis ${productName}`,
-        custom_message:
-          `Bonjour ${customer.nom || ''},\n\n` +
+      // Génère le message de relance personnalisé ou utilise le message par défaut
+      let customMessage: string;
+      try {
+        const template = await this.messageTemplates.getDefaultTemplate('reminder');
+        if (template) {
+          customMessage = this.messageTemplates.replaceVariables(template.content, {
+            nom: customer.nom,
+            produit: productName,
+            quantite: data.coin?.qty,
+            total: quote.totalPrice ? `${quote.totalPrice} €` : undefined,
+            entreprise: customer.entreprise
+          });
+        } else {
+          throw new Error('Pas de template configuré');
+        }
+      } catch (templateError) {
+        // Fallback vers l'ancien message
+        customMessage = `Bonjour ${customer.nom || ''},\n\n` +
           `Nous revenons vers vous au sujet de votre devis pour ${productName}, ` +
           `qui reste en attente de règlement.\n\n` +
           `Vous pouvez le régler directement via le lien ci-dessous. ` +
           `N'hésitez pas à nous écrire si vous avez la moindre question.\n\n` +
-          `Bien cordialement,\nL'équipe Custom Textile`,
+          `Bien cordialement,\nL'équipe Custom Textile`;
+      }
+
+      await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
+        to: customer.email,
+        subject: `Relance — votre devis ${productName}`,
+        custom_message: customMessage,
       });
 
       // Compte la relance manuelle comme une relance à part entière.
@@ -1275,6 +1305,153 @@ export class AdminController {
       return;
     }
     res.json({ ok: true, password: result.password, email: result.email });
+  }
+
+  // ─────────────────────────────── Messages ───────────────────────────────
+  // Gestion des modèles de messages personnalisables pour les factures/devis.
+
+  /** GET /api/admin/message-templates — liste tous les modèles de messages. */
+  @Get('message-templates')
+  async getMessageTemplates(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const templates = await this.messageTemplates.getAllTemplates();
+    res.json({ ok: true, templates });
+  }
+
+  /** GET /api/admin/message-templates/:type — récupère les modèles d'un type spécifique. */
+  @Get('message-templates/:type')
+  async getMessageTemplatesByType(
+    @Req() req: Request,
+    @Param('type') type: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const templates = await this.messageTemplates.getTemplatesByType(type);
+    res.json({ ok: true, templates });
+  }
+
+  /** POST /api/admin/message-templates — crée ou met à jour un modèle. */
+  @Post('message-templates')
+  async saveMessageTemplate(
+    @Req() req: Request,
+    @Body() body: {
+      id?: string;
+      type: string;
+      name: string;
+      content: string;
+      isActive?: boolean;
+      isDefault?: boolean;
+    },
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+
+    // Validation des champs requis
+    if (!body.type || !body.name || !body.content) {
+      res.status(400).json({
+        ok: false,
+        error: 'Type, nom et contenu sont requis.',
+      });
+      return;
+    }
+
+    // Validation du type de message
+    const allowedTypes = ['invoice', 'reminder'];
+    if (!allowedTypes.includes(body.type)) {
+      res.status(400).json({
+        ok: false,
+        error: `Type de message non supporté. Types autorisés : ${allowedTypes.join(', ')}.`,
+      });
+      return;
+    }
+
+    try {
+      const template = await this.messageTemplates.saveTemplate(body);
+      res.json({ ok: true, template });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: (err as Error).message });
+    }
+  }
+
+  /** DELETE /api/admin/message-templates/:id — supprime un modèle. */
+  @Post('message-templates/:id/delete')
+  async deleteMessageTemplate(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+
+    try {
+      await this.messageTemplates.deleteTemplate(id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(404).json({ ok: false, error: (err as Error).message });
+    }
+  }
+
+  /** GET /api/admin/message-templates/preview/:type — prévisualise un message avec des variables d'exemple. */
+  @Get('message-templates/preview/:type')
+  async previewMessageTemplate(
+    @Req() req: Request,
+    @Param('type') type: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+
+    try {
+      // Variables d'exemple pour la prévisualisation
+      const exampleVariables = {
+        nom: 'Jean Dupont',
+        produit: 'Sweatshirt personnalisé "Équipe Dev"',
+        quantite: '5',
+        total: '125,00 €',
+        entreprise: 'TechCorp Solutions'
+      };
+
+      let preview: string;
+      if (type === 'invoice') {
+        preview = await this.messageTemplates.generateInvoiceMessage(exampleVariables);
+      } else {
+        // Pour les autres types, récupère le template par défaut
+        const template = await this.messageTemplates.getDefaultTemplate(type);
+        if (template) {
+          preview = this.messageTemplates.replaceVariables(template.content, exampleVariables);
+        } else {
+          preview = 'Aucun modèle par défaut configuré pour ce type de message.';
+        }
+      }
+
+      res.json({
+        ok: true,
+        preview,
+        variables: exampleVariables,
+        availableVariables: [
+          { key: '{nom}', description: 'Nom du client' },
+          { key: '{produit}', description: 'Nom du produit/coin' },
+          { key: '{quantite}', description: 'Quantité commandée' },
+          { key: '{total}', description: 'Montant total' },
+          { key: '{entreprise}', description: 'Nom de l\'entreprise du client' }
+        ]
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: (err as Error).message });
+    }
   }
 }
 

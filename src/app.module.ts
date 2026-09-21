@@ -19,6 +19,7 @@ import { Quote } from './database/entities/quote.entity';
 import { Order } from './database/entities/order.entity';
 import { Setting } from './database/entities/setting.entity';
 import { Admin } from './database/entities/admin.entity';
+import { MessageTemplate } from './database/entities/message-template.entity';
 
 @Module({
   imports: [
@@ -40,7 +41,7 @@ import { Admin } from './database/entities/admin.entity';
         url:
           config.get<string>('MYSQL_URL') ||
           config.get<string>('DATABASE_URL'),
-        entities: [Design, Quote, Order, Setting, Admin],
+        entities: [Design, Quote, Order, Setting, Admin, MessageTemplate],
         // Adaptation automatique du schéma au démarrage.
         //
         // DANGER : synchronize fait ALTER/DROP pour aligner la base sur les
