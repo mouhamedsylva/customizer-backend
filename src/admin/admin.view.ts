@@ -5177,19 +5177,19 @@ Voici votre message personnalisé..."></textarea>
         const icon = getFileIcon(file.type);
         const statusClass = file.error ? 'error' : (file.uploaded ? 'uploaded' : 'uploading');
         
-        return `
-          <div class="file-item ${statusClass}">
-            <div class="file-icon ${icon}">${icon.toUpperCase()[0]}</div>
-            <div class="file-info">
-              <div class="file-name" title="${file.name}">${file.name}</div>
-              <div class="file-size">${formatFileSize(file.size || 0)}${file.error ? ' - ' + file.error : ''}</div>
-              ${!file.uploaded && !file.error ? '<div class="upload-progress"><div class="upload-bar" style="width:' + (file.progress || 0) + '%"></div></div>' : ''}
-            </div>
-            <div class="file-actions">
-              <button type="button" class="file-remove" onclick="removeAttachment(${index})" title="Supprimer">×</button>
-            </div>
-          </div>
-        `;
+        return [
+          '<div class="file-item ' + statusClass + '">',
+          '  <div class="file-icon ' + icon + '">' + icon.toUpperCase()[0] + '</div>',
+          '  <div class="file-info">',
+          '    <div class="file-name" title="' + escapeHtml(file.name) + '">' + escapeHtml(file.name) + '</div>',
+          '    <div class="file-size">' + formatFileSize(file.size || 0) + (file.error ? ' - ' + file.error : '') + '</div>',
+          '    ' + (!file.uploaded && !file.error ? '<div class="upload-progress"><div class="upload-bar" style="width:' + (file.progress || 0) + '%"></div></div>' : ''),
+          '  </div>',
+          '  <div class="file-actions">',
+          '    <button type="button" class="file-remove" onclick="removeAttachment(' + index + ')" title="Supprimer">×</button>',
+          '  </div>',
+          '</div>'
+        ].join('');
       }).join('');
 
       // Status global
@@ -5199,15 +5199,15 @@ Voici votre message personnalisé..."></textarea>
       
       if (errors > 0) {
         status.className = 'hint err';
-        status.textContent = `${errors} fichier${errors > 1 ? 's' : ''} en erreur sur ${total}`;
+        status.textContent = errors + ' fichier' + (errors > 1 ? 's' : '') + ' en erreur sur ' + total;
         status.style.display = 'block';
       } else if (uploaded === total && total > 0) {
         status.className = 'hint ok';
-        status.textContent = `${uploaded} fichier${uploaded > 1 ? 's' : ''} prêt${uploaded > 1 ? 's' : ''} à envoyer`;
+        status.textContent = uploaded + ' fichier' + (uploaded > 1 ? 's' : '') + ' prêt' + (uploaded > 1 ? 's' : '') + ' à envoyer';
         status.style.display = 'block';
       } else if (uploaded < total) {
         status.className = 'hint';
-        status.textContent = `Upload en cours... ${uploaded}/${total}`;
+        status.textContent = 'Upload en cours... ' + uploaded + '/' + total;
         status.style.display = 'block';
       } else {
         status.style.display = 'none';
@@ -5251,7 +5251,7 @@ Voici votre message personnalisé..."></textarea>
 
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));
-          return { error: error.message || 'Erreur d\\'upload' };
+          return { error: error.message || "Erreur d'upload" };
         }
 
         const result = await response.json();
@@ -5531,9 +5531,9 @@ Voici votre message personnalisé..."></textarea>
                 (!t.isActive ? '<span class="msg-template-badge" style="background:var(--muted)">Inactif</span>':'') +
               '</div>'+
               '<div class="msg-template-actions">'+
-                '<button class="msg-template-btn" onclick="editMessageTemplate(\\''+t.id+'\\')" title="Modifier">✎</button>'+
-                '<button class="msg-template-btn" onclick="duplicateMessageTemplate(\\''+t.id+'\\')" title="Dupliquer">⧉</button>'+
-                (t.isDefault ? '' : '<button class="msg-template-btn danger" onclick="deleteMessageTemplate(\\''+t.id+'\\')" title="Supprimer">🗑</button>')+
+                '<button class="msg-template-btn" onclick="editMessageTemplate(\\\''+t.id+'\\\')" title="Modifier">✎</button>'+
+                '<button class="msg-template-btn" onclick="duplicateMessageTemplate(\\\''+t.id+'\\\')" title="Dupliquer">⧉</button>'+
+                (t.isDefault ? '' : '<button class="msg-template-btn danger" onclick="deleteMessageTemplate(\\\''+t.id+'\\\')" title="Supprimer">🗑</button>')+
               '</div>'+
             '</div>'+
             '<div class="msg-template-content">'+escapeHtml(t.content.slice(0,200))+(t.content.length>200?'...':'')+'</div>'+
@@ -5693,7 +5693,7 @@ Voici votre message personnalisé..."></textarea>
         document.getElementById('msg-preview-modal').classList.add('open');
       })
       .catch(function(e){
-        showAlert('Erreur','Impossible de générer l\\'aperçu : '+e.message,true);
+        showAlert('Erreur',"Impossible de générer l'aperçu : "+e.message,true);
       });
     }
 

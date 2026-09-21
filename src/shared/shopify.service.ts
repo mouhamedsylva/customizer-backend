@@ -1123,7 +1123,6 @@ export class ShopifyService {
     return { ok: true, updated };
   }
 
-}
   /**
    * Met à jour les propriétés d'un draft order (pièces jointes, notes, etc.)
    * Sans modifier le prix ou la structure des lignes.
@@ -1190,3 +1189,4 @@ export class ShopifyService {
     const result = (await response.json()) as { draft_order: Record<string, any> };
     return result.draft_order;
   }
+}

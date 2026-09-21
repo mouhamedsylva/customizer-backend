@@ -719,7 +719,6 @@ export class CloudinaryService implements OnModuleInit {
       throw new Error(`Erreur suppression Cloudinary: ${(error as Error).message}`);
     }
   }
-}
 
   /**
    * Upload temporaire de pièce jointe pour devis/facture.
@@ -766,6 +765,7 @@ export class CloudinaryService implements OnModuleInit {
       uploadStream.end(fileBuffer);
     });
   }
+
   /**
    * Supprime une ressource de Cloudinary par son public_id.
    * Utilisé pour le nettoyage des pièces jointes temporaires.
@@ -788,3 +788,4 @@ export class CloudinaryService implements OnModuleInit {
       });
     });
   }
+}

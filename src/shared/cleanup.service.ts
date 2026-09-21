@@ -67,7 +67,11 @@ export class CleanupService implements OnModuleInit {
           // Créés il y a plus de 48h (approximation)
           createdAt: LessThan(expirationDate)
         },
-        select: ['id', 'tempAttachments', 'createdAt']
+        select: {
+          id: true,
+          tempAttachments: true,
+          createdAt: true
+        }
       });
 
       let cleaned = 0;

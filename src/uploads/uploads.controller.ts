@@ -214,7 +214,7 @@ export class UploadsController {
       );
     }
   }
-}
+
   /**
    * POST /api/uploads/quote-attachment
    * Upload temporaire de pièce jointe pour devis/facture.
@@ -272,3 +272,4 @@ export class UploadsController {
       );
     }
   }
+}
