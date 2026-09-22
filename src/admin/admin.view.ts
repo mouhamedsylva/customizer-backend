@@ -999,6 +999,12 @@ body{
 .grp-list td{padding:7px 10px;border-bottom:1px solid var(--line-soft)}
 .grp-list tr:last-child td{border-bottom:none}
 .grp-list .num{text-align:right;font-variant-numeric:tabular-nums}
+/* Colonne typographie : police et corps du texte floqué, avec sa couleur. */
+.typo-cell{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.typo-dot{
+  width:11px;height:11px;border-radius:50%;flex:none;
+  border:1px solid rgba(0,0,0,.18);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);
+}
 
 /* Upload de fichiers dans le modal de devis/facturation */
 .attach-section{margin-top:16px}
@@ -2129,6 +2135,11 @@ function groupBlockForOrder(q?: Quote, items?: any[]): string {
   if (!rows.length) return '';
 
   const total = rows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0);
+
+  /* La colonne typographie n'apparaît que si au moins une ligne la porte :
+     une commande sans texte floqué n'a pas à traîner une colonne vide. */
+  const avecTypo = rows.some((r: any) => r.textProperties);
+
   return `<div class="section-lbl lbl">
       Commande de groupe · ${esc(productLabel)}
       <span class="badge-group">Groupe</span>
@@ -2136,7 +2147,9 @@ function groupBlockForOrder(q?: Quote, items?: any[]): string {
     </div>
     <div class="grp-list-wrap">
       <table class="grp-list">
-        <thead><tr><th>Nom floqué</th><th>Taille</th><th>Couleur</th><th class="num">Qté</th></tr></thead>
+        <thead><tr><th>Nom floqué</th><th>Taille</th><th>Couleur</th>${
+          avecTypo ? '<th>Typo</th>' : ''
+        }<th class="num">Qté</th></tr></thead>
         <tbody>
           ${rows
             .map(
@@ -2144,14 +2157,110 @@ function groupBlockForOrder(q?: Quote, items?: any[]): string {
                 <td>${r.name ? esc(r.name) : '<span class="empty">—</span>'}</td>
                 <td>${esc(r.size || '')}</td>
                 <td>${colorCell(r.color || '')}</td>
+                ${avecTypo ? `<td>${typoCell(r.textProperties)}</td>` : ''}
                 <td class="num">${esc(r.qty || 1)}</td>
               </tr>`,
             )
             .join('')}
         </tbody>
-        <tfoot><tr><td colspan="3">Total</td><td class="num">${total}</td></tr></tfoot>
+        <tfoot><tr><td colspan="${avecTypo ? 4 : 3}">Total</td><td class="num">${total}</td></tr></tfoot>
       </table>
     </div>`;
+}
+
+/**
+ * Résumé typographique d'une ligne : police, corps et pastille de couleur.
+ *
+ * Ces données étaient collectées puis abandonnées — `textProperties` n'était lu
+ * nulle part dans le rendu. L'atelier ne savait donc pas en quelle police
+ * flocker, alors que l'information voyageait jusqu'ici.
+ *
+ * Volontairement court : le détail complet (position, dimensions) est sur la
+ * fiche de production, c'est là qu'on en a besoin.
+ */
+/**
+ * Bloc typographique de la fiche de production.
+ *
+ * L'atelier a la fiche sous les yeux en produisant : il lui faut la police
+ * exacte, son corps, sa couleur et sa position. Ces propriétés étaient rendues
+ * en vrac parmi les spécifications, avec leur nom technique brut
+ * (« _TexteFontFamily ») et leur préfixe « _ ».
+ *
+ * @param props les propriétés `_TexteXxx` de la ligne
+ */
+function blocTypoFiche(props: Array<{ name: string; value: string }>): string {
+  /* Nom technique -> libellé d'atelier. Les propriétés absentes de cette table
+     (données de repositionnement, sans usage en production) sont écartées :
+     une fiche imprimée doit tenir sur une page. */
+  const LIBELLES: Record<string, string> = {
+    _TexteFontFamily: 'Police',
+    _TexteFontSize: 'Corps',
+    _TexteFontWeight: 'Graisse',
+    _TexteFontStyle: 'Style',
+    _TexteColor: 'Couleur',
+    _TexteDecoration: 'Décoration',
+    _TexteAlign: 'Alignement',
+    _TexteTransform: 'Casse',
+    _TexteLetterSpacing: 'Interlettrage',
+    _TexteLeft: 'Position X',
+    _TexteTop: 'Position Y',
+    _TexteWidth: 'Largeur',
+    _TexteZone: 'Zone',
+    _TexteCurved: 'Courbé',
+  };
+
+  const lignes = props
+    .filter((p) => LIBELLES[p.name] && String(p.value || '').trim())
+    .map((p) => {
+      let valeur = String(p.value).trim();
+
+      // La police arrive en pile CSS : seule la première s'applique.
+      if (p.name === '_TexteFontFamily') {
+        valeur = valeur.split(',')[0].replace(/['"]/g, '').trim();
+      }
+      if (p.name === '_TexteCurved') {
+        valeur = valeur === 'true' ? 'oui' : 'non';
+      }
+
+      const pastille =
+        p.name === '_TexteColor'
+          ? `<span class="ps-typo-dot" style="background:${esc(valeur)}"></span>`
+          : '';
+
+      return `<div><b>${esc(LIBELLES[p.name])}</b><span>${pastille}${esc(valeur)}</span></div>`;
+    });
+
+  if (!lignes.length) return '';
+
+  return `<div class="ps-typo">
+    <div class="ps-typo-lbl">Texte à flocker</div>
+    <div class="ps-typo-grid">${lignes.join('')}</div>
+  </div>`;
+}
+
+function typoCell(tp: any): string {
+  if (!tp) return '<span class="empty">—</span>';
+
+  /* La police arrive sous forme de pile CSS (« 'Anton', Impact, sans-serif ») :
+     on ne garde que la première, la seule réellement appliquée. */
+  const police = String(tp.fontFamily || '')
+    .split(',')[0]
+    .replace(/['"]/g, '')
+    .trim();
+
+  const corps = String(tp.fontSize || '').trim();
+  const couleur = String(tp.color || '').trim();
+
+  const bouts: string[] = [];
+  if (police) bouts.push(esc(police));
+  if (corps) bouts.push(esc(corps));
+
+  const pastille = couleur
+    ? `<span class="typo-dot" style="background:${esc(couleur)}" title="${esc(couleur)}"></span>`
+    : '';
+
+  if (!bouts.length && !pastille) return '<span class="empty">—</span>';
+  return `<span class="typo-cell">${pastille}${bouts.join(' · ')}</span>`;
 }
 
 /* @param srcQuote  Devis à l'origine de la commande, s'il y en a un
@@ -2573,7 +2682,14 @@ export function productionSheetPage(o: Order, nonce = ''): string {
     .map((li: any, idx: number) => {
       const props: Array<{ name: string; value: string }> = Array.isArray(li.properties) ? li.properties : [];
       const imgs = props.filter((p) => isImg(p.value));
-      const texts = props.filter((p) => !isUrl(p.value));
+      /* Les _Texte* sont sorties du lot : mêlées aux spécifications, elles
+         noyaient couleur et taille sous vingt lignes techniques, préfixe « _ »
+         apparent. Elles ont leur bloc, juste en dessous. */
+      const estTypo = (p: { name: string }) =>
+        /^_Texte[A-Z]/.test(String(p.name || ''));
+      const texts = props.filter((p) => !isUrl(p.value) && !estTypo(p));
+      const typo = props.filter((p) => !isUrl(p.value) && estTypo(p));
+
       return `<section class="ps-item">
         <div class="ps-item-head">
           <span class="ps-num">${idx + 1}</span>
@@ -2583,6 +2699,7 @@ export function productionSheetPage(o: Order, nonce = ''): string {
         <div class="ps-specs">
           ${texts.map((p) => `<div><b>${esc(p.name)}</b><span>${esc(p.value)}</span></div>`).join('') || '<div><span>Aucune spécification.</span></div>'}
         </div>
+        ${typo.length ? blocTypoFiche(typo) : ''}
         <div class="ps-visuals">
           ${
             imgs.length
@@ -2632,6 +2749,17 @@ export function productionSheetPage(o: Order, nonce = ''): string {
   .ps-specs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
   .ps-specs>div{background:#f6f4f0;border-radius:7px;padding:5px 11px;font-size:12.5px}
   .ps-specs b{color:#8b8478;font-weight:700;margin-right:5px}
+  /* Texte à flocker : encadré pour se distinguer des spécifications, avec un
+     filet à gauche. À l'impression, l'atelier doit le repérer d'un coup d'oeil. */
+  .ps-typo{border-left:3px solid #c2410c;background:#fdf8f5;border-radius:0 8px 8px 0;
+    padding:10px 13px;margin-bottom:14px}
+  .ps-typo-lbl{font-size:10px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.5px;color:#c2410c;margin-bottom:7px}
+  .ps-typo-grid{display:flex;flex-wrap:wrap;gap:6px 14px}
+  .ps-typo-grid>div{font-size:12.5px}
+  .ps-typo-grid b{color:#8b8478;font-weight:700;margin-right:5px}
+  .ps-typo-grid span{display:inline-flex;align-items:center;gap:5px}
+  .ps-typo-dot{width:11px;height:11px;border-radius:50%;border:1px solid rgba(0,0,0,.2)}
   .ps-visuals{display:flex;gap:14px;flex-wrap:wrap}
   .ps-visuals figure{width:190px}
   .ps-visuals img{width:100%;height:190px;object-fit:contain;border:1px solid #e4e0d9;
