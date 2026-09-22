@@ -1474,8 +1474,17 @@ function nonceOf(req: Request): string {
  * renseigne librement au moment d'ajouter au panier. Elles ne sont donc PAS de
  * confiance : sans liste blanche, `buildAndSendZip` interrogeait n'importe
  * quelle adresse, y compris sur le réseau interne du serveur.
+ *
+ * À TENIR ALIGNÉE avec IMG_HOSTS (admin.view.ts), ALLOWED_IMAGE_HOSTS
+ * (cloudinary.service.ts) et imgSrc de la CSP (main.ts). Un hôte oublié ici
+ * échoue en silence : les fichiers concernés sont absents de l'archive, avec
+ * un simple avertissement dans les logs.
  */
-const ASSET_HOSTS = ['res.cloudinary.com', 'cdn.shopify.com'];
+const ASSET_HOSTS = [
+  'res.cloudinary.com',
+  'cdn.shopify.com',
+  'massacre-officiel.com',
+];
 
 function isAllowedAssetUrl(raw: string): boolean {
   try {

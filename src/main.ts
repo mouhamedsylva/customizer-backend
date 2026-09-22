@@ -84,8 +84,21 @@ async function bootstrap(): Promise<void> {
             "'unsafe-inline'",
           ],
           // Les aperçus de devis peuvent être des data-URL (générées au
-          // navigateur), d'où `data:` en plus des deux CDN.
-          imgSrc: ["'self'", 'data:', 'https://res.cloudinary.com', 'https://cdn.shopify.com'],
+          // navigateur), d'où `data:` en plus des CDN.
+          //
+          // Cette liste DOIT suivre les trois autres : IMG_HOSTS
+          // (admin.view.ts), ASSET_HOSTS (admin.controller.ts) et
+          // ALLOWED_IMAGE_HOSTS (cloudinary.service.ts). Un hôte ajouté
+          // ailleurs mais oublié ici passe les contrôles serveur, puis le
+          // navigateur refuse de charger l'image : la vignette reste vide,
+          // sans message ailleurs que dans la console.
+          imgSrc: [
+            "'self'",
+            'data:',
+            'https://res.cloudinary.com',
+            'https://cdn.shopify.com',
+            'https://massacre-officiel.com',
+          ],
           connectSrc: ["'self'"],
           // Aucun plugin, aucune iframe, et le formulaire de login ne poste
           // que vers cette même origine.
