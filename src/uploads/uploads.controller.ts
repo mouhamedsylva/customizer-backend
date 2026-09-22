@@ -5,6 +5,7 @@ import {
   Delete,
   HttpException,
   HttpStatus,
+  Logger,
   Param,
   Post,
   UploadedFile,
@@ -18,6 +19,7 @@ import {
   UploadResult,
 } from '../shared/cloudinary.service';
 import { TextSvgService } from '../shared/text-svg.service';
+import { TextOutlineService } from '../shared/text-outline.service';
 import { AdminSessionGuard } from '../admin/admin-session.guard';
 import { UploadTextSvgDto } from './dto/upload-text-svg.dto';
 
@@ -31,10 +33,13 @@ interface UploadedMulterFile {
 
 @Controller('uploads')
 export class UploadsController {
+  private readonly logger = new Logger(UploadsController.name);
+
   constructor(
     private readonly cloudinary: CloudinaryService,
     private readonly config: ConfigService,
     private readonly textSvg: TextSvgService,
+    private readonly textOutline: TextOutlineService,
   ) {}
 
   private get maxFileSize(): number {
@@ -138,35 +143,76 @@ export class UploadsController {
   @Post('text-svg')
   async uploadTextSvg(
     @Body() dto: UploadTextSvgDto,
-  ): Promise<UploadResult> {
+  ): Promise<UploadResult & { svgUrl?: string }> {
     try {
       // Normalisation et validation des segments
-      const normalizedSegments = dto.segments.map(seg => 
+      const normalizedSegments = dto.segments.map(seg =>
         this.textSvg.normalizeFontParams(seg)
       );
 
-      // Génération SVG avec options de rendu
-      const svgString = await this.textSvg.generateTextSvg(
+      const scale = dto.renderOptions?.scale || 4;
+      const padding = dto.renderOptions?.padding || 32;
+      const productType = dto.productType || 'generic';
+      const placement = dto.placement || 'front';
+
+      /* ── 1. Vectoriser D'ABORD ─────────────────────────────────────────
+         Lettres converties en tracés : le fichier que l'atelier découpe, et
+         la réponse à « le PNG est trop pixélisé pour être utilisable » — un
+         tracé n'a pas de résolution.
+
+         Avant le PNG parce que c'est du calcul pur, sans réseau : si
+         Cloudinary est indisponible, on sait au moins que la vectorisation
+         a réussi, et le journal le dit. L'ordre inverse perdait cette
+         information, l'échec de l'envoi du PNG masquant tout le reste.
+
+         `genererSvgVectoriel` renvoie null (sans lever) si une police manque
+         ou résiste : le texte part alors en PNG seul, jamais bloqué. */
+      const svgVectoriel = await this.textOutline.genererSvgVectoriel(
         normalizedSegments,
-        {
-          scale: dto.renderOptions?.scale || 4,
-          padding: dto.renderOptions?.padding || 32,
-          backgroundColor: dto.renderOptions?.backgroundColor
-        }
+        { scale: 1, padding },
       );
 
-      // Conversion SVG → PNG haute résolution
-      const pngBuffer = await this.textSvg.renderSvgToPng(svgString, {
-        scale: dto.renderOptions?.scale || 4,
-        padding: dto.renderOptions?.padding || 32
+      /* ── 2. Le PNG : l'aperçu ──────────────────────────────────────────
+         Il sert la vignette du dashboard, qui refuse les SVG (isImg,
+         admin.view.ts) — un SVG est du XML exécutable, et ces URLs sont
+         chargées automatiquement à l'ouverture de la page. Le PNG reste donc
+         nécessaire, et c'est lui qui est renvoyé comme résultat principal. */
+      const svgPourRendu = await this.textSvg.generateTextSvg(normalizedSegments, {
+        scale,
+        padding,
+        backgroundColor: dto.renderOptions?.backgroundColor,
       });
-
-      // Upload sur Cloudinary
-      return await this.cloudinary.uploadTextAsset(
+      const pngBuffer = await this.textSvg.renderSvgToPng(svgPourRendu, {
+        scale,
+        padding,
+      });
+      const resultatPng = await this.cloudinary.uploadTextAsset(
         pngBuffer,
-        dto.productType || 'generic',
-        dto.placement || 'front',
+        productType,
+        placement,
       );
+
+      /* ── 3. Déposer le SVG, en supplément ──────────────────────────────
+         Un échec ici ne doit pas faire échouer l'ajout au panier : le client
+         resterait bloqué au paiement à cause d'un fichier destiné à
+         l'atelier. On journalise et la commande continue avec le PNG. */
+      let svgUrl: string | undefined;
+      if (svgVectoriel) {
+        try {
+          const resultatSvg = await this.cloudinary.uploadTextSvgVector(
+            svgVectoriel,
+            productType,
+            placement,
+          );
+          svgUrl = resultatSvg.url;
+        } catch (e) {
+          this.logger.warn(
+            `SVG vectorisé mais non déposé (PNG conservé) : ${(e as Error).message}`,
+          );
+        }
+      }
+
+      return { ...resultatPng, svgUrl };
     } catch (error) {
       throw new HttpException(
         `Echec generation texte SVG: ${(error as Error).message}`,

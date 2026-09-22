@@ -235,16 +235,69 @@ export class CloudinaryService implements OnModuleInit {
     productType = 'generic',
     placement = 'front',
   ): Promise<UploadResult> {
-    try {
-      return this.uploadImage(pngBuffer, {
-        folder: `customizer/text/${productType}`,
-        public_id: `text_${placement}_${Date.now()}`,
-        format: 'png',
-      });
-    } catch (error) {
-      this.logger.error(`Erreur upload texte: ${(error as Error).message}`);
-      throw new Error(`Échec upload texte: ${(error as Error).message}`);
-    }
+    /* Pas de try/catch ici : `uploadImage` renvoie une Promise qui n'est pas
+       attendue, donc un rejet ne passerait jamais par un `catch` synchrone.
+       Celui qui s'y trouvait était inatteignable. L'erreur remonte telle
+       quelle à l'appelant, qui la traite. */
+    return this.uploadImage(pngBuffer, {
+      folder: `customizer/text/${productType}`,
+      public_id: `text_${placement}_${Date.now()}`,
+      format: 'png',
+    });
+  }
+
+  /**
+   * Dépose le SVG VECTORIEL d'un texte — le fichier de découpe de l'atelier.
+   *
+   * `resource_type: 'raw'` et non `'image'` : en mode image, Cloudinary
+   * traiterait le SVG comme une image à transformer et pourrait le rastériser.
+   * On veut que le fichier ressorte octet pour octet, ses tracés intacts.
+   *
+   * L'URL se termine par `.svg`, ce qui a deux effets voulus :
+   *   - le dashboard ne l'affiche pas comme vignette (isImg rejette les SVG,
+   *     protection anti-XSS) mais la présente en lien de téléchargement ;
+   *   - l'archive « Tous les fichiers » la nomme `.svg`, l'extension étant
+   *     déduite de l'URL (admin.controller.ts).
+   * Aucun code d'affichage ni d'archive n'a donc eu à changer.
+   */
+  async uploadTextSvgVector(
+    svgString: string,
+    productType = 'generic',
+    placement = 'front',
+  ): Promise<UploadResult> {
+    /* Dimensions déclarées par le SVG lui-même. Cloudinary n'en renvoie pas
+       en mode `raw` (il ne lit pas le fichier), et `UploadResult` les exige.
+       Elles sont indicatives : un tracé n'a pas de résolution, c'est tout
+       l'intérêt. */
+    const mesure = /width="([\d.]+)"\s+height="([\d.]+)"/.exec(svgString);
+    const largeur = mesure ? Math.round(parseFloat(mesure[1])) : 0;
+    const hauteur = mesure ? Math.round(parseFloat(mesure[2])) : 0;
+
+    return new Promise<UploadResult>((resolve, reject) => {
+      const flux = cloudinary.uploader.upload_stream(
+        {
+          folder: `customizer/text/${productType}`,
+          public_id: `text_${placement}_${Date.now()}.svg`,
+          resource_type: 'raw',
+        },
+        (error, result?: UploadApiResponse) => {
+          if (error || !result) {
+            reject(error || new Error('Upload SVG Cloudinary sans resultat'));
+            return;
+          }
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+            width: largeur,
+            height: hauteur,
+            format: 'svg',
+            bytes: result.bytes,
+          });
+        },
+      );
+
+      flux.end(Buffer.from(svgString, 'utf8'));
+    });
   }
 
   /**

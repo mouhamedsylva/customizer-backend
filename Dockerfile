@@ -24,6 +24,17 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 
+# Polices sources de la VECTORISATION des textes (TextOutlineService).
+#
+# Elles ne sont PAS installées dans le système : opentype.js lit directement
+# ces fichiers pour extraire le contour de chaque lettre. Le SVG produit ne
+# contient que des tracés, donc il ne dépend d'aucune police une fois généré —
+# ni ici, ni chez le client, ni sur le plotter de découpe.
+#
+# Le dossier peut être vide au démarrage : le service le signale dans les logs
+# et le texte part alors en PNG seul, sans bloquer la commande.
+COPY assets/fonts ./assets/fonts
+
 USER node
 EXPOSE 3000
 

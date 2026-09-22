@@ -2073,8 +2073,15 @@ function groupRowsFromItems(items: any[]): { rows: any[]; label: string } | null
       const value = propVal(li, '_' + prop); // Propriétés préfixées par "_"
       if (value) {
         hasTextProps = true;
-        // Convertir les noms de propriétés en camelCase
-        const key = prop.charAt(0).toLowerCase() + prop.slice(1).replace('Texte', '');
+        /* Convertir les noms de propriétés en camelCase.
+
+           L'ordre comptait : `charAt(0).toLowerCase()` consommait déjà le T,
+           si bien que `.replace('Texte','')` ne trouvait plus rien dans
+           « exteFontFamily ». Les 20 clés sortaient en « texteFontFamily », et
+           le test sur `.curved` juste en dessous ne se déclenchait jamais.
+           On retire donc le préfixe AVANT de passer en minuscule. */
+        const sansPrefixe = prop.replace(/^Texte/, '');
+        const key = sansPrefixe.charAt(0).toLowerCase() + sansPrefixe.slice(1);
         textProperties[key] = value;
       }
     });

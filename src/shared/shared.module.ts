@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ShopifyService } from './shopify.service';
 import { CloudinaryService } from './cloudinary.service';
 import { TextSvgService } from './text-svg.service';
+import { TextOutlineService } from './text-outline.service';
 import { CleanupService } from './cleanup.service';
 import { Quote } from '../database/entities/quote.entity';
 
@@ -16,7 +17,19 @@ import { Quote } from '../database/entities/quote.entity';
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([Quote])],
-  providers: [ShopifyService, CloudinaryService, TextSvgService, CleanupService],
-  exports: [ShopifyService, CloudinaryService, TextSvgService, CleanupService],
+  providers: [
+    ShopifyService,
+    CloudinaryService,
+    TextSvgService,
+    TextOutlineService,
+    CleanupService,
+  ],
+  exports: [
+    ShopifyService,
+    CloudinaryService,
+    TextSvgService,
+    TextOutlineService,
+    CleanupService,
+  ],
 })
 export class SharedModule {}

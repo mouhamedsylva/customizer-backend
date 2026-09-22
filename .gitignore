@@ -31,3 +31,7 @@ docker-compose.override.yml
 .vscode
 *.sublime-workspace
 .env.prod.backup
+
+# Sorties de `npm run apercu:texte` (outil de dev, jamais en production)
+apercu-texte.html
+apercu-texte/
