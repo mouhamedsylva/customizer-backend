@@ -604,7 +604,9 @@ body{
 
 /* Toolbar */
 .toolbar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
-.search{position:relative;flex:1;min-width:220px}
+/* C'est un <form> (il isole le champ de l'autocomplétion d'identifiants) :
+   margin:0 neutralise la marge que certains navigateurs lui donnent. */
+.search{position:relative;flex:1;min-width:220px;margin:0}
 .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--faint)}
 .search input{
   width:100%;padding:11px 14px 11px 38px;border:1px solid var(--line);border-radius:10px;
@@ -612,9 +614,8 @@ body{
 }
 .search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .search input::placeholder{color:var(--faint)}
-/* type="search" (choisi pour bloquer l'autocomplétion d'identifiants) ajoute
-   une croix et une apparence natives : on les neutralise pour garder le style
-   du dashboard. */
+/* type="search" ajoute une croix et une apparence natives : on les neutralise
+   pour garder le style du dashboard. */
 .search input{-webkit-appearance:none;appearance:none}
 .search input::-webkit-search-cancel-button,
 .search input::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
@@ -3201,24 +3202,26 @@ export function dashboardPage(
     </div>
 
     <div class="toolbar">
-      <div class="search">
+      <!-- Ce <form> ne sert qu a ISOLER le champ. Sans lui, le navigateur
+           rattache tout champ libre au document entier : voyant les champs mot
+           de passe de la modale « Mon compte », il classait la page en ecran de
+           connexion et posait l identifiant memorise ici, premier champ texte
+           du document.
+
+           Les deux formulaires se referment l un sur l autre : celui de la
+           modale retient l autocompletion, celui-ci la refuse.
+
+           onsubmit="return false" : sans lui, Entree rechargerait la page. -->
+      <form class="search" autocomplete="off" onsubmit="return false" role="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <!-- Chrome ignore autocomplete="off" sur un champ texte isolé et y
-             réinjecte l'e-mail de connexion (il le prend pour un identifiant).
-             Trois protections se cumulent :
-               1. type="search" — un champ de recherche n'est pas candidat au
-                  remplissage d'identifiants ;
-               2. autocomplete="new-password" — valeur que Chrome respecte, à
-                  l'inverse de "off", et qui exclut les identifiants mémorisés ;
-               3. name aléatoire — aucun historique ne peut s'y rattacher.
-             Le readonly initial (levé en JS) couvre le tout premier rendu, et
-             une surveillance nettoie ce qui passerait malgré tout. -->
-        <input id="search" type="search" name="q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}" readonly
-               autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <!-- data-lpignore / data-1p-ignore visent LastPass et 1Password, qui
+             ont leur propre heuristique et ignorent autocomplete. -->
+        <input id="search" type="search" name="q"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                data-form-type="other" data-lpignore="true" data-1p-ignore="true"
                aria-label="Rechercher une commande, un client, un produit"
                placeholder="Rechercher une commande, un client, un produit…" oninput="filterCards(true)">
-      </div>
+      </form>
 
       <div class="filters" id="filters">
         ${selectFilter('sort', SORTS, f.sort)}
@@ -3400,26 +3403,46 @@ export function dashboardPage(
       <h3>Mon compte</h3>
       <p class="sub">${esc(me?.email || '')}</p>
 
-      <div class="set-block">
+      <!-- Ce <form> ne soumet rien : les boutons appellent saveOwnPassword() en
+           JS. Il delimite le CONTEXTE pour le navigateur.
+
+           Sans lui, Chrome voyait un champ current-password hors formulaire,
+           en deduisait un ecran de connexion, et cherchait dans TOUT le
+           document ou poser l identifiant memorise. Il tombait sur le champ de
+           recherche du tableau de bord, seul champ texte avant celui-ci.
+
+           onsubmit="return false" est indispensable : sans lui, Entree dans un
+           champ rechargerait la page. -->
+      <form class="set-block" autocomplete="off" onsubmit="return false">
+        <!-- Champ d identifiant, cache mais PRESENT. Contre-intuitif et
+             pourtant necessaire : prive de cible, Chrome en invente une ;
+             pourvu d une, il s y tient. C est la methode recommandee pour un
+             formulaire de changement de mot de passe. -->
+        <input type="text" name="username" autocomplete="username"
+               value="${esc(me?.email || '')}" readonly tabindex="-1"
+               aria-hidden="true" style="display:none">
+
         <label class="lbl" for="acc-cur">Mot de passe actuel</label>
-        <input type="password" id="acc-cur" class="price-input" autocomplete="current-password"
-               style="width:100%;text-align:left">
+        <input type="password" id="acc-cur" name="current-password" class="price-input"
+               autocomplete="current-password" style="width:100%;text-align:left">
 
         <!-- minlength double le controle JS de saveOwnPassword() : le
              navigateur signale la saisie trop courte des la frappe, sans
-             attendre le clic. Les deux restent necessaires : hors formulaire
-             cet attribut ne bloque pas la soumission, et le JS seul ne
+             attendre le clic. Les deux restent necessaires : la soumission
+             etant neutralisee, cet attribut ne bloque rien, et le JS seul ne
              previent qu apres coup. Le serveur revalide de toute facon
              (admin-auth.service.ts:475). -->
         <label class="lbl" style="margin-top:12px" for="acc-new">Nouveau mot de passe</label>
-        <input type="password" id="acc-new" class="price-input" autocomplete="new-password"
-               minlength="8" required style="width:100%;text-align:left">
+        <input type="password" id="acc-new" name="new-password" class="price-input"
+               autocomplete="new-password" minlength="8" required
+               style="width:100%;text-align:left">
         <p class="hint">8 caractères minimum.</p>
 
         <label class="lbl" style="margin-top:12px" for="acc-new2">Confirmer le nouveau mot de passe</label>
-        <input type="password" id="acc-new2" class="price-input" autocomplete="new-password"
-               minlength="8" required style="width:100%;text-align:left">
-      </div>
+        <input type="password" id="acc-new2" name="confirm-password" class="price-input"
+               autocomplete="new-password" minlength="8" required
+               style="width:100%;text-align:left">
+      </form>
 
       <div class="modal-actions">
         <button class="btn" onclick="closeAccount()">Annuler</button>
@@ -3653,7 +3676,11 @@ Voici votre message personnalisé..."></textarea>
       <div class="set-block">
         <label class="lbl">Inviter un administrateur</label>
         <div class="mail-row">
-          <input type="email" id="adm-email" class="price-input" placeholder="collegue@exemple.com">
+          <!-- autocomplete="off" : sans lui, le navigateur propose ici
+               l adresse de l admin connecte, alors qu on invite un collegue. -->
+          <input type="email" id="adm-email" class="price-input" autocomplete="off"
+                 data-lpignore="true" data-1p-ignore="true"
+                 placeholder="collegue@exemple.com">
           <button class="btn primary" id="adm-add" onclick="inviteAdmin()">Générer le mot de passe</button>
         </div>
         <p class="hint">
@@ -5396,84 +5423,42 @@ Voici votre message personnalisé..."></textarea>
       }
     });
 
-    // Pagination initiale : applique les filtres + la 1re page dès le chargement.
-    /* Chrome ignore souvent autocomplete=off et réinjecte l'e-mail de connexion
-       dans le champ de recherche (il le prend pour un identifiant). On le vide
-       au chargement, puis une fois de plus après le remplissage automatique,
-       qui survient juste après. */
+    /* Filet de securite pour le champ de recherche.
+
+       La cause du pre-remplissage est traitee dans le HTML : le champ et les
+       champs mot de passe de la modale « Mon compte » vivent desormais chacun
+       dans leur propre <form>, ce qui empeche le navigateur de les associer.
+
+       Ce qui suit ne couvre plus que le cas residuel : une valeur restauree
+       au retour arriere, ou un gestionnaire tiers qui ignore autocomplete.
+
+       Remplacait une pile bien plus lourde (readonly leve apres 1 s, name
+       aleatoire, MutationObserver, intervalle de 200 ms) qui traitait le
+       symptome sans jamais l atteindre. L observateur, en particulier,
+       surveillait l attribut value alors que le navigateur ecrit la propriete :
+       il ne s est jamais declenche. */
     (function(){
       var s=document.getElementById('search');
       if(!s) return;
-      
-      // Retire readonly après que le navigateur ait tenté son autocomplétion
-      setTimeout(function(){ 
-        s.removeAttribute('readonly'); 
-        s.value = ''; // Force le vide une dernière fois
-      }, 1000);
-      
-      /* Vrai seulement quand l'utilisateur a tapé : tant qu'il n'a pas touché au
-         champ, toute valeur qui apparaît vient du remplissage automatique.
 
-         PAS d'écouteur 'input' ici : Chrome le déclenche AUSSI pour son
-         autocomplétion. Il passait donc typed=true tout seul, ce qui
-         désactivait les nettoyages — le champ gardait l'e-mail de connexion.
-         Seuls une frappe réelle, un collage ou une saisie composée (mobile,
-         IME) marquent une intention de l'utilisateur. */
+      /* Vrai des que l utilisateur a saisi quelque chose. Pas d ecouteur
+         'input' : le navigateur le declenche AUSSI pour son autocompletion,
+         ce qui desarmait le nettoyage. */
       var typed=false;
       s.addEventListener('keydown', function(e){
-        // On ignore les touches qui ne produisent pas de texte (Tab, Alt…),
-        // sans quoi un simple passage au clavier suffirait à débloquer.
-        if(e.key && e.key.length === 1) typed=true;
-        else if(e.key === 'Backspace' || e.key === 'Delete') typed=true;
+        if(e.key && e.key.length===1) typed=true;
+        else if(e.key==='Backspace'||e.key==='Delete') typed=true;
       });
       s.addEventListener('paste',            function(){ typed=true; });
       s.addEventListener('compositionstart', function(){ typed=true; });
-      s.addEventListener('beforeinput',      function(e){
-        // insertReplacementText = valeur poussée par le navigateur : pas l'utilisateur.
-        if(e.inputType && e.inputType !== 'insertReplacementText') typed=true;
-      });
 
       var clear=function(){
-        if(!typed && s.value){ 
-          s.value=''; 
-          filterCards(true); 
-        }
+        if(!typed && s.value){ s.value=''; filterCards(true); }
       };
-      
-      // Nettoyage immédiat et répété
+
       clear();
-      [100,300,600,1200].forEach(function(d){ setTimeout(clear, d); });
-
-      /* Surveillance continue jusqu'à la première frappe.
-         Les setTimeout ci-dessus s'arrêtaient à 1,2 s alors que le readonly
-         n'est levé qu'à 1 s : Chrome pouvait remplir juste après et rien ne
-         le rattrapait. On observe donc l'attribut value tant que
-         l'utilisateur n'a pas saisi, puis on arrête (pas de surveillance
-         inutile en fond). */
-      var stop = function(){};
-      if(window.MutationObserver){
-        var obs = new MutationObserver(function(){
-          if(typed){ obs.disconnect(); return; }
-          clear();
-        });
-        obs.observe(s, { attributes:true, attributeFilter:['value'] });
-        stop = function(){ obs.disconnect(); };
-      }
-      /* Filet supplémentaire : un intervalle court, borné à 5 s. Chrome remplit
-         parfois sans muter l'attribut (il écrit la propriété directement), ce
-         qu'aucun observateur ne voit. */
-      var ticks = 0;
-      var iv = setInterval(function(){
-        if(typed || ++ticks > 25){ clearInterval(iv); stop(); return; }
-        clear();
-      }, 200);
-
-      /* Chrome remplit parfois APRÈS le premier clic dans la page (ou au retour
-         d'onglet) : on surveille tant que l'utilisateur n'a rien saisi. */
-      s.addEventListener('focus', function(){
-        if(!typed && s.value) { s.value=''; filterCards(true); }
-      });
-      document.addEventListener('click', clear, true);
+      /* pageshow couvre le retour arriere : le navigateur restaure alors les
+         valeurs de formulaire, y compris celles qu on vient d effacer. */
       window.addEventListener('pageshow', function(){ typed=false; clear(); });
     })();
 
