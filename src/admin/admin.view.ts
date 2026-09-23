@@ -122,6 +122,43 @@ function money(amount: unknown): string {
   if (Number.isNaN(n)) return '';
   return n.toFixed(2).replace('.', ',') + ' €';
 }
+
+/**
+ * Montant ABRÉGÉ pour la carte de statistique : « 12,4 k€ », « 1,05 M€ ».
+ *
+ * Le montant exact (`money`) est conservé partout ailleurs — sur une commande
+ * ou un devis, arrondir serait une perte d'information. Ici la carte a une
+ * largeur fixe et le chiffre est un ordre de grandeur : à 1 234 567,89 €, la
+ * version longue débordait ou rognait, et forçait toute la rangée à s'élargir.
+ *
+ * Le seuil est à 10 000 : en dessous, « 9 999,00 € » tient sans gêne et reste
+ * plus parlant qu'un « 10,0 k€ » arrondi.
+ *
+ * @returns le texte affiché et le montant exact, pour l'infobulle
+ */
+function moneyCompact(amount: unknown): { texte: string; exact: string } {
+  const n = parseFloat(String(amount ?? ''));
+  if (Number.isNaN(n)) return { texte: '0,00 €', exact: '0,00 €' };
+
+  const exact = money(n);
+  const absolu = Math.abs(n);
+
+  /* Une décimale au-delà de 100 (« 124 k€ » plutôt que « 124,3 k€ ») : à cette
+     échelle la décimale n'apporte rien et rallonge le chiffre. */
+  const abreger = (valeur: number, suffixe: string): string => {
+    const reduit = n / valeur;
+    const decimales = Math.abs(reduit) >= 100 ? 0 : 1;
+    return reduit.toFixed(decimales).replace('.', ',') + ' ' + suffixe;
+  };
+
+  /* Seuils légèrement sous le palier : à 999 999 €, arrondir en milliers
+     donnerait « 1000 k€ », plus long ET moins juste que « 1,0 M€ ». On bascule
+     donc à l'unité supérieure dès que l'arrondi y mènerait. */
+  if (absolu >= 999_500_000) return { texte: abreger(1_000_000_000, 'Md€'), exact };
+  if (absolu >= 999_500) return { texte: abreger(1_000_000, 'M€'), exact };
+  if (absolu >= 10_000) return { texte: abreger(1_000, 'k€'), exact };
+  return { texte: exact, exact };
+}
 function initials(name: unknown): string {
   const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return '·';
@@ -614,6 +651,13 @@ body{
   background:var(--surface);color:var(--ink);
   box-shadow:0 1px 2px rgba(0,0,0,.05),0 2px 6px rgba(0,0,0,.06);
 }
+/* Icône de l'onglet. Le gap de .tab (8px) sépare bien le compteur du texte,
+   mais détacherait trop l'icône de son libellé : elle reprend la main avec
+   une marge propre. Elle s'efface légèrement sur l'onglet inactif, et prend
+   la couleur d'accent sur l'actif — un repère de plus. */
+.tab-ico{width:15px;height:15px;flex:none;margin-right:-2px;opacity:.65;transition:.15s}
+.tab:hover .tab-ico{opacity:1}
+.tab.active .tab-ico{opacity:1;color:var(--accent)}
 .tab .count{font-size:11px;font-weight:700;color:var(--muted)}
 .tab.active .count{color:var(--accent)}
 /* Compteur non nul : pastille pleine, pour attirer l'oeil là où il y a du
@@ -2035,14 +2079,19 @@ function statCard(
   caption: string,
   icon: string,
   cls = '',
+  titre = '',
 ): string {
   /* Le libellé passe AVANT le chiffre : on lit d'abord ce qu'on mesure, puis
      la valeur. L'ordre visuel est rétabli en CSS (flex-direction:column-reverse),
      pour que l'ordre du DOM — celui qu'entend un lecteur d'écran — reste juste. */
+
+  /* `titre` porte la valeur exacte quand l'affichage est abrégé : le montant
+     complet reste accessible au survol, sans élargir la carte. */
+  const infobulle = titre ? ` title="${esc(titre)}"` : '';
   return `<div class="stat ${cls}">
     <div class="stat-body">
       <div class="cap">${caption}</div>
-      <div class="num mono">${value}</div>
+      <div class="num mono"${infobulle}>${value}</div>
     </div>
     <div class="stat-ico" aria-hidden="true">${icon}</div>
   </div>`;
@@ -3344,7 +3393,12 @@ export function dashboardPage(
     <div class="stats">
       ${statCard(nbToMake, 'À fabriquer', ICO_MAKE, 'accent')}
       ${statCard(orders.length, 'Commandes reçues', ICO_BOX, 't-blue')}
-      ${statCard(money(revenue), "Chiffre d'affaires estimé", ICO_EURO, 't-green')}
+      ${(() => {
+        /* Abrégé pour tenir dans la carte, exact au survol. */
+        const ca = moneyCompact(revenue);
+        const bulle = ca.texte === ca.exact ? '' : ca.exact;
+        return statCard(ca.texte, "Chiffre d'affaires estimé", ICO_EURO, 't-green', bulle);
+      })()}
       ${statCard(nbOpen, 'Devis à traiter', ICO_QUOTE, 't-violet')}
     </div>
 
@@ -3356,8 +3410,21 @@ export function dashboardPage(
     }
 
     <div class="tabs">
-      <button class="tab active" data-tab="orders">Commandes <span class="count mono${orders.length ? ' has-items' : ''}">${orders.length}</span></button>
-      <button class="tab" data-tab="quotes">Devis <span class="count mono${quotes.length ? ' has-items' : ''}">${quotes.length}</span></button>
+      <!-- Les icônes reprennent celles des cartes de statistiques : le carton
+           pour les commandes, le document chiffré pour les devis. Même objet,
+           même signe, d'un bout à l'autre du dashboard. -->
+      <button class="tab active" data-tab="orders">
+        <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>
+        </svg>
+        Commandes <span class="count mono${orders.length ? ' has-items' : ''}">${orders.length}</span>
+      </button>
+      <button class="tab" data-tab="quotes">
+        <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/>
+        </svg>
+        Devis <span class="count mono${quotes.length ? ' has-items' : ''}">${quotes.length}</span>
+      </button>
       <!-- Onglet « Designs » masqué à la demande. Le panneau #p-designs et tout
            son code restent en place : seul le bouton d'accès est retiré, donc
            il suffit de rétablir cette ligne pour le faire revenir. -->
