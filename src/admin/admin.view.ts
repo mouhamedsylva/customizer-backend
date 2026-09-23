@@ -1102,39 +1102,31 @@ body{
 .mail-row .price-input{flex:1;min-width:0}
 .mail-row .btn{flex:none;white-space:nowrap}
 
-/* ── Modale Messages ── */
-.msg-panel{display:none}
-.msg-panel.active{display:block}
-.msg-template{
-  border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;
-  background:var(--surface);transition:border-color .2s ease;
+/* ── Modale Messages ──────────────────────────────────────────────────────
+   Un seul écran : le texte s'édite sur place, l'aperçu vit dessous. Remplace
+   les cartes de modèles, leurs badges et leurs boutons d'action — la gestion
+   multi-modèles a disparu, un seul texte par type étant jamais envoyé. */
+.msg-editor{
+  /* Le reste est hérité de la règle .modal-box textarea : bordure, fond,
+     focus. L'ancien champ redéclarait tout en style inline, à l'identique. */
+  min-height:190px;
 }
-.msg-template:hover{border-color:var(--accent)}
-.msg-template.default{border-color:var(--accent);background:var(--accent-soft)}
-.msg-template-header{
-  display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;
+/* Jetons cliquables : un clic insère la variable au curseur. */
+.msg-vars{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.msg-var{
+  border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  border-radius:6px;padding:3px 8px;cursor:pointer;transition:.15s;
+  font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11.5px;
 }
-.msg-template-name{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
-.msg-template-badge{
-  font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
-  background:var(--accent);color:#fff;padding:2px 6px;border-radius:4px;
+.msg-var:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.msg-preview-lbl{margin-top:16px;margin-bottom:6px;display:block}
+/* Aperçu : le texte tel que le client le lira, variables remplacées. */
+.msg-preview{
+  background:var(--surface);border:1px solid var(--line-soft);border-radius:10px;
+  padding:13px 15px;font-size:13px;line-height:1.55;color:var(--ink);
+  white-space:pre-line;max-height:170px;overflow-y:auto;
 }
-.msg-template-actions{display:flex;gap:6px}
-.msg-template-btn{
-  width:28px;height:28px;border:none;background:var(--raise);color:var(--muted);
-  border-radius:6px;cursor:pointer;display:grid;place-items:center;
-  font-size:16px;line-height:1;transition:.2s;
-}
-.msg-template-btn:hover{background:var(--accent);color:#fff}
-.msg-template-btn.danger:hover{background:var(--danger);color:#fff}
-.msg-template-content{
-  font-size:13px;color:var(--muted);line-height:1.4;
-  max-height:60px;overflow:hidden;position:relative;
-}
-.msg-template-content::after{
-  content:'';position:absolute;bottom:0;left:0;right:0;height:20px;
-  background:linear-gradient(transparent,var(--surface));
-}
+.msg-preview.is-empty{color:var(--faint);font-style:italic}
 
 /* ── Modale Prix ── */
 .price-line{
@@ -3655,147 +3647,61 @@ export function dashboardPage(
     </div>
   </div>
 
-  <!-- Modale : gestion des messages personnalisables -->
+  <!-- Modale : messages envoyés aux clients.
+       UNE seule modale, là où trois s'empilaient (liste, édition, aperçu). Le
+       texte s'édite sur place et l'aperçu vit sous le champ : plus de couches,
+       plus d'allers-retours.
+
+       Un seul modèle par type, parce que c'est tout ce que le système sait
+       consommer — getDefaultTemplate() ne lit jamais que celui marqué par
+       défaut. Créer, dupliquer ou désactiver d'autres modèles ne faisait
+       qu'administrer des textes qui ne partiraient jamais. -->
   <div class="modal" id="msg-modal" onclick="if(event.target===this)closeMessages()">
-    <div class="modal-box" style="max-width:720px">
-      <h3>Messages personnalisables</h3>
-      <p class="sub">Personnalisez les messages envoyés aux clients lors de la facturation et des relances.</p>
+    <div class="modal-box" style="width:min(94vw,640px)">
+      <h3>Messages clients</h3>
+      <p class="sub">Le texte envoyé avec vos devis et vos relances.</p>
 
-      <!-- Onglets pour les différents types de messages -->
-      <div class="tabs" style="margin-top:20px">
-        <button class="tab active" onclick="switchMessageType('invoice')" id="tab-invoice">
-          Factures
-        </button>
-        <button class="tab" onclick="switchMessageType('reminder')" id="tab-reminder">
-          Relances
-        </button>
+      <!-- Pas de data-tab : cet attribut est réservé aux onglets de la barre
+           principale, dont le gestionnaire global cherche un panneau associé. -->
+      <div class="tabs" style="margin-top:4px">
+        <button class="tab active" id="tab-invoice"
+                onclick="switchMessageType('invoice')">Devis</button>
+        <button class="tab" id="tab-reminder"
+                onclick="switchMessageType('reminder')">Relance</button>
       </div>
 
-      <!-- Panneau Factures -->
-      <div class="msg-panel active" id="panel-invoice">
-        <div class="set-block">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <label class="lbl">Modèles de message pour les factures</label>
-            <button class="btn" onclick="addMessageTemplate('invoice')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              Nouveau modèle
-            </button>
-          </div>
-          
-          <div id="invoice-templates" style="margin-bottom:16px">
-            <p class="hint">Chargement des modèles...</p>
-          </div>
+      <div class="set-block">
+        <label class="lbl" for="msg-content" id="msg-label">Message envoyé avec le devis</label>
+        <textarea id="msg-content" class="msg-editor" spellcheck="true"
+                  oninput="majApercu()"
+                  placeholder="Bonjour {nom}, ..."></textarea>
 
-          <div class="hint" style="background:var(--raise);padding:12px;border-radius:8px">
-            <strong>Variables disponibles :</strong><br>
-            <code>{nom}</code> - Nom du client<br>
-            <code>{produit}</code> - Nom du produit<br>
-            <code>{quantite}</code> - Quantité commandée<br>
-            <code>{total}</code> - Montant total<br>
-            <code>{entreprise}</code> - Entreprise du client
-          </div>
+        <!-- Jetons CLIQUABLES : un clic les insère au curseur. C'est le gain de
+             temps réel — auparavant il fallait les recopier depuis une légende. -->
+        <div class="msg-vars" id="msg-vars">
+          <button type="button" class="msg-var" onclick="insertVar('{nom}')"
+                  title="Nom du client">{nom}</button>
+          <button type="button" class="msg-var" onclick="insertVar('{produit}')"
+                  title="Nom du produit">{produit}</button>
+          <button type="button" class="msg-var" onclick="insertVar('{quantite}')"
+                  title="Quantité commandée">{quantite}</button>
+          <button type="button" class="msg-var" onclick="insertVar('{total}')"
+                  title="Montant total">{total}</button>
+          <button type="button" class="msg-var" onclick="insertVar('{entreprise}')"
+                  title="Entreprise du client">{entreprise}</button>
         </div>
-      </div>
 
-      <!-- Panneau Relances -->
-      <div class="msg-panel" id="panel-reminder" style="display:none">
-        <div class="set-block">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <label class="lbl">Modèles de message pour les relances</label>
-            <button class="btn" onclick="addMessageTemplate('reminder')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              Nouveau modèle
-            </button>
-          </div>
-          
-          <div id="reminder-templates" style="margin-bottom:16px">
-            <p class="hint">Chargement des modèles...</p>
-          </div>
-
-          <div class="hint" style="background:var(--raise);padding:12px;border-radius:8px">
-            <strong>Variables disponibles :</strong><br>
-            <code>{nom}</code> - Nom du client<br>
-            <code>{produit}</code> - Nom du produit<br>
-            <code>{quantite}</code> - Quantité commandée<br>
-            <code>{total}</code> - Montant total<br>
-            <code>{entreprise}</code> - Entreprise du client
-          </div>
-        </div>
+        <!-- Aperçu sous le champ, mis à jour à la frappe : les valeurs
+             d'exemple sont connues du navigateur, aucune requête n'est utile. -->
+        <div class="msg-preview-lbl lbl">Aperçu</div>
+        <div class="msg-preview" id="msg-preview"></div>
       </div>
 
       <div class="modal-actions">
         <button class="btn" onclick="closeMessages()">Fermer</button>
-        <button class="btn primary" onclick="previewMessage()">Aperçu</button>
+        <button class="btn primary" id="msg-save" onclick="saveMessage()">Enregistrer</button>
       </div>
       <p class="hint" id="msg-status" style="margin-top:12px"></p>
-    </div>
-  </div>
-
-  <!-- Modale : édition d'un modèle de message -->
-  <div class="modal" id="msg-edit-modal" onclick="if(event.target===this)closeMessageEdit()">
-    <div class="modal-box" style="max-width:600px">
-      <h3 id="msg-edit-title">Nouveau modèle de message</h3>
-      <p class="sub">Personnalisez le message en utilisant les variables disponibles.</p>
-
-      <div class="set-block">
-        <label class="lbl" for="msg-edit-name">Nom du modèle</label>
-        <input type="text" id="msg-edit-name" class="price-input" style="width:100%;text-align:left" placeholder="Ex: Facture standard">
-        
-        <label class="lbl" style="margin-top:16px" for="msg-edit-content">Contenu du message</label>
-        <textarea id="msg-edit-content" style="width:100%;min-height:200px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font:inherit;font-size:13.5px;outline:none;resize:vertical;line-height:1.5" placeholder="Bonjour {nom},
-
-Voici votre message personnalisé..."></textarea>
-
-        <div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <label class="switch">
-            <input type="checkbox" id="msg-edit-active" checked>
-            <span>Modèle actif</span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="msg-edit-default">
-            <span>Modèle par défaut</span>
-          </label>
-        </div>
-
-        <div class="hint" style="margin-top:12px;background:var(--raise);padding:12px;border-radius:8px">
-          <strong>Variables disponibles :</strong><br>
-          <code>{nom}</code> - Nom du client<br>
-          <code>{produit}</code> - Nom du produit<br>
-          <code>{quantite}</code> - Quantité commandée<br>
-          <code>{total}</code> - Montant total<br>
-          <code>{entreprise}</code> - Entreprise du client
-        </div>
-      </div>
-
-      <div class="modal-actions">
-        <button class="btn" onclick="closeMessageEdit()">Annuler</button>
-        <button class="btn primary" id="msg-edit-save" onclick="saveMessageTemplate()">Enregistrer</button>
-      </div>
-      <p class="hint" id="msg-edit-status" style="margin-top:12px"></p>
-    </div>
-  </div>
-
-  <!-- Modale : aperçu d'un message -->
-  <div class="modal" id="msg-preview-modal" onclick="if(event.target===this)closeMessagePreview()">
-    <div class="modal-box" style="max-width:500px">
-      <h3>Aperçu du message</h3>
-      <p class="sub">Voici comment le message apparaîtra au client avec des données d'exemple.</p>
-
-      <div class="set-block">
-        <div style="background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:16px;white-space:pre-line;font-family:ui-sans-serif,system-ui;line-height:1.5" id="msg-preview-content">
-          Chargement de l'aperçu...
-        </div>
-      </div>
-
-      <div class="modal-actions">
-        <button class="btn primary" onclick="closeMessagePreview()">Fermer</button>
-      </div>
     </div>
   </div>
 
@@ -4050,7 +3956,14 @@ Voici votre message personnalisé..."></textarea>
     // Vérifie aussi quand l'utilisateur revient sur l'onglet.
     document.addEventListener('visibilitychange',function(){ if(!document.hidden) dashCheck(); });
 
-    var tabs=document.querySelectorAll('.tab');
+    /* LIMITÉ AUX ONGLETS PORTANT data-tab.
+
+       Le sélecteur balayait TOUS les .tab du document, y compris ceux des
+       modales. Cliquer « Relances » dans la modale des messages exécutait donc
+       ce gestionnaire : son data-tab étant absent, la recherche du panneau
+       correspondant levait une TypeError — et la barre principale se
+       retrouvait sans onglet actif, tous ses panneaux masqués. */
+    var tabs=document.querySelectorAll('.tab[data-tab]');
     tabs.forEach(function(t){t.addEventListener('click',function(){
       tabs.forEach(function(x){x.classList.remove('active')});t.classList.add('active');
       document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active')});
@@ -5229,29 +5142,35 @@ Voici votre message personnalisé..."></textarea>
         if(fi) fi.textContent = invFlockCount+' pièce(s) à floquer';
         var bd=document.getElementById('inv-breakdown'); if(bd) bd.textContent='';
       }
+      /* Message provisoire, le temps que le serveur rende le vrai. Il évite un
+         champ vide pendant la requête, et sert de repli si elle échoue. */
       document.getElementById('inv-msg').value =
         'Bonjour '+(nom||'')+',\\n\\n'+
         'Voici votre devis pour '+(produit||'votre commande personnalisée')+'. '+
         'Vous pouvez le régler directement via le lien ci-dessous.\\n\\n'+
-        'Merci de votre confiance.\\nL\\'équipe Custom Textile';
-      
-      // Essaye de charger le message personnalisé depuis les templates
-      fetch('/api/admin/message-templates/preview/invoice',{credentials:'same-origin'})
-        .then(function(r){return r.json();})
-        .then(function(d){
-          if(d.ok && d.preview){
-            // Remplace les variables d'exemple par les vraies données
-            var customMessage = d.preview
-              .replace(/Jean Dupont/g, nom || '')
-              .replace(/Sweatshirt personnalisé "Équipe Dev"/g, produit || 'votre commande personnalisée')
-              .replace(/5/g, qty || '1')
-              .replace(/TechCorp Solutions/g, '');
-            document.getElementById('inv-msg').value = customMessage;
-          }
-        })
-        .catch(function(){
-          // En cas d'erreur, on garde le message par défaut déjà défini
-        });
+        'Merci de votre confiance.\\nL\\'équipe Massacre Officiel';
+
+      /* LE MESSAGE RÉEL, rendu par le serveur avec les données de CE devis.
+         Ce qui s'affiche ici est exactement ce que recevra le client.
+
+         Remplace un montage qui demandait l'APERÇU (avec ses variables
+         d'exemple : Jean Dupont, 125,00 €…) puis tentait d'y substituer les
+         vraies valeurs par recherche-remplacement. Un remplacement global du
+         chiffre 5 par la quantité touchait TOUT le message : « 125,00 € » devenait
+         « 123,00 € » pour une quantité de 3. Et faute de total réel, le montant
+         d'exemple partait tel quel au client. */
+      if (invQuoteId) {
+        fetch('/api/admin/message-templates/render/'+encodeURIComponent(invQuoteId),
+              {credentials:'same-origin'})
+          .then(function(r){return r.json();})
+          .then(function(d){
+            if(d.ok && d.message) document.getElementById('inv-msg').value = d.message;
+          })
+          .catch(function(){
+            /* Le message provisoire reste en place : l'admin peut l'ajuster et
+               envoyer. Ne jamais bloquer la facturation pour un pré-remplissage. */
+          });
+      }
       var st=document.getElementById('inv-status');
       st.textContent=''; st.className='hint';
       var btn=document.getElementById('inv-send');
@@ -5599,13 +5518,33 @@ Voici votre message personnalisé..."></textarea>
 
     filterCards(true);
 
-    /* ── Gestion des modèles de messages ── */
-    var currentMessageType='invoice';
-    var currentEditingTemplate=null;
+    /* ── Messages clients ───────────────────────────────────────────────
+       Un modèle par type, édité sur place. Remplace douze fonctions et trois
+       modales imbriquées qui administraient des modèles multiples dont un seul
+       partait jamais (celui marqué par défaut, seul lu par getDefaultTemplate).
+
+       Le parcours passe de six à neuf clics à trois : ouvrir, éditer,
+       enregistrer. */
+    var currentMessageType = 'invoice';
+
+    /* Le texte tel qu'il est en base, par type. Évite de relire le serveur à
+       chaque bascule d'onglet — et permet de savoir si quelque chose a changé. */
+    var messagesCharges = {};
+
+    /* Valeurs d'exemple de l'aperçu. Côté navigateur : l'aperçu suit la frappe,
+       aucune requête n'est utile. Elles doivent rester alignées sur celles du
+       serveur (admin.controller.ts, route preview). */
+    var EXEMPLE_VARS = {
+      '{nom}': 'Jean Dupont',
+      '{produit}': 'T-shirt Coton personnalisé',
+      '{quantite}': '50',
+      '{total}': '625,00 €',
+      '{entreprise}': 'Massacre Officiel'
+    };
 
     function openMessages(){
       document.getElementById('msg-modal').classList.add('open');
-      loadMessageTemplates();
+      switchMessageType(currentMessageType);
     }
 
     function closeMessages(){
@@ -5613,214 +5552,140 @@ Voici votre message personnalisé..."></textarea>
     }
 
     function switchMessageType(type){
-      currentMessageType=type;
-      
-      // Mise à jour des onglets
-      var tabs=document.querySelectorAll('#msg-modal .tab');
-      tabs.forEach(function(tab){tab.classList.remove('active');});
-      document.getElementById('tab-'+type).classList.add('active');
+      currentMessageType = type;
 
-      // Mise à jour des panneaux
-      var panels=document.querySelectorAll('.msg-panel');
-      panels.forEach(function(panel){panel.classList.remove('active');});
-      document.getElementById('panel-'+type).classList.add('active');
-
-      loadMessageTemplates();
-    }
-
-    async function loadMessageTemplates(){
-      try{
-        var r=await fetch('/api/admin/message-templates/'+currentMessageType,{credentials:'same-origin'});
-        var d=await r.json();
-        if(!d.ok) throw new Error(d.error||'Erreur lors du chargement');
-
-        var container=document.getElementById(currentMessageType+'-templates');
-        if(!container) return;
-
-        if(!d.templates || d.templates.length===0){
-          container.innerHTML='<p class="hint">Aucun modèle configuré. Créez votre premier modèle pour personnaliser vos messages.</p>';
-          return;
-        }
-
-        container.innerHTML=d.templates.map(function(t){
-          return '<div class="msg-template'+(t.isDefault?' default':'')+'">'+
-            '<div class="msg-template-header">'+
-              '<div class="msg-template-name">'+
-                escapeHtml(t.name)+
-                (t.isDefault ? '<span class="msg-template-badge">Par défaut</span>':'') +
-                (!t.isActive ? '<span class="msg-template-badge" style="background:var(--muted)">Inactif</span>':'') +
-              '</div>'+
-              '<div class="msg-template-actions">'+
-                '<button class="msg-template-btn" onclick="editMessageTemplate(\\\''+t.id+'\\\')" title="Modifier">✎</button>'+
-                '<button class="msg-template-btn" onclick="duplicateMessageTemplate(\\\''+t.id+'\\\')" title="Dupliquer">⧉</button>'+
-                (t.isDefault ? '' : '<button class="msg-template-btn danger" onclick="deleteMessageTemplate(\\\''+t.id+'\\\')" title="Supprimer">🗑</button>')+
-              '</div>'+
-            '</div>'+
-            '<div class="msg-template-content">'+escapeHtml(t.content.slice(0,200))+(t.content.length>200?'...':'')+'</div>'+
-          '</div>';
-        }).join('');
-      }catch(e){
-        var container=document.getElementById(currentMessageType+'-templates');
-        if(container) container.innerHTML='<p class="hint err">Erreur : '+escapeHtml(e.message)+'</p>';
+      var onglets = document.querySelectorAll('#msg-modal .tab');
+      for (var i = 0; i < onglets.length; i++){
+        onglets[i].classList.toggle('active', onglets[i].id === 'tab-' + type);
       }
-    }
 
-    function addMessageTemplate(type){
-      currentEditingTemplate=null;
-      currentMessageType=type;
-      
-      document.getElementById('msg-edit-title').textContent='Nouveau modèle de message';
-      document.getElementById('msg-edit-name').value='';
-      document.getElementById('msg-edit-content').value='';
-      document.getElementById('msg-edit-active').checked=true;
-      document.getElementById('msg-edit-default').checked=false;
-      
-      document.getElementById('msg-edit-modal').classList.add('open');
-      setTimeout(function(){document.getElementById('msg-edit-name').focus();},100);
-    }
+      document.getElementById('msg-label').textContent =
+        type === 'invoice' ? 'Message envoyé avec le devis'
+                           : 'Message de relance, si le devis reste impayé';
 
-    function editMessageTemplate(id){
-      // Trouve le modèle dans les données chargées
-      fetch('/api/admin/message-templates/'+currentMessageType,{credentials:'same-origin'})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(!d.ok) throw new Error(d.error);
-        var template=d.templates.find(function(t){return t.id===id;});
-        if(!template) throw new Error('Modèle introuvable');
-        
-        currentEditingTemplate=template;
-        
-        document.getElementById('msg-edit-title').textContent='Modifier le modèle';
-        document.getElementById('msg-edit-name').value=template.name;
-        document.getElementById('msg-edit-content').value=template.content;
-        document.getElementById('msg-edit-active').checked=template.isActive;
-        document.getElementById('msg-edit-default').checked=template.isDefault;
-        
-        document.getElementById('msg-edit-modal').classList.add('open');
-        setTimeout(function(){document.getElementById('msg-edit-name').focus();},100);
-      })
-      .catch(function(e){
-        showAlert('Erreur','Impossible de charger le modèle : '+e.message,true);
-      });
-    }
+      var st = document.getElementById('msg-status');
+      st.textContent = ''; st.className = 'hint';
 
-    function duplicateMessageTemplate(id){
-      fetch('/api/admin/message-templates/'+currentMessageType,{credentials:'same-origin'})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(!d.ok) throw new Error(d.error);
-        var template=d.templates.find(function(t){return t.id===id;});
-        if(!template) throw new Error('Modèle introuvable');
-        
-        currentEditingTemplate=null;
-        
-        document.getElementById('msg-edit-title').textContent='Dupliquer le modèle';
-        document.getElementById('msg-edit-name').value=template.name+' (copie)';
-        document.getElementById('msg-edit-content').value=template.content;
-        document.getElementById('msg-edit-active').checked=true;
-        document.getElementById('msg-edit-default').checked=false;
-        
-        document.getElementById('msg-edit-modal').classList.add('open');
-        setTimeout(function(){document.getElementById('msg-edit-name').focus();},100);
-      })
-      .catch(function(e){
-        showAlert('Erreur','Impossible de dupliquer le modèle : '+e.message,true);
-      });
-    }
+      var champ = document.getElementById('msg-content');
 
-    function deleteMessageTemplate(id){
-      if(!confirm('Êtes-vous sûr de vouloir supprimer ce modèle de message ?')) return;
-      
-      fetch('/api/admin/message-templates/'+id+'/delete',{
-        method:'POST',
-        credentials:'same-origin'
-      })
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(!d.ok) throw new Error(d.error);
-        loadMessageTemplates();
-        showAlert('Supprimé','Le modèle a été supprimé avec succès.',false);
-      })
-      .catch(function(e){
-        showAlert('Erreur','Impossible de supprimer le modèle : '+e.message,true);
-      });
-    }
-
-    function closeMessageEdit(){
-      document.getElementById('msg-edit-modal').classList.remove('open');
-      currentEditingTemplate=null;
-    }
-
-    function saveMessageTemplate(){
-      var name=document.getElementById('msg-edit-name').value.trim();
-      var content=document.getElementById('msg-edit-content').value.trim();
-      var isActive=document.getElementById('msg-edit-active').checked;
-      var isDefault=document.getElementById('msg-edit-default').checked;
-
-      if(!name || !content){
-        document.getElementById('msg-edit-status').textContent='Le nom et le contenu sont requis.';
-        document.getElementById('msg-edit-status').className='hint err';
+      /* Déjà chargé : on repose le texte sans requête. */
+      if (typeof messagesCharges[type] === 'string'){
+        champ.value = messagesCharges[type];
+        majApercu();
         return;
       }
 
-      var payload={
-        type:currentMessageType,
-        name:name,
-        content:content,
-        isActive:isActive,
-        isDefault:isDefault
-      };
+      champ.value = '';
+      document.getElementById('msg-preview').textContent = 'Chargement…';
 
-      if(currentEditingTemplate){
-        payload.id=currentEditingTemplate.id;
+      fetch('/api/admin/message-templates/' + type, {credentials:'same-origin'})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(!d.ok) throw new Error(d.error || 'Chargement impossible.');
+          var liste = d.templates || [];
+          /* Le modèle par défaut est le seul que le serveur envoie jamais :
+             c'est donc lui qu'on édite. À défaut, le premier venu. */
+          var modele = null;
+          for (var i = 0; i < liste.length; i++){
+            if (liste[i].isDefault){ modele = liste[i]; break; }
+          }
+          if (!modele && liste.length) modele = liste[0];
+
+          messagesCharges[type] = modele ? (modele.content || '') : '';
+          if (modele && modele.id) messagesCharges[type + ':id'] = modele.id;
+          if (modele && modele.name) messagesCharges[type + ':nom'] = modele.name;
+
+          if (currentMessageType === type){
+            champ.value = messagesCharges[type];
+            majApercu();
+          }
+        })
+        .catch(function(e){
+          if (currentMessageType !== type) return;
+          document.getElementById('msg-preview').textContent = '';
+          st.textContent = 'Chargement impossible : ' + e.message;
+          st.className = 'hint err';
+        });
+    }
+
+    /** Insère une variable au curseur, puis rend la main au champ. */
+    function insertVar(jeton){
+      var champ = document.getElementById('msg-content');
+      var debut = champ.selectionStart || 0;
+      var fin = champ.selectionEnd || 0;
+      champ.value = champ.value.slice(0, debut) + jeton + champ.value.slice(fin);
+      /* Le curseur se replace APRÈS le jeton : on continue de taper dans la
+         foulée, sans reprendre la souris. */
+      var pos = debut + jeton.length;
+      champ.focus();
+      champ.setSelectionRange(pos, pos);
+      majApercu();
+    }
+
+    /** Remplace les variables par leurs valeurs d'exemple, sous le champ. */
+    function majApercu(){
+      var texte = document.getElementById('msg-content').value || '';
+      for (var jeton in EXEMPLE_VARS){
+        if (!Object.prototype.hasOwnProperty.call(EXEMPLE_VARS, jeton)) continue;
+        texte = texte.split(jeton).join(EXEMPLE_VARS[jeton]);
+      }
+      var vue = document.getElementById('msg-preview');
+      vue.textContent = texte.trim() || 'Le message est vide.';
+      vue.classList.toggle('is-empty', !texte.trim());
+    }
+
+    function saveMessage(){
+      var type = currentMessageType;
+      var contenu = (document.getElementById('msg-content').value || '').trim();
+      var st = document.getElementById('msg-status');
+      var btn = document.getElementById('msg-save');
+
+      if(!contenu){
+        st.textContent = 'Le message ne peut pas être vide.';
+        st.className = 'hint err';
+        return;
       }
 
-      var btn=document.getElementById('msg-edit-save');
-      btn.disabled=true;
-      btn.textContent='Enregistrement...';
+      btn.disabled = true;
+      btn.textContent = 'Enregistrement…';
 
-      fetch('/api/admin/message-templates',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        credentials:'same-origin',
-        body:JSON.stringify(payload)
+      var charge = {
+        type: type,
+        name: messagesCharges[type + ':nom'] ||
+              (type === 'invoice' ? 'Message de devis' : 'Message de relance'),
+        content: contenu,
+        isActive: true,
+        /* Toujours par défaut : c'est le seul modèle du type, et getDefaultTemplate
+           ne lit que celui-là. Un modèle non-défaut ne partirait jamais. */
+        isDefault: true
+      };
+      if (messagesCharges[type + ':id']) charge.id = messagesCharges[type + ':id'];
+
+      fetch('/api/admin/message-templates', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(charge)
       })
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(!d.ok) throw new Error(d.error);
-        
-        closeMessageEdit();
-        loadMessageTemplates();
-        showAlert('Enregistré','Le modèle a été enregistré avec succès.',false);
-      })
-      .catch(function(e){
-        document.getElementById('msg-edit-status').textContent=e.message;
-        document.getElementById('msg-edit-status').className='hint err';
-      })
-      .finally(function(){
-        btn.disabled=false;
-        btn.textContent='Enregistrer';
-      });
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(!d.ok) throw new Error(d.error || 'Enregistrement refusé.');
+          messagesCharges[type] = contenu;
+          if (d.template && d.template.id) messagesCharges[type + ':id'] = d.template.id;
+          st.textContent = 'Message enregistré.';
+          st.className = 'hint ok';
+        })
+        .catch(function(e){
+          st.textContent = e.message;
+          st.className = 'hint err';
+        })
+        .finally(function(){
+          btn.disabled = false;
+          btn.textContent = 'Enregistrer';
+        });
     }
 
-    function previewMessage(){
-      fetch('/api/admin/message-templates/preview/'+currentMessageType,{credentials:'same-origin'})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(!d.ok) throw new Error(d.error);
-        
-        document.getElementById('msg-preview-content').textContent=d.preview;
-        document.getElementById('msg-preview-modal').classList.add('open');
-      })
-      .catch(function(e){
-        showAlert('Erreur',"Impossible de générer l'aperçu : "+e.message,true);
-      });
-    }
-
-    function closeMessagePreview(){
-      document.getElementById('msg-preview-modal').classList.remove('open');
-    }
-
+    /* Conservée : utilisée aussi par la liste des pièces jointes d'un devis. */
     function escapeHtml(text){
       var div=document.createElement('div');
       div.textContent=text;

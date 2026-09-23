@@ -13,6 +13,42 @@ import { MessageTemplate } from '../database/entities/message-template.entity';
  * - {total} : montant total
  * - {entreprise} : nom de l'entreprise du client
  */
+
+/**
+ * Les textes de départ, en UN SEUL exemplaire.
+ *
+ * Ils étaient dupliqués quatre fois — ici, dans le seed, dans la migration et
+ * dans le JavaScript du dashboard. Toute reformulation en oubliait un, et les
+ * versions divergeaient sans que rien ne le signale.
+ *
+ * Le vocabulaire est uniformisé sur « devis » : c'est bien un devis que le
+ * client reçoit avant paiement, quel que soit l'intitulé de l'onglet.
+ */
+const TEXTES_PAR_DEFAUT = {
+  invoice: {
+    type: 'invoice',
+    name: 'Message de devis',
+    content: `Bonjour {nom},
+
+Voici votre devis pour {produit}. Vous pouvez le régler directement via le lien ci-dessous.
+
+Merci de votre confiance.
+L'équipe Massacre Officiel`,
+  },
+  reminder: {
+    type: 'reminder',
+    name: 'Message de relance',
+    content: `Bonjour {nom},
+
+Nous revenons vers vous au sujet de votre devis pour {produit}, qui reste en attente de règlement.
+
+Vous pouvez le régler directement via le lien ci-dessous. N'hésitez pas à nous écrire si vous avez la moindre question.
+
+Bien cordialement,
+L'équipe Massacre Officiel`,
+  },
+} as const;
+
 @Injectable()
 export class MessageTemplateService implements OnModuleInit {
   constructor(
@@ -162,7 +198,11 @@ export class MessageTemplateService implements OnModuleInit {
   }
 
   /**
-   * Message par défaut de fallback (l'ancien message codé en dur).
+   * Message de repli, quand aucun modèle n'est configuré en base.
+   *
+   * Il réutilise TEXTES_PAR_DEFAUT : le même texte existait auparavant en
+   * quatre exemplaires (ici, dans le seed ci-dessous, dans la migration et
+   * dans le dashboard). Corriger une formulation en oubliait toujours un.
    */
   private getDefaultInvoiceMessage(variables: {
     nom?: string;
@@ -171,49 +211,21 @@ export class MessageTemplateService implements OnModuleInit {
     total?: string;
     entreprise?: string;
   }): string {
-    return `Bonjour ${variables.nom || ''},
-
-Voici votre devis pour ${variables.produit || 'votre commande personnalisée'}. Vous pouvez le régler directement via le lien ci-dessous.
-
-Merci de votre confiance.
-L'équipe Custom Textile`;
+    return this.replaceVariables(TEXTES_PAR_DEFAUT.invoice.content, variables);
   }
 
   /**
-   * Initialise les modèles par défaut si la table est vide.
+   * Crée les modèles de départ si la table est vide.
+   *
+   * Fait double emploi avec la migration, qui insère les mêmes textes. On le
+   * garde comme filet : une base créée sans migration (développement local
+   * avec DB_SYNCHRONIZE) partirait sinon sans aucun message.
    */
   async initializeDefaultTemplates(): Promise<void> {
     const count = await this.templates.count();
     if (count > 0) return; // Déjà initialisé
 
-    // Modèle par défaut pour les factures
-    await this.saveTemplate({
-      type: 'invoice',
-      name: 'Facture standard',
-      content: `Bonjour {nom},
-
-Voici votre devis pour {produit}. Vous pouvez le régler directement via le lien ci-dessous.
-
-Merci de votre confiance.
-L'équipe Custom Textile`,
-      isActive: true,
-      isDefault: true
-    });
-
-    // Modèle par défaut pour les relances
-    await this.saveTemplate({
-      type: 'reminder',
-      name: 'Relance standard',
-      content: `Bonjour {nom},
-
-Nous revenons vers vous au sujet de votre devis pour {produit}, qui reste en attente de règlement.
-
-Vous pouvez le régler directement via le lien ci-dessous. N'hésitez pas à nous écrire si vous avez la moindre question.
-
-Bien cordialement,
-L'équipe Custom Textile`,
-      isActive: true,
-      isDefault: true
-    });
+    await this.saveTemplate({ ...TEXTES_PAR_DEFAUT.invoice, isActive: true, isDefault: true });
+    await this.saveTemplate({ ...TEXTES_PAR_DEFAUT.reminder, isActive: true, isDefault: true });
   }
 }

@@ -717,7 +717,7 @@ export class AdminController {
           `qui reste en attente de règlement.\n\n` +
           `Vous pouvez le régler directement via le lien ci-dessous. ` +
           `N'hésitez pas à nous écrire si vous avez la moindre question.\n\n` +
-          `Bien cordialement,\nL'équipe Custom Textile`;
+          `Bien cordialement,\nL'équipe Massacre Officiel`;
       }
 
       await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
@@ -1310,18 +1310,18 @@ export class AdminController {
   // ─────────────────────────────── Messages ───────────────────────────────
   // Gestion des modèles de messages personnalisables pour les factures/devis.
 
-  /** GET /api/admin/message-templates — liste tous les modèles de messages. */
-  @Get('message-templates')
-  async getMessageTemplates(@Req() req: Request, @Res() res: Response): Promise<void> {
-    if (!(await this.isAuthed(req))) {
-      res.status(401).json({ ok: false, error: 'Non authentifié.' });
-      return;
-    }
-    const templates = await this.messageTemplates.getAllTemplates();
-    res.json({ ok: true, templates });
-  }
-
-  /** GET /api/admin/message-templates/:type — récupère les modèles d'un type spécifique. */
+  /**
+   * GET /api/admin/message-templates/:type — les modèles d'un type.
+   *
+   * ⚠️ ORDRE DES ROUTES : ce paramètre attrape tout segment unique. Les routes
+   * à chemin fixe qui commencent pareil (preview/…, render/…) ont deux
+   * segments et passent donc à côté — mais toute nouvelle route
+   * `message-templates/quelquechose` serait captée ici et lirait
+   * « quelquechose » comme un type. La déclarer AVANT celle-ci.
+   *
+   * (Une route `GET message-templates` sans paramètre existait ; elle
+   * renvoyait tous les modèles et n'a jamais été appelée par le dashboard.)
+   */
   @Get('message-templates/:type')
   async getMessageTemplatesByType(
     @Req() req: Request,
@@ -1449,6 +1449,62 @@ export class AdminController {
           { key: '{entreprise}', description: 'Nom de l\'entreprise du client' }
         ]
       });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * GET /api/admin/message-templates/render/:quoteId — le message RÉEL d'un devis.
+   *
+   * Rend le modèle avec les vraies variables de ce devis. Sert à pré-remplir le
+   * champ de la modale de facturation : l'admin voit exactement ce qui partira.
+   *
+   * Cette route remplace un montage bien plus fragile côté navigateur, qui
+   * demandait l'APERÇU (avec ses variables d'exemple) puis tentait d'y
+   * substituer les vraies valeurs par recherche-remplacement :
+   *
+   *     .replace(/5/g, qty)      // remplaçait TOUS les chiffres 5
+   *
+   * Un total de « 125,00 € » devenait « 123,00 € » pour une quantité de 3, et
+   * ce montant faux partait au client. Quand le total réel manquait, c'est le
+   * montant d'exemple lui-même qui était envoyé.
+   *
+   * Le rendu appartient au serveur, qui a les données ; le navigateur affiche.
+   */
+  @Get('message-templates/render/:quoteId')
+  async renderMessageForQuote(
+    @Req() req: Request,
+    @Param('quoteId') quoteId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+
+    try {
+      const quote = await this.data.getQuote(quoteId);
+      if (!quote) {
+        res.status(404).json({ ok: false, error: 'Devis introuvable.' });
+        return;
+      }
+
+      /* Mêmes sources que l'envoi de facture (voir sendInvoice) : le message
+         pré-rempli doit être celui qui partira, sans écart possible. */
+      const data = (quote.quoteData || {}) as Record<string, any>;
+      const customer = data.customer || {};
+      const productName = data.coin?.name || 'votre commande personnalisée';
+
+      const message = await this.messageTemplates.generateInvoiceMessage({
+        nom: customer.nom,
+        produit: productName,
+        quantite: data.coin?.qty,
+        total: quote.totalPrice ? `${quote.totalPrice} €` : undefined,
+        entreprise: customer.entreprise,
+      });
+
+      res.json({ ok: true, message });
     } catch (err) {
       res.status(500).json({ ok: false, error: (err as Error).message });
     }
