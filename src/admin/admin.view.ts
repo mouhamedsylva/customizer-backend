@@ -1231,8 +1231,143 @@ body{
   border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:16px;
   background:var(--paper);
 }
-.switch{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:600}
-.switch input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+
+/* ── Modale de maintenance ────────────────────────────────────────────────
+   Fermer le configurateur coupe les commandes : l'écran doit dire l'état
+   courant AVANT la commande qui le change, et prévenir des conséquences au
+   moment où on bascule. D'où trois zones : en-tete, bandeau d'état, et un
+   avertissement qui n'apparait qu'à l'activation.
+
+   Toutes les couleurs passent par les jetons de thème, jamais en dur : le
+   bandeau doit rester lisible en sombre comme en clair. */
+.mnt-head{
+  display:flex;align-items:flex-start;gap:13px;margin-bottom:18px;
+  padding-bottom:18px;border-bottom:1px solid var(--line);
+}
+.mnt-head-ico{
+  flex:none;width:42px;height:42px;border-radius:11px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--warn-soft);color:var(--warn);
+}
+.mnt-head-ico svg{width:21px;height:21px}
+.mnt-head-txt{flex:1;min-width:0}
+.mnt-head-txt h3{margin-bottom:3px}
+.mnt-head-txt p{font-size:13px;color:var(--muted);margin:0}
+/* Croix de fermeture : bouton réel, donc au clavier et aux lecteurs d'écran. */
+.mnt-close{
+  flex:none;border:0;background:none;padding:4px;margin:-4px -4px 0 0;
+  color:var(--faint);cursor:pointer;border-radius:8px;line-height:0;
+  transition:color .15s ease,background .15s ease;
+}
+.mnt-close:hover{color:var(--ink);background:var(--raise)}
+.mnt-close:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.mnt-close svg{width:18px;height:18px}
+
+/* Bandeau d'état — vert au repos, rouge en maintenance. */
+.mnt-state{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:14px 15px;border-radius:12px;
+  border:1px solid color-mix(in srgb, var(--ok) 26%, transparent);
+  background:var(--ok-soft);
+  transition:background .2s ease,border-color .2s ease;
+}
+.mnt-state-ico{
+  flex:none;width:27px;height:27px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--ok);color:#fff;
+}
+.mnt-state-ico svg{width:15px;height:15px}
+.mnt-state-txt{flex:1;min-width:0}
+.mnt-state-txt strong{display:block;font-size:13.5px;font-weight:700;color:var(--ok);margin-bottom:2px}
+.mnt-state-txt span{font-size:12.5px;color:var(--muted);line-height:1.45}
+/* État actif : un seul attribut sur le bandeau fait basculer toute la zone. */
+.mnt-state[data-on="1"]{
+  background:var(--danger-soft);
+  border-color:color-mix(in srgb, var(--danger) 26%, transparent);
+}
+.mnt-state[data-on="1"] .mnt-state-ico{background:var(--danger)}
+.mnt-state[data-on="1"] .mnt-state-txt strong{color:var(--danger)}
+
+/* Ligne de bascule : intitulé à gauche, interrupteur à droite. */
+.mnt-row{
+  display:flex;align-items:center;gap:16px;
+  padding:17px 0;margin-top:4px;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+}
+.mnt-row-txt{flex:1;min-width:0}
+.mnt-row-txt strong{display:block;font-size:14.5px;font-weight:700;margin-bottom:2px}
+.mnt-row-txt span{font-size:12.5px;color:var(--muted);line-height:1.45}
+/* L'interrupteur seul, sans libellé : le texte vit dans la colonne de gauche.
+   La règle .switch generique garde son gap, neutralisé ici. */
+.mnt-row .switch{gap:0;flex:none}
+/* En maintenance, l'interrupteur vire au rouge et non à l'accent : il signale
+   une coupure, pas une option activée. */
+.mnt-row .switch input:checked{background:var(--danger);border-color:var(--danger)}
+.mnt-row .switch input:focus-visible{
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+/* Avertissement — masqué tant que la maintenance est éteinte. */
+.mnt-warn{
+  display:none;align-items:flex-start;gap:11px;
+  margin-top:16px;padding:13px 14px;border-radius:11px;
+  background:var(--warn-soft);
+  border:1px solid color-mix(in srgb, var(--warn) 24%, transparent);
+}
+.mnt-warn.show{display:flex}
+.mnt-warn-ico{
+  flex:none;width:21px;height:21px;border-radius:50%;margin-top:1px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--warn);color:#fff;font-size:13px;font-weight:800;
+}
+.mnt-warn-txt{flex:1;min-width:0}
+.mnt-warn-txt strong{display:block;font-size:13px;font-weight:700;color:var(--warn);margin-bottom:3px}
+.mnt-warn-txt span{font-size:12.5px;color:var(--muted);line-height:1.5}
+.mnt-warn-txt code{
+  font-size:12px;padding:1px 5px;border-radius:5px;
+  background:var(--surface);border:1px solid var(--line);
+}
+@media (prefers-reduced-motion: reduce){
+  .mnt-state{transition:none}
+}
+/* ── Interrupteur ─────────────────────────────────────────────────────────
+   Une case à cocher dit « je coche une option » ; un interrupteur dit
+   « j'allume ou j'éteins quelque chose ». Le mode maintenance ferme le
+   configurateur aux clients : l'état doit se lire d'un coup d'oeil, sans
+   chercher une coche.
+
+   La case native reste dans le DOM, masquée : elle porte l'état, reçoit le
+   clavier et déclenche les événements. Seule son apparence change — le
+   JavaScript et le HTML existants continuent de fonctionner tels quels. */
+.switch{display:flex;align-items:center;gap:11px;cursor:pointer;font-size:14px;font-weight:600}
+.switch input{
+  /* La propriété appearance neutralise le rendu natif sans retirer
+     l'élément : il reste focusable et actionnable à la barre d'espace. */
+  appearance:none;-webkit-appearance:none;margin:0;flex:none;cursor:pointer;
+  position:relative;width:40px;height:23px;border-radius:12px;
+  /* Piste eteinte assombrie : la variable --line seule se confondait avec le
+     fond du panneau en theme clair, l'interrupteur passait inapercu.
+     color-mix suit les deux themes sans dupliquer la regle. */
+  background:color-mix(in srgb, var(--line) 55%, var(--muted));
+  border:1px solid color-mix(in srgb, var(--line) 40%, var(--muted));
+  transition:background .18s ease,border-color .18s ease;
+}
+/* La pastille, qui glisse d'un bord à l'autre. */
+.switch input::after{
+  content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;
+  border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.28);
+  transition:transform .18s cubic-bezier(.3,.8,.4,1);
+}
+.switch input:checked{background:var(--accent);border-color:var(--accent)}
+.switch input:checked::after{transform:translateX(17px)}
+.switch input:focus-visible{box-shadow:0 0 0 3px var(--accent-soft)}
+.switch input:disabled{opacity:.5;cursor:not-allowed}
+/* Le mouvement n'est qu'un agrément : on le retire si l'utilisateur le
+   demande, l'état restant lisible par la couleur et la position. */
+@media (prefers-reduced-motion: reduce){
+  .switch input,.switch input::after{transition:none}
+}
 .mail-row{display:flex;gap:8px;align-items:stretch}
 .mail-row .price-input{flex:1;min-width:0}
 .mail-row .btn{flex:none;white-space:nowrap}
@@ -3529,7 +3664,7 @@ export function dashboardPage(
               <circle cx="12" cy="12" r="3"/>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
-            <span><b>Réglages de l'atelier</b><small>Délais, maintenance, options</small></span>
+            <span><b>Mode maintenance</b><small>Ouvrir ou fermer le configurateur</small></span>
           </button>
           <button class="cog-item" role="menuitem" onclick="fromCog(openMessages)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3915,29 +4050,66 @@ export function dashboardPage(
 
   <!-- Modale : réglages de l'atelier -->
   <div class="modal" id="set-modal" onclick="if(event.target===this)closeSettings()">
-    <div class="modal-box" style="max-width:520px">
-      <h3>Paramètres</h3>
-      <p class="sub">Réglages de l'atelier de personnalisation.</p>
+    <div class="modal-box" style="max-width:540px">
+      <div class="mnt-head">
+        <div class="mnt-head-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <div class="mnt-head-txt">
+          <h3>Mode maintenance</h3>
+          <p>Contrôlez la disponibilité de votre configurateur.</p>
+        </div>
+        <button class="mnt-close" type="button" onclick="closeSettings()" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
 
-      <div class="set-block">
+      <!-- Bandeau d'état : reflète ce qui est ENREGISTRÉ au chargement, puis
+           suit l'interrupteur pour montrer ce que l'enregistrement produira. -->
+      <div class="mnt-state" id="mnt-state" data-on="0">
+        <div class="mnt-state-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="mnt-state-txt">
+          <strong id="mnt-state-title">Configurateur actuellement ouvert</strong>
+          <span id="mnt-state-desc">Les clients peuvent personnaliser et commander normalement.</span>
+        </div>
+      </div>
+
+      <div class="mnt-row">
+        <div class="mnt-row-txt">
+          <strong>Mode maintenance</strong>
+          <span id="mnt-row-desc">Le configurateur est accessible aux clients.</span>
+        </div>
         <label class="switch">
-          <input type="checkbox" id="set-maintenance">
-          <span>Mode maintenance du configurateur</span>
+          <input type="checkbox" id="set-maintenance" aria-describedby="mnt-row-desc">
         </label>
-        <p class="hint" style="margin-top:10px">
-          Une fois activé, la page de personnalisation affiche un écran
-          d'attente au lieu du configurateur. Le <strong>reste de la boutique
-          continue de fonctionner</strong> : catalogue, panier, et les commandes
-          déjà composées peuvent être réglées.
-        </p>
-        <p class="hint" style="margin-top:6px">
-          Les clients déjà sur la page basculent d'eux-mêmes en moins d'une
-          minute, sans avoir à recharger.
-        </p>
-        <p class="hint" style="margin-top:6px">
-          Pour travailler sur le configurateur pendant la fermeture, ajoutez
-          <strong>?apercu=1</strong> à l'adresse de la page.
-        </p>
+      </div>
+
+      <div class="mnt-warn" id="mnt-warn">
+        <div class="mnt-warn-ico" aria-hidden="true">!</div>
+        <div class="mnt-warn-txt">
+          <strong>Attention</strong>
+          <span>
+            Les visiteurs verront un écran d'attente à la place du
+            configurateur, et <strong>aucune personnalisation ne pourra être
+            commandée</strong>. Le reste de la boutique continue de
+            fonctionner : catalogue, panier et règlement des commandes déjà
+            composées. Les clients déjà sur la page basculent en moins d'une
+            minute, sans recharger. Pour y travailler malgré la fermeture,
+            ajoutez <code>?apercu=1</code> à l'adresse de la page.
+          </span>
+        </div>
       </div>
 
       <div class="modal-actions">
@@ -4739,10 +4911,41 @@ export function dashboardPage(
        string TypeScript, une paire de backticks y refermerait la chaîne.) */
     function openSettings(){
       document.getElementById('set-modal').classList.add('open');
+      /* Remise à zéro avant l'appel réseau : si le chargement échoue, la
+         modale afficherait sinon l'état de l'ouverture précédente. */
+      var box=document.getElementById('set-maintenance');
+      if(box) box.checked=false;
+      refreshMaintenanceUI();
       loadSettings();
     }
     function closeSettings(){
       document.getElementById('set-modal').classList.remove('open');
+    }
+
+    /* Aligne le bandeau, la description et l'avertissement sur la position de
+       l'interrupteur. Appelée au chargement ET à chaque bascule : l'écran
+       montre alors ce que l'enregistrement VA produire, pas l'état enregistré
+       — sans quoi on lirait "ouvert" en poussant l'interrupteur sur fermé. */
+    function refreshMaintenanceUI(){
+      var box=document.getElementById('set-maintenance');
+      var state=document.getElementById('mnt-state');
+      var title=document.getElementById('mnt-state-title');
+      var desc=document.getElementById('mnt-state-desc');
+      var row=document.getElementById('mnt-row-desc');
+      var warn=document.getElementById('mnt-warn');
+      if(!box||!state) return;
+      var on=!!box.checked;
+      state.setAttribute('data-on', on?'1':'0');
+      if(title) title.textContent = on
+        ? 'Maintenance actuellement activée'
+        : 'Configurateur actuellement ouvert';
+      if(desc) desc.textContent = on
+        ? "Les visiteurs voient l'écran d'attente à la place du configurateur."
+        : 'Les clients peuvent personnaliser et commander normalement.';
+      if(row) row.textContent = on
+        ? 'Le configurateur est temporairement fermé.'
+        : 'Le configurateur est accessible aux clients.';
+      if(warn) warn.classList.toggle('show', on);
     }
 
     async function loadSettings(){
@@ -4753,12 +4956,19 @@ export function dashboardPage(
       /* Désactivée le temps du chargement : cocher avant que l'état réel soit
          connu aurait enregistré une valeur devinée. */
       box.disabled=true;
+      /* Branché une seule fois, même si la modale est rouverte dix fois : sans
+         ce garde, chaque ouverture ajouterait un écouteur de plus. */
+      if(!box.dataset.mntBound){
+        box.addEventListener('change', refreshMaintenanceUI);
+        box.dataset.mntBound='1';
+      }
       try{
         var r=await fetch('/api/admin/settings',{credentials:'same-origin'});
         var d=await r.json();
         if(!d.ok||!d.settings){ if(st) st.textContent=d.error||'Réglages indisponibles.'; return; }
         box.checked=!!d.settings.maintenanceEnabled;
         box.disabled=false;
+        refreshMaintenanceUI();
       }catch(e){
         if(st) st.textContent='Réglages indisponibles — vérifiez la connexion.';
       }
