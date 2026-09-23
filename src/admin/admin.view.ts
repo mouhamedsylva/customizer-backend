@@ -3325,7 +3325,9 @@ export function dashboardPage(
     <div class="tabs">
       <button class="tab active" data-tab="orders">Commandes <span class="count mono">${orders.length}</span></button>
       <button class="tab" data-tab="quotes">Devis <span class="count mono">${quotes.length}</span></button>
-      <button class="tab" data-tab="designs">Designs <span class="count mono">${designs.length}</span></button>
+      <!-- Onglet « Designs » masqué à la demande. Le panneau #p-designs et tout
+           son code restent en place : seul le bouton d'accès est retiré, donc
+           il suffit de rétablir cette ligne pour le faire revenir. -->
     </div>
 
     <div class="toolbar">
