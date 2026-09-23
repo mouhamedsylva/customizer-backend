@@ -475,8 +475,41 @@ const STYLE = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{
   font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
-  background:var(--paper); color:var(--ink);
+  color:var(--ink);
   -webkit-font-smoothing:antialiased; line-height:1.5;
+  /* Même nappe que l'écran de connexion : elle naît hors cadre en bas à
+     gauche et se dissipe vers le centre. Les deux pages se répondent.
+   *
+   * L'attachement FIXE est indispensable ici : le dashboard défile,
+   * et sans lui la nappe glisserait avec le contenu — on la verrait passer,
+   * puis disparaître. Fixée, elle se comporte comme un décor de fenêtre.
+   *
+   * Plus discrète que sur la connexion (12% contre 17%) : cette page porte des
+   * cartes blanches, des tableaux et du texte dense. Le fond doit se faire
+   * oublier. */
+  background:
+    radial-gradient(95% 70% at 6% 92%,
+      color-mix(in srgb, var(--accent) 12%, transparent) 0%,
+      color-mix(in srgb, var(--accent) 5%, transparent) 40%,
+      transparent 74%),
+    radial-gradient(50% 40% at 0% 100%,
+      color-mix(in srgb, var(--accent) 15%, transparent) 0%,
+      transparent 62%),
+    var(--paper);
+  background-attachment:fixed;
+}
+/* Fond nuit : l'accent y est un cyan, et une teinte claire sur fond sombre
+   porte bien plus loin. On divise l'intensité. */
+:root[data-theme="dark"] body{
+  background:
+    radial-gradient(95% 70% at 6% 92%,
+      color-mix(in srgb, var(--accent) 7%, transparent) 0%,
+      transparent 70%),
+    radial-gradient(50% 40% at 0% 100%,
+      color-mix(in srgb, var(--accent) 9%, transparent) 0%,
+      transparent 60%),
+    var(--paper);
+  background-attachment:fixed;
 }
 .mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 .lbl{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -1580,11 +1613,48 @@ body{
   min-height:100vh; display:flex; flex-direction:column;
   align-items:center; justify-content:center; gap:18px; padding:24px;
   position:relative;
-  /* Deux halos très doux teintés de l'accent : donne de la profondeur
-     sans image, et suit automatiquement le thème. */
+  /* Nappe orangée montant du bord gauche, sur fond clair.
+   *
+   * Les deux halos précédents, centrés en haut et en bas, restaient
+   * symétriques et discrets. Celui-ci est volontairement ASYMÉTRIQUE : il
+   * naît hors cadre en bas à gauche et se dissipe vers le centre, ce qui
+   * donne une direction au fond au lieu d'un simple voile.
+   *
+   * Trois couches superposées, de la plus large à la plus concentrée : une
+   * diffusion très étendue pour la teinte générale, un cœur plus dense pour
+   * l'intensité, et une touche chaude qui déborde vers le haut. Aucune image,
+   * donc rien à charger — et les couleurs suivent le thème.
+   *
+   * Les unités sont en % de la fenêtre : la nappe garde ses proportions quelle
+   * que soit la taille de l'écran, là où les unités ch variaient avec la
+   * police. */
   background:
-    radial-gradient(60ch 40ch at 50% -10%, var(--accent-soft), transparent 70%),
-    radial-gradient(50ch 34ch at 50% 110%, var(--raise), transparent 70%);
+    radial-gradient(95% 75% at 8% 88%,
+      color-mix(in srgb, var(--accent) 17%, transparent) 0%,
+      color-mix(in srgb, var(--accent) 7%, transparent) 38%,
+      transparent 72%),
+    radial-gradient(55% 45% at 2% 96%,
+      color-mix(in srgb, var(--accent) 22%, transparent) 0%,
+      transparent 60%),
+    radial-gradient(70% 55% at 22% 58%,
+      color-mix(in srgb, var(--accent) 9%, transparent) 0%,
+      transparent 65%),
+    var(--paper);
+}
+/* Sur le fond nuit, l'accent est un cyan et non l'orange : la nappe garde donc
+   la teinte du thème. On l'atténue de moitié — une couleur claire sur fond
+   sombre porte bien plus loin que l'inverse, et la même intensité y paraîtrait
+   laiteuse. */
+:root[data-theme="dark"] .lg-wrap{
+  background:
+    radial-gradient(95% 75% at 8% 88%,
+      color-mix(in srgb, var(--accent) 9%, transparent) 0%,
+      color-mix(in srgb, var(--accent) 4%, transparent) 38%,
+      transparent 72%),
+    radial-gradient(55% 45% at 2% 96%,
+      color-mix(in srgb, var(--accent) 12%, transparent) 0%,
+      transparent 60%),
+    var(--paper);
 }
 .lg-theme{
   position:absolute; top:20px; right:20px;
