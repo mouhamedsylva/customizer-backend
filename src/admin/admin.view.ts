@@ -984,15 +984,24 @@ body{
 /* Notifications */
 .bell-wrap{position:relative}
 #bell-btn{position:relative}
-/* Pastille de comptage. Elle chevauche la cloche : un liseré de la couleur de
-   la barre la détache du tracé, sans quoi les deux se confondent. */
+/* Pastille de comptage.
+ *
+ * ANCRÉE DANS LE BOUTON, pas en dehors. Elle était posée en top:-3px /
+ * right:-3px : elle débordait donc du bouton, et la barre ne lui laissant
+ * aucune marge en haut, elle se retrouvait rognée contre le bord.
+ *
+ * Le bouton a 7px de padding vertical et 10px horizontal : la pastille s'y
+ * loge sans jamais sortir, tout en restant collée au coin supérieur droit de
+ * la cloche. Le liseré de la couleur de la barre la détache du tracé. */
 .bell-dot{
-  position:absolute;top:-3px;right:-3px;
+  position:absolute;top:2px;right:4px;
   min-width:15px;height:15px;padding:0 3px;
   background:var(--accent);color:#fff;border-radius:8px;
   border:2px solid var(--surface);
-  font-size:9.5px;font-weight:800;line-height:15px;text-align:center;
+  font-size:9.5px;font-weight:800;line-height:13px;text-align:center;
   font-variant-numeric:tabular-nums;
+  /* Au-dessus du tracé de la cloche, jamais dessous. */
+  z-index:1;
 }
 /* Sans contenu, min-width laissait un disque nu de la taille du badge —
    visible alors qu'il n'y a rien à signaler. */
@@ -4046,7 +4055,11 @@ export function dashboardPage(
         dot.style.display='';
         // Petit rappel visuel que quelque chose est arrivé.
         var btn=document.getElementById('bell-btn');
-        if(btn){ btn.style.animation='none'; void btn.offsetWidth; btn.style.animation='bellRing .5s ease'; }
+        /* L'animation porte sur l'ICÔNE, pas sur le bouton : faire pivoter le
+           bouton emportait la pastille avec lui, et elle sortait de la barre
+           le temps du mouvement. La cloche sonne, le compteur reste en place. */
+        var ico=btn?btn.querySelector('svg'):null;
+        if(ico){ ico.style.animation='none'; void ico.getBoundingClientRect(); ico.style.animation='bellRing .5s ease'; }
       }else{
         dot.style.display='none';
       }
