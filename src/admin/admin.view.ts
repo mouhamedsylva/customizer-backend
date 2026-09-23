@@ -590,17 +590,50 @@ body{
 :root[data-theme="dark"] .stat.t-green{--t:#addb67}
 :root[data-theme="dark"] .stat.t-violet{--t:#c792ea}
 
-/* Tabs */
-.tabs{display:inline-flex;background:var(--raise);border-radius:11px;padding:4px;gap:2px;margin-bottom:16px}
+/* ── Onglets ──────────────────────────────────────────────────────────────
+   La gouttière portait un fond trop proche de celui de la page : elle
+   était invisible, et l'onglet inactif — sans bordure ni fond propre —
+   flottait dans le vide. Un administrateur n'avait pas vu « Devis », faute de
+   quoi que ce soit qui le désigne comme cliquable.
+
+   Le contraste se joue en trois temps : la gouttière se détache de la page,
+   la carte active se détache de la gouttière, et l'inactif réagit au survol. */
+.tabs{
+  display:inline-flex;background:var(--raise);border:1px solid var(--line);
+  border-radius:12px;padding:4px;gap:3px;margin-bottom:16px;
+}
 .tab{
   border:none;background:none;cursor:pointer;font:inherit;
-  padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);
+  padding:8px 16px;border-radius:9px;font-size:13px;font-weight:600;color:var(--muted);
   display:inline-flex;align-items:center;gap:8px;transition:.15s;
 }
-.tab:hover{color:var(--ink)}
-.tab.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
-.tab .count{font-size:11px;font-weight:700;color:var(--faint)}
+/* L'inactif prend un fond au survol : il se révèle comme bouton avant même
+   le clic. Le simple changement de couleur du texte ne suffisait pas. */
+.tab:hover:not(.active){background:var(--surface);color:var(--ink)}
+.tab.active{
+  background:var(--surface);color:var(--ink);
+  box-shadow:0 1px 2px rgba(0,0,0,.05),0 2px 6px rgba(0,0,0,.06);
+}
+.tab .count{font-size:11px;font-weight:700;color:var(--muted)}
 .tab.active .count{color:var(--accent)}
+/* Compteur non nul : pastille pleine, pour attirer l'oeil là où il y a du
+   travail en attente. À zéro, il reste un simple chiffre discret. */
+.tab .count.has-items{
+  background:var(--accent);color:#fff;
+  min-width:17px;height:17px;padding:0 5px;border-radius:9px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:10.5px;line-height:1;
+}
+.tab.active .count.has-items{color:#fff}
+/* Sur le fond nuit, une ombre noire ne détache rien : la carte active se
+   distingue par un contour clair, et la gouttière s'assombrit sous elle.
+
+   La bordure est posée sur TOUS les onglets, transparente par défaut : la
+   donner au seul actif décalerait le texte d'un pixel à chaque changement
+   d'onglet. */
+:root[data-theme="dark"] .tabs{background:var(--paper)}
+:root[data-theme="dark"] .tab{border:1px solid transparent}
+:root[data-theme="dark"] .tab.active{box-shadow:none;border-color:var(--line)}
 
 /* Toolbar */
 .toolbar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
@@ -3323,8 +3356,8 @@ export function dashboardPage(
     }
 
     <div class="tabs">
-      <button class="tab active" data-tab="orders">Commandes <span class="count mono">${orders.length}</span></button>
-      <button class="tab" data-tab="quotes">Devis <span class="count mono">${quotes.length}</span></button>
+      <button class="tab active" data-tab="orders">Commandes <span class="count mono${orders.length ? ' has-items' : ''}">${orders.length}</span></button>
+      <button class="tab" data-tab="quotes">Devis <span class="count mono${quotes.length ? ' has-items' : ''}">${quotes.length}</span></button>
       <!-- Onglet « Designs » masqué à la demande. Le panneau #p-designs et tout
            son code restent en place : seul le bouton d'accès est retiré, donc
            il suffit de rétablir cette ligne pour le faire revenir. -->
