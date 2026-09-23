@@ -1483,6 +1483,32 @@ body{
 .modal-actions{display:flex;gap:10px;margin-top:18px}
 .modal-actions .btn{flex:1;justify-content:center}
 /* Ligne prix unitaire + total */
+/* ── Chiffrage par famille (devis multi-produits) ───────────────────────── */
+/* Total général, en tête de modale : le dernier chiffre que l'admin vérifie
+   avant d'envoyer, et celui que le client verra. */
+.inv-grand{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);
+  border-radius:12px;padding:11px 16px;margin-bottom:14px;
+}
+.inv-grand strong{font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--accent)}
+/* Une ligne par famille : libellé + quantité, champ de prix, total de ligne. */
+.inv-fam{
+  display:flex;align-items:center;gap:12px;
+  padding:9px 0;border-bottom:1px solid var(--line-soft);
+}
+.inv-fam:last-child{border-bottom:none}
+.inv-fam-nom{flex:1;min-width:0;font-size:13px;font-weight:600}
+.inv-fam-nom small{display:block;font-weight:500;color:var(--muted);font-size:11.5px;margin-top:1px}
+.inv-fam input{
+  width:96px;flex:none;padding:8px 10px;border:1px solid var(--line);border-radius:9px;
+  background:var(--paper);color:var(--ink);font:inherit;font-size:14px;font-weight:700;
+  outline:none;text-align:right;
+}
+.inv-fam input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+/* Total de la ligne : largeur fixe pour que la colonne reste alignée. */
+.inv-fam-total{width:92px;flex:none;text-align:right;font-size:13.5px;font-weight:700}
+.inv-fam-total.is-empty{color:var(--faint);font-weight:500}
 .price-row{display:flex;gap:14px;align-items:flex-end}
 .price-row>div:first-child{flex:1}
 .price-input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;
@@ -2824,7 +2850,12 @@ function quoteCard(q: Quote, shopDomain: string): string {
                      data-nom="${esc(c.nom || '')}"
                      data-produit="${esc(group ? group.productLabel || 'Commande de groupe' : coin.name || '')}"
                      data-qty="${group ? Number(group.pieces) || groupRows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : Number(coin.qty) || 1}"
-                     data-flock="${group ? groupRows.filter((r: any) => r.flock).reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : 0}">
+                     data-flock="${group ? groupRows.filter((r: any) => r.flock).reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : 0}"
+                     ${
+                       Array.isArray(coin.familles) && coin.familles.length
+                         ? `data-familles="${esc(JSON.stringify(coin.familles.map((f: any) => ({ libelle: String(f.libelle || ''), qty: Number(f.qty) || 0 }))))}"`
+                         : ''
+                     }>
                    ✉ ${st.key === 'sent' ? 'Corriger le prix et renvoyer' : 'Chiffrer et envoyer la facture'}
                  </button>
                  ${
@@ -3695,7 +3726,27 @@ export function dashboardPage(
       <h3>Chiffrer et envoyer la facture</h3>
       <p class="sub" id="inv-sub"></p>
 
-      <div class="price-row">
+      <!-- TOTAL GÉNÉRAL, en tête : c'est le montant que verra le client, et
+           ce que l'admin vérifie en dernier avant d'envoyer. Il se met à jour
+           à chaque frappe, quel que soit le mode de saisie. -->
+      <div class="inv-grand" id="inv-grand-block" style="display:none">
+        <span class="lbl">Total de la commande</span>
+        <strong id="inv-grand" class="mono">—</strong>
+      </div>
+
+      <!-- MULTI-PRODUITS : une ligne de prix par famille.
+           Un panier mêlant patchs, coins et textiles partait sur un prix unique
+           appliqué à toutes les pièces — un patch à 2 € et un sweatshirt à 40 €
+           recevaient le même tarif. Chaque famille a désormais le sien. -->
+      <div id="inv-familles-block" style="display:none">
+        <label class="lbl">Prix par type de produit</label>
+        <div id="inv-familles"></div>
+      </div>
+
+      <!-- MONO-PRODUIT : le champ unique d'origine. Conservé tel quel — c'est
+           le chemin des devis de patch, de coin, et de TOUS les devis déjà en
+           base, qui ne portent pas de familles. -->
+      <div class="price-row" id="inv-simple-block">
         <div>
           <label class="lbl">Prix unitaire (€)</label>
           <input type="number" id="inv-price" min="0.01" step="0.01" placeholder="0,00"
@@ -5367,7 +5418,8 @@ export function dashboardPage(
           inv.getAttribute('data-nom') || '',
           inv.getAttribute('data-produit') || '',
           inv.getAttribute('data-qty') || '1',
-          inv.getAttribute('data-flock') || '0'
+          inv.getAttribute('data-flock') || '0',
+          inv.getAttribute('data-familles') || ''
         );
       }
     });
@@ -5377,15 +5429,41 @@ export function dashboardPage(
     function euro(n){return n.toFixed(2).replace('.',',')+' €';}
 
     var invFlockCount = 0;   // nombre de pièces floquées (commande de groupe)
-    function openInvoice(id,email,nom,produit,qty,flockCount){
+
+    /* Familles du devis en cours : [{libelle, qty}]. Vide pour un devis
+       mono-produit et pour TOUS les devis antérieurs à cette fonctionnalité —
+       la modale retombe alors sur son champ unique. */
+    var invFamilles = [];
+
+    function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson){
       invQuoteId=id;
       invQty=Math.max(1,parseInt(qty,10)||1);
       invFlockCount=Math.max(0,parseInt(flockCount,10)||0);
+
+      invFamilles = [];
+      if (famillesJson) {
+        try {
+          var lues = JSON.parse(famillesJson);
+          if (Array.isArray(lues)) {
+            invFamilles = lues.filter(function(f){
+              return f && f.libelle && (Number(f.qty) || 0) > 0;
+            });
+          }
+        } catch (e) {
+          /* Attribut illisible : on ne bloque pas le chiffrage, on retombe sur
+             le champ unique. Mieux vaut un devis chiffré grossièrement qu'un
+             devis impossible à envoyer. */
+          console.warn('Familles du devis illisibles, chiffrage global :', e);
+        }
+      }
+
       document.getElementById('inv-sub').textContent =
         email ? ('Destinataire : '+email) : 'Aucune adresse e-mail renseignée pour ce client.';
       document.getElementById('inv-qty').textContent = invQty;
       document.getElementById('inv-price').value='';
       document.getElementById('inv-total').textContent='—';
+
+      construireLignesFamilles();
 
       // Bloc « chiffrage assisté » : visible seulement si des pièces sont floquées.
       var fb=document.getElementById('inv-flock-block');
@@ -5430,10 +5508,105 @@ export function dashboardPage(
       var btn=document.getElementById('inv-send');
       btn.disabled=false; btn.textContent='Envoyer la facture';
       document.getElementById('inv-modal').classList.add('open');
-      setTimeout(function(){document.getElementById('inv-price').focus();},60);
+      setTimeout(function(){
+        /* Le premier champ à remplir, selon le mode : en multi-familles le
+           champ de prix unique est masqué, le focus y serait invisible. */
+        var premier = invFamilles.length
+          ? document.querySelector('#inv-familles input')
+          : document.getElementById('inv-price');
+        if (premier) premier.focus();
+      },60);
+    }
+
+    /**
+     * Construit les lignes de prix par famille, ou bascule en mode simple.
+     *
+     * Les deux modes s'excluent : un devis a des familles, ou n'en a pas. Les
+     * afficher ensemble laisserait croire que les deux prix s'additionnent.
+     */
+    function construireLignesFamilles(){
+      var blocFam = document.getElementById('inv-familles-block');
+      var blocSimple = document.getElementById('inv-simple-block');
+      var blocGrand = document.getElementById('inv-grand-block');
+      var liste = document.getElementById('inv-familles');
+      if (!blocFam || !blocSimple || !liste) return;
+
+      var multi = invFamilles.length > 0;
+      blocFam.style.display = multi ? 'block' : 'none';
+      blocSimple.style.display = multi ? 'none' : 'flex';
+      if (blocGrand) blocGrand.style.display = multi ? 'flex' : 'none';
+
+      liste.innerHTML = '';
+      if (!multi) return;
+
+      invFamilles.forEach(function(f, i){
+        var ligne = document.createElement('div');
+        ligne.className = 'inv-fam';
+
+        var nom = document.createElement('div');
+        nom.className = 'inv-fam-nom';
+        /* textContent et non innerHTML : le libellé vient des données du
+           devis, donc du client. */
+        nom.textContent = f.libelle;
+        var qte = document.createElement('small');
+        qte.textContent = f.qty + ' pièce(s)';
+        nom.appendChild(qte);
+
+        var champ = document.createElement('input');
+        champ.type = 'number';
+        champ.min = '0.01';
+        champ.step = '0.01';
+        champ.placeholder = '0,00';
+        champ.setAttribute('data-fam', String(i));
+        champ.setAttribute('aria-label', 'Prix unitaire — ' + f.libelle);
+        champ.addEventListener('input', updateInvoiceTotal);
+
+        var total = document.createElement('div');
+        total.className = 'inv-fam-total is-empty';
+        total.setAttribute('data-fam-total', String(i));
+        total.textContent = '—';
+
+        ligne.appendChild(nom);
+        ligne.appendChild(champ);
+        ligne.appendChild(total);
+        liste.appendChild(ligne);
+      });
+    }
+
+    /**
+     * Les prix saisis par famille, indexés par libellé.
+     * @returns {{tarifs:Object, total:number, complet:boolean}}
+     */
+    function lireTarifsFamilles(){
+      var tarifs = {}, total = 0, complet = true;
+      invFamilles.forEach(function(f, i){
+        var champ = document.querySelector('#inv-familles [data-fam="'+i+'"]');
+        var v = champ ? parseFloat(champ.value) : NaN;
+        var cellule = document.querySelector('#inv-familles [data-fam-total="'+i+'"]');
+        if (isFinite(v) && v > 0) {
+          tarifs[f.libelle] = v;
+          var sousTotal = v * f.qty;
+          total += sousTotal;
+          if (cellule) { cellule.textContent = euro(sousTotal); cellule.className = 'inv-fam-total'; }
+        } else {
+          complet = false;
+          if (cellule) { cellule.textContent = '—'; cellule.className = 'inv-fam-total is-empty'; }
+        }
+      });
+      return { tarifs: tarifs, total: total, complet: complet };
     }
 
     function updateInvoiceTotal(){
+      /* MULTI-FAMILLES : la somme des lignes, rien d'autre. Pas de prix moyen
+         à calculer ni d'écart d'arrondi à expliquer — chaque ligne porte son
+         tarif exact chez Shopify. */
+      if (invFamilles.length) {
+        var lu = lireTarifsFamilles();
+        var grandEl = document.getElementById('inv-grand');
+        if (grandEl) grandEl.textContent = lu.total > 0 ? euro(lu.total) : '—';
+        return;
+      }
+
       var p=parseFloat(document.getElementById('inv-price').value);
       var base=(isFinite(p) && p>0) ? p*invQty : 0;
 
@@ -5676,10 +5849,32 @@ export function dashboardPage(
       var st=document.getElementById('inv-status');
       var price=parseFloat(document.getElementById('inv-price').value);
 
+      /* MULTI-FAMILLES : chaque ligne doit porter un prix. En laisser une vide
+         enverrait une facture où un article est offert — au client de s'en
+         apercevoir, ce qui n'arrive jamais. */
+      var tarifs;
+      if (invFamilles.length) {
+        var lu = lireTarifsFamilles();
+        if (!lu.complet) {
+          st.className='hint err';
+          st.textContent='Indiquez un prix pour chaque type de produit.';
+          var manquant = document.querySelector('#inv-familles input:placeholder-shown')
+                      || document.querySelector('#inv-familles input');
+          if (manquant) manquant.focus();
+          return;
+        }
+        tarifs = lu.tarifs;
+        /* Le prix unique part quand même : il sert de repli serveur si une
+           ligne du brouillon ne correspond à aucune famille (devis retouché
+           dans Shopify). On envoie la moyenne, cohérente avec le total. */
+        price = lu.total / Math.max(1, invQty);
+      }
+
       if(!isFinite(price) || price<=0){
         st.className='hint err';
         st.textContent='Indiquez un prix unitaire supérieur à 0.';
-        document.getElementById('inv-price').focus();
+        var champPrix = document.getElementById('inv-price');
+        if (champPrix && !invFamilles.length) champPrix.focus();
         return;
       }
 
@@ -5699,6 +5894,10 @@ export function dashboardPage(
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           unitPrice:unitToSend,
+          /* Un prix par famille, indexé par libellé — c'est lui qui titre la
+             ligne du brouillon, donc l'appariement est stable. Omis pour un
+             devis mono-produit : le serveur applique alors le prix unique. */
+          prixParFamille: tarifs || undefined,
           message:document.getElementById('inv-msg').value,
           attachments: window.invoiceAttachments || []
         })

@@ -403,6 +403,45 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
         };
       });
       tags = 'devis, groupe, textile, configurateur';
+    } else if (Array.isArray(coin.familles) && coin.familles.length) {
+      /* PANIER MULTI-PRODUITS : une ligne par FAMILLE.
+       *
+       * Tout partait sur une ligne unique — « Commande sur devis (6 articles) »,
+       * 164 unités — et Shopify ne connaît qu'un prix unitaire par ligne. Un
+       * patch et un sweatshirt recevaient donc le même prix, ce qui rendait le
+       * chiffrage impossible.
+       *
+       * Découpé par famille, chacune porte son propre prix, et le client voit
+       * le détail sur sa facture.
+       *
+       * Les propriétés communes (référence, aperçus, fichier joint) restent sur
+       * la PREMIÈRE ligne : les répéter alourdirait la facture sans rien
+       * apporter. Chaque ligne porte en revanche le détail de ses articles. */
+      lineItems = coin.familles.map((f, i) => {
+        const props: Array<{ name: string; value: string }> = [
+          { name: 'Référence devis', value: quoteId },
+        ];
+        (f.lignes || []).forEach((l, j) => {
+          props.push({ name: `Article ${j + 1}`, value: l });
+        });
+        if (i === 0) {
+          /* Les aperçus et le fichier client, une seule fois. `properties`
+             porte déjà la référence : on évite de la doubler. */
+          props.push(
+            ...properties.filter((p) => p.name !== 'Référence devis'),
+          );
+        }
+        return {
+          title: f.libelle,
+          price: '0.00', // devis : prix défini par l'équipe au chiffrage
+          quantity: f.qty,
+          custom: true,
+          properties: props,
+        };
+      });
+      /* Le tag disait « coins » pour un panier qui n'en contient pas
+         forcément : il sert au tri dans l'admin Shopify. */
+      tags = 'devis, multi-produits, configurateur';
     } else {
       lineItems = [
         {

@@ -190,6 +190,10 @@ export class AdminController {
     @Param('id') quoteId: string,
     @Body('message') message: string,
     @Body('unitPrice') unitPrice: unknown,
+    /* Devis multi-produits : un prix par famille, indexé par son libellé —
+       celui-là même qui titre la ligne du brouillon. Absent sur un devis
+       mono-produit, où `unitPrice` suffit. */
+    @Body('prixParFamille') prixParFamille: unknown,
     @Body('attachments') attachments: any[],
     @Res() res: Response,
   ): Promise<void> {
@@ -229,7 +233,35 @@ export class AdminController {
       return;
     }
 
+    /* PRIX PAR FAMILLE — devis multi-produits.
+     *
+     * Chaque entrée doit être un nombre strictement positif : une famille à
+     * 0 € passerait la facture sans que personne ne s'en aperçoive, et le
+     * client recevrait des articles offerts par accident. Même exigence que
+     * pour le prix unique ci-dessous. */
+    let tarifs: Record<string, number> | undefined;
+    if (prixParFamille && typeof prixParFamille === 'object') {
+      tarifs = {};
+      for (const [libelle, valeur] of Object.entries(
+        prixParFamille as Record<string, unknown>,
+      )) {
+        const n = Number(valeur);
+        if (!Number.isFinite(n) || n <= 0) {
+          res.status(400).json({
+            ok: false,
+            error: `Indiquez un prix supérieur à 0 pour « ${libelle} ».`,
+          });
+          return;
+        }
+        tarifs[libelle] = n;
+      }
+      if (!Object.keys(tarifs).length) tarifs = undefined;
+    }
+
     const price = Number(unitPrice);
+    /* Le prix unique reste exigé même en multi-familles : il sert de repli si
+       une ligne du brouillon ne correspond à aucune famille connue (devis
+       modifié à la main dans Shopify, par exemple). */
     if (!Number.isFinite(price) || price <= 0) {
       res.status(400).json({
         ok: false,
@@ -247,6 +279,7 @@ export class AdminController {
       const draft = await this.shopify.setDraftOrderPrice(
         quote.draftOrderId,
         price,
+        tarifs,
       );
 
       // 1.5) Ajoute les pièces jointes comme propriétés du draft order si présentes

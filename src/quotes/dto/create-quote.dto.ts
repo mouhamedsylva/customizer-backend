@@ -95,6 +95,46 @@ export class QuotePreviewDto {
   logo?: string;
 }
 
+/**
+ * Une FAMILLE de produits d'un devis multi-produits (patchs, coins, textiles…).
+ *
+ * Un panier mêlant plusieurs types devenait une seule ligne de 164 unités, à
+ * prix unique : impossible de chiffrer un patch à 2 € et un sweatshirt à 40 €.
+ * Chaque famille devient donc sa propre ligne de brouillon, avec son prix.
+ *
+ * ⚠️ Ce DTO est INDISPENSABLE. La validation tourne en `whitelist: true` : un
+ * champ non déclaré est supprimé SANS ERREUR. Sans cette classe, les familles
+ * disparaîtraient en silence et le devis repartirait en ligne unique, sans que
+ * rien ne le signale.
+ */
+export class QuoteFamilyDto {
+  /** Clé technique : 'patch', 'coin', 'sweatshirt', 'tshirt', 'drapeau'… */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(40)
+  cle!: string;
+
+  /** Intitulé client, repris tel quel sur la facture. */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  libelle!: string;
+
+  @IsNumber()
+  @Min(1)
+  @Max(100000)
+  qty!: number;
+
+  /* Le détail des articles de cette famille, attaché à sa ligne : l'atelier le
+     retrouve en propriété, au lieu d'un bloc global détaché des prix. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(300, { each: true })
+  lignes?: string[];
+}
+
 /** Detail du coin/patch pour lequel le devis est demande. */
 export class QuoteCoinDto {
   @IsString()
@@ -121,6 +161,16 @@ export class QuoteCoinDto {
   @ValidateNested({ each: true })
   @Type(() => QuotePreviewDto)
   previews!: QuotePreviewDto[];
+
+  /* Facultatif : seuls les devis issus d'un panier MULTI-PRODUITS en portent.
+     Un devis de patch ou de coin seul n'a qu'un type d'article et reste sur une
+     ligne unique — d'où l'absence de ce champ, et non un oubli. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => QuoteFamilyDto)
+  familles?: QuoteFamilyDto[];
 }
 
 /** Une ligne d'une commande de groupe (une personne). */

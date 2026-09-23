@@ -640,6 +640,16 @@ export class ShopifyService {
   async setDraftOrderPrice(
     draftOrderId: string | number,
     unitPrice: number,
+    /* PRIX PAR LIGNE, pour les devis multi-produits.
+     *
+     * Indexé par TITRE de ligne, jamais par position : rien ne garantit que
+     * Shopify renvoie les lignes dans l'ordre où elles ont été créées, et un
+     * décalage d'index facturerait les patchs au prix des sweatshirts.
+     *
+     * Absent, le comportement d'origine s'applique : `unitPrice` sur toutes
+     * les lignes, avec sa répartition en centiemes. C'est le chemin des devis
+     * mono-produit et de tous les devis antérieurs — il ne doit pas bouger. */
+    prixParTitre?: Record<string, number>,
   ): Promise<Record<string, any>> {
     const draft = await this.getDraftOrder(draftOrderId);
     const items: Array<Record<string, any>> = Array.isArray(draft.line_items)
@@ -720,6 +730,16 @@ export class ShopifyService {
     let reste = totalCents - baseCents * totalPieces;
 
     const priceFor = (li: Record<string, any>): string => {
+      /* Prix propre à cette ligne, quand il y en a un. Court-circuite la
+         répartition ci-dessous : chaque famille porte son tarif, il n'y a
+         aucun total global à ventiler. */
+      if (prixParTitre) {
+        const propre = prixParTitre[String(li.title || '')];
+        if (typeof propre === 'number' && Number.isFinite(propre)) {
+          return propre.toFixed(2);
+        }
+      }
+
       const n = qty(li);
       // +1 centime sur le prix unitaire coûte `n` centimes sur la ligne.
       //
