@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Order } from '../database/entities/order.entity';
@@ -75,12 +75,70 @@ export const QUOTES_LIMIT = 500;
  * complètes et on les ré-ordonne côté application.
  */
 @Injectable()
-export class AdminService {
+export class AdminService implements OnModuleInit {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     @InjectRepository(Order) private readonly orders: Repository<Order>,
     @InjectRepository(Quote) private readonly quotes: Repository<Quote>,
     @InjectRepository(Design) private readonly designs: Repository<Design>,
   ) {}
+
+  /**
+   * SIGNALE LES COMMANDES INVISIBLES.
+   *
+   * Le dashboard ne montre que `fromConfigurator = true`. Une commande mal
+   * reconnue n'apparaît donc NULLE PART : ni liste, ni compteur, ni badge. Et
+   * si elle vient d'un devis payé, elle est aussi exclue de l'onglet Devis —
+   * la vente disparaît des deux côtés à la fois.
+   *
+   * C'est ce qui s'est produit avec les patchs PVC et tissés : leur titre
+   * portait la finition choisie (« Patch personnalisé (PVC) »), qu'aucun
+   * critère ne reconnaissait. Le défaut n'a été découvert que parce qu'un
+   * administrateur a remarqué l'absence d'une commande.
+   *
+   * Ce relevé ne corrige rien : il rend le problème VISIBLE au démarrage,
+   * pour qu'un prochain cas ne reste pas silencieux.
+   */
+  async onModuleInit(): Promise<void> {
+    /* Différé : le démarrage ne doit pas attendre une requête d'information,
+       et la base peut encore être en train de s'ouvrir. */
+    setTimeout(() => void this.signalerCommandesInvisibles(), 15_000);
+  }
+
+  private async signalerCommandesInvisibles(): Promise<void> {
+    try {
+      const depuis = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      const invisibles = await this.orders
+        .createQueryBuilder('o')
+        .select(['o.orderNumber', 'o.shopifyOrderId'])
+        .where('o.fromConfigurator = FALSE')
+        .andWhere('COALESCE(o.shopifyCreatedAt, o.receivedAt) >= :depuis', { depuis })
+        .orderBy('COALESCE(o.shopifyCreatedAt, o.receivedAt)', 'DESC')
+        .limit(20)
+        .getMany();
+
+      if (!invisibles.length) return;
+
+      const numeros = invisibles
+        .map((o) => o.orderNumber || `id ${o.shopifyOrderId}`)
+        .join(', ');
+
+      this.logger.warn(
+        `${invisibles.length} commande(s) des 30 derniers jours ne sont pas ` +
+          'reconnues comme venant du configurateur : elles N\'APPARAISSENT PAS ' +
+          `au dashboard. ${numeros}. ` +
+          'Si ce sont de vraies commandes du configurateur, complétez la ' +
+          'reconnaissance dans WebhooksService.saveOrder.',
+      );
+    } catch (e) {
+      /* Une sonde d'information ne doit jamais gêner le démarrage. */
+      this.logger.debug(
+        `Relevé des commandes invisibles impossible : ${(e as Error).message}`,
+      );
+    }
+  }
 
   /**
    * Commandes, avec filtres et tri.

@@ -225,16 +225,47 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
        Calculé ici, une fois, plutôt qu'à chaque affichage : `lineItems` est une
        colonne JSON, un filtre y serait coûteux et non indexable.
 
-       `product_id` d'abord, `title` en repli : le premier est stable, le second
-       ne sert qu'aux lignes sans id (commandes d'avant ce correctif, rejouées
-       par la synchro périodique). */
-    const fromConfigurator = lineItems.some(
-      (li) =>
-        (li.productId != null &&
-          CONFIGURATOR_PRODUCT_IDS.includes(li.productId)) ||
-        (typeof li.title === 'string' &&
-          CONFIGURATOR_PRODUCT_TITLES.includes(li.title)),
-    );
+       TROIS critères, du plus fiable au plus permissif. Les deux premiers
+       suffisaient pour une vente au panier ; le troisième couvre les DEVIS,
+       dont les commandes échappaient aux deux autres :
+
+       1. `product_id` — stable, insensible aux renommages.
+
+       2. `title` en PRÉFIXE, et non en égalité stricte. Un patch demandé en
+          devis s'intitule « Patch personnalisé (PVC) » ou « (Tissé) » : la
+          finition choisie entre dans le nom (conf-main-inline.js, thème). Une
+          comparaison exacte échouait donc sur toute finition.
+
+       3. La propriété « Référence devis ». Une ligne issue d'un devis est une
+          ligne LIBRE (`custom: true`, quotes.service.ts) : elle n'a AUCUN
+          product_id. Cette référence est alors le seul point d'accroche — et
+          c'est un marqueur propre au configurateur, qu'aucune vente de la
+          boutique ne porte.
+
+       Sans ce troisième critère, une demande de devis payée disparaissait des
+       DEUX onglets : de « Devis » parce qu'elle est payée, de « Commandes »
+       parce qu'elle n'était pas reconnue. */
+    const RÉF_DEVIS = /^R[ée]f[ée]rence\s+devis/i;
+
+    const fromConfigurator = lineItems.some((li) => {
+      if (li.productId != null && CONFIGURATOR_PRODUCT_IDS.includes(li.productId)) {
+        return true;
+      }
+
+      if (typeof li.title === 'string') {
+        const titre = li.title.toLowerCase();
+        if (CONFIGURATOR_PRODUCT_TITLES.some((t) => titre.startsWith(t.toLowerCase()))) {
+          return true;
+        }
+      }
+
+      return (
+        Array.isArray(li.properties) &&
+        li.properties.some((p: Record<string, any>) =>
+          RÉF_DEVIS.test(String(p?.name || '')),
+        )
+      );
+    });
 
     const entity = this.orders.create({
       shopifyOrderId,

@@ -856,6 +856,22 @@ body{
 .item{display:grid;grid-template-columns:auto 1fr;gap:16px;padding:14px 0;border-top:1px solid var(--line-soft)}
 .item:first-of-type{border-top:none}
 .thumbs{display:flex;gap:8px;flex-wrap:wrap}
+/* ── Assets d'un devis : vignette + légende ───────────────────────────────
+   Les aperçus partaient en rangée anonyme : impossible de distinguer le rendu
+   du fichier client, ni le recto du verso. Chacun porte désormais son
+   intitulé. */
+.assets{display:flex;gap:10px;flex-wrap:wrap}
+.asset{display:flex;flex-direction:column;gap:5px;width:72px;margin:0}
+.asset figcaption{
+  font-size:10px;line-height:1.25;color:var(--muted);text-align:center;
+  /* Deux lignes au plus : « Visuel client — VERSO » tient, sans étirer la
+     rangée quand un libellé est plus long que les autres. */
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+/* Le fichier source est ce que l'atelier cherche en priorité : un liseré
+   d'accent le distingue du rendu au premier coup d'oeil. */
+.asset.is-source .thumb{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.asset.is-source figcaption{color:var(--accent);font-weight:600}
 .thumb{
   width:72px;height:72px;border-radius:10px;border:1px solid var(--line);object-fit:contain;
   /* Damier gris clair : un asset transparent (ex. texte blanc) reste visible,
@@ -2669,10 +2685,43 @@ function quoteCard(q: Quote, shopDomain: string): string {
   const coin = d.coin || {};
   const group: any = d.group || null;
   const groupRows: any[] = group && Array.isArray(group.rows) ? group.rows : [];
+  /* APERÇUS ET ASSETS, DISTINGUÉS.
+   *
+   * Les deux images partaient à plat dans une même rangée anonyme : l'atelier
+   * voyait deux vignettes sans savoir laquelle était le rendu et laquelle le
+   * fichier à floquer — ni, pour un coin, si elle regardait le recto ou le
+   * verso. Chaque aperçu porte pourtant un `label` (RECTO, VERSO, PATCH) que
+   * le rendu jetait.
+   *
+   *   base  = le rendu composé (forme + couleur + logo incrusté)
+   *   logo  = le FICHIER du client, celui que l'atelier utilise pour produire
+   *
+   * Le même vocabulaire que les commandes : vignette titrée au survol,
+   * agrandissable au clic (js-zoom). */
   const previews: any[] = Array.isArray(coin.previews) ? coin.previews : [];
-  const imgs = previews.flatMap((p) => [p.logo, p.base].filter(isImg));
-  const thumbs = imgs.length
-    ? `<div class="thumbs">${imgs.map((u) => `<img class="thumb js-zoom" src="${esc(u)}" data-zoom="${esc(u)}" alt="aperçu">`).join('')}</div>`
+
+  const vignette = (url: string, titre: string, cls = '') =>
+    `<figure class="asset${cls ? ' ' + cls : ''}">
+       <img class="thumb js-zoom" src="${esc(url)}" title="${esc(titre)}"
+            data-zoom="${esc(url)}" alt="${esc(titre)}">
+       <figcaption>${esc(titre)}</figcaption>
+     </figure>`;
+
+  const blocs: string[] = [];
+  previews.forEach((p) => {
+    const face = String(p?.label || '').trim();
+    if (isImg(p?.base)) {
+      blocs.push(vignette(p.base, face ? `Rendu — ${face}` : 'Rendu'));
+    }
+    if (isImg(p?.logo)) {
+      /* Le fichier source est marqué : c'est lui qui part en production, et
+         c'est celui que l'atelier cherche en priorité. */
+      blocs.push(vignette(p.logo, face ? `Visuel client — ${face}` : 'Visuel client', 'is-source'));
+    }
+  });
+
+  const thumbs = blocs.length
+    ? `<div class="assets">${blocs.join('')}</div>`
     : `<div class="no-thumb">Sans aperçu</div>`;
   const details: string[] = Array.isArray(coin.details) ? coin.details : [];
   const search = esc([c.nom, c.email, coin.name].join(' ').toLowerCase());
@@ -3007,7 +3056,22 @@ export function groupSheetPage(q: Quote, nonce = ''): string {
   const rows: any[] = Array.isArray(group.rows) ? group.rows : [];
   const coin: any = d.coin || {};
   const previews: any[] = Array.isArray(coin.previews) ? coin.previews : [];
-  const designImgs = previews.flatMap((p) => [p.base, p.logo].filter(isImg));
+  /* Rendu et fichier source, nommés. Ils partaient tous deux sous la légende
+     « Design » : sur une fiche imprimée, l'atelier ne pouvait pas savoir
+     laquelle des deux images il devait reproduire. */
+  const designImgs: Array<{ url: string; titre: string }> = [];
+  previews.forEach((p) => {
+    const face = String(p?.label || '').trim();
+    if (isImg(p?.base)) {
+      designImgs.push({ url: p.base, titre: face ? `Rendu — ${face}` : 'Rendu' });
+    }
+    if (isImg(p?.logo)) {
+      designImgs.push({
+        url: p.logo,
+        titre: face ? `Visuel client — ${face}` : 'Visuel client',
+      });
+    }
+  });
 
   const ref = String(q.id).slice(0, 8).toUpperCase();
   const created = fdate(q.createdAt) + ' · ' + ftime(q.createdAt);
@@ -3103,7 +3167,7 @@ export function groupSheetPage(q: Quote, nonce = ''): string {
         ${
           designImgs.length
             ? designImgs
-                .map((u) => `<figure><img src="${esc(u)}" alt="design"><figcaption>Design</figcaption></figure>`)
+                .map((a) => `<figure><img src="${esc(a.url)}" alt="${esc(a.titre)}"><figcaption>${esc(a.titre)}</figcaption></figure>`)
                 .join('')
             : '<p class="ps-none">Aucun visuel fourni.</p>'
         }
@@ -3496,13 +3560,18 @@ export function dashboardPage(
         <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>
         </svg>
-        Commandes <span class="count mono${orders.length ? ' has-items' : ''}">${orders.length}</span>
+        <!-- LES NOUVEAUTÉS, PAS LES TOTAUX.
+             Les cartes du dessus annoncent déjà « 14 commandes reçues » : le
+             répéter ici n'apprenait rien. Le compteur signale donc ce qu'elles
+             ne disent pas — ce qui n'a pas encore été ouvert. Rien de neuf, pas
+             de pastille : l'onglet reste sobre. -->
+        Commandes${newOrders.length ? ` <span class="count mono has-items" title="${newOrders.length} nouvelle(s) commande(s) non consultée(s)">${newOrders.length}</span>` : ''}
       </button>
       <button class="tab" data-tab="quotes">
         <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/>
         </svg>
-        Devis <span class="count mono${quotes.length ? ' has-items' : ''}">${quotes.length}</span>
+        Devis${newQuotes.length ? ` <span class="count mono has-items" title="${newQuotes.length} nouveau(x) devis non consulté(s)">${newQuotes.length}</span>` : ''}
       </button>
       <!-- Onglet « Designs » masqué à la demande. Le panneau #p-designs et tout
            son code restent en place : seul le bouton d'accès est retiré, donc
