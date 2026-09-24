@@ -225,9 +225,28 @@ export class AdminService implements OnModuleInit {
        sans reprise de données. */
     qb.andWhere('o.fromConfigurator = TRUE');
 
+    /* Date de référence d'une commande : celle de Shopify, ou à défaut celle de
+       sa réception en base.
+
+       Déclarée ICI, avant le filtre, et non plus juste avant le tri : les deux
+       DOIVENT utiliser la même expression. Le filtre comparait `shopifyCreatedAt`
+       brut alors que le tri, lui, appliquait déjà ce repli — la méthode était donc
+       incohérente avec elle-même. Une commande sans date Shopify était classée
+       avec soin par le tri… qu'elle n'atteignait jamais, le WHERE l'ayant déjà
+       écartée : en SQL, `NULL >= une date` ne vaut pas vrai.
+
+       Conséquence, dès qu'une période autre que « tout » était choisie : la
+       commande disparaissait du dashboard, de l'export des commandes ET de
+       l'export comptable — les deux exports passant par cette même méthode. Une
+       vente payée s'évaporait ainsi de la comptabilité, sans le moindre signal.
+
+       `receivedAt` est un @CreateDateColumn : il ne peut pas être nul. Le repli
+       rend donc toujours une date, le filtre ne peut jamais dégénérer. */
+    const dateExpr = 'COALESCE(o.shopifyCreatedAt, o.receivedAt)';
+
     // Filtre par période (sur la date réelle de commande).
     const since = periodStart(opts.period);
-    if (since) qb.andWhere('o.shopifyCreatedAt >= :since', { since });
+    if (since) qb.andWhere(`${dateExpr} >= :since`, { since });
 
     // Filtre par statut de paiement.
     if (opts.payment && opts.payment !== 'all') {
@@ -238,11 +257,9 @@ export class AdminService implements OnModuleInit {
       qb.andWhere('o.productionStatus = :prod', { prod: opts.production });
     }
 
-    // Tri (sur des colonnes légères : évite « Out of sort memory »).
-    // COALESCE : une commande sans date Shopify se rabat sur sa date de
-    // réception, sinon MySQL la reléguerait tout en bas (NULL) alors qu'elle
-    // peut être la plus récente.
-    const dateExpr = 'COALESCE(o.shopifyCreatedAt, o.receivedAt)';
+    /* Tri (sur des colonnes légères : évite « Out of sort memory »).
+       Réutilise `dateExpr`, défini plus haut avec le filtre de période : les
+       deux doivent rester rigoureusement identiques. */
     switch (opts.sort) {
       case 'date_asc':
         qb.orderBy(dateExpr, 'ASC');
