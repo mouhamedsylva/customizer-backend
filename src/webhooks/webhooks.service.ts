@@ -3,22 +3,21 @@ import {
   Logger,
   OnModuleInit,
   OnModuleDestroy,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Order } from '../database/entities/order.entity';
+import { Quote } from '../database/entities/quote.entity';
 import { ShopifyService } from '../shared/shopify.service';
 import {
   fromShopify,
   ProductionStatus,
   ShippingState,
 } from '../shared/shipping-status';
-import {
-  CONFIGURATOR_PRODUCT_IDS,
-  CONFIGURATOR_PRODUCT_TITLES,
-} from '../admin/pricing.service';
+import { evaluerLignes } from '../shared/reconnaissance-configurateur';
 
 @Injectable()
 export class WebhooksService implements OnModuleInit, OnModuleDestroy {
@@ -72,6 +71,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     private readonly shopify: ShopifyService,
     @InjectRepository(Order)
     private readonly orders: Repository<Order>,
+    @InjectRepository(Quote)
+    private readonly quotes: Repository<Quote>,
   ) {}
 
   /**
@@ -151,6 +152,67 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Le webhook provient-il bien de NOTRE boutique ?
+   *
+   * La signature HMAC prouve que l'émetteur connaît le secret, pas que la
+   * commande appartient à cette boutique-ci. Si l'app venait à être installée
+   * sur une seconde boutique, ses commandes partageraient le même secret et
+   * seraient enregistrées ici sans que rien ne les distingue.
+   *
+   * Contrôle sur le NOM D'HÔTE, jamais par `includes` : une comparaison
+   * approximative accepterait un domaine composé bâti pour ressembler au nôtre.
+   *
+   * En-tête absent : on laisse passer. Il n'est pas garanti sur tous les
+   * événements, et le HMAC a déjà fait l'essentiel du travail — refuser ici
+   * casserait l'ingestion pour un contrôle secondaire.
+   */
+  /**
+   * État de la synchro des commandes, pour la supervision.
+   *
+   * L'ingestion repose aujourd'hui sur un unique `setInterval` dans un seul
+   * processus. S'il cesse de tourner — verrou resté fermé, conteneur qui
+   * redémarre en boucle avant les 8 s du premier déclenchement — plus aucune
+   * commande n'arrive, et RIEN ne le signale : le dashboard affiche
+   * simplement une liste qui n'évolue plus.
+   *
+   * `lastSyncAt` vit en mémoire : après un redémarrage il est vide, ce qui
+   * signifie « aucune passe depuis le démarrage », pas « jamais synchronisé ».
+   */
+  etatSynchro(): {
+    derniereSynchro: string | null;
+    enCours: boolean;
+    passesEnEchec: number;
+    repriseEnAttente: boolean;
+  } {
+    return {
+      derniereSynchro: this.lastSyncAt ?? null,
+      enCours: this.syncing,
+      passesEnEchec: this.failedPasses,
+      repriseEnAttente: this.pendingSince !== undefined,
+    };
+  }
+
+  verifierBoutique(shopDomain?: string): void {
+    if (!shopDomain) return;
+
+    const attendu = String(this.config.get<string>('SHOPIFY_STORE_URL') || '')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/.*$/, '')
+      .toLowerCase()
+      .trim();
+    if (!attendu) return;
+
+    const recu = shopDomain.toLowerCase().trim();
+    if (recu === attendu) return;
+
+    this.logger.error(
+      `Webhook reçu pour la boutique ${recu}, alors que ce backend sert ` +
+        `${attendu}. Commande IGNORÉE.`,
+    );
+    throw new UnauthorizedException('Boutique non reconnue.');
+  }
+
+  /**
    * Enregistre (ou met à jour) une commande Shopify reçue par webhook.
    * Extrait les infos utiles pour la production.
    *
@@ -221,51 +283,20 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
         }))
       : [];
 
-    /* La commande vient-elle du CONFIGURATEUR ?
+    /* La commande vient-elle du CONFIGURATEUR, et de quel devis ?
        Calculé ici, une fois, plutôt qu'à chaque affichage : `lineItems` est une
        colonne JSON, un filtre y serait coûteux et non indexable.
 
-       TROIS critères, du plus fiable au plus permissif. Les deux premiers
-       suffisaient pour une vente au panier ; le troisième couvre les DEVIS,
-       dont les commandes échappaient aux deux autres :
+       Les critères vivent désormais dans shared/reconnaissance-configurateur.ts
+       plutôt qu'ici : la reprise de l'historique
+       (AdminService.reevaluerReconnaissance) doit appliquer EXACTEMENT les
+       mêmes règles, et deux copies auraient divergé au premier ajustement.
 
-       1. `product_id` — stable, insensible aux renommages.
-
-       2. `title` en PRÉFIXE, et non en égalité stricte. Un patch demandé en
-          devis s'intitule « Patch personnalisé (PVC) » ou « (Tissé) » : la
-          finition choisie entre dans le nom (conf-main-inline.js, thème). Une
-          comparaison exacte échouait donc sur toute finition.
-
-       3. La propriété « Référence devis ». Une ligne issue d'un devis est une
-          ligne LIBRE (`custom: true`, quotes.service.ts) : elle n'a AUCUN
-          product_id. Cette référence est alors le seul point d'accroche — et
-          c'est un marqueur propre au configurateur, qu'aucune vente de la
-          boutique ne porte.
-
-       Sans ce troisième critère, une demande de devis payée disparaissait des
-       DEUX onglets : de « Devis » parce qu'elle est payée, de « Commandes »
-       parce qu'elle n'était pas reconnue. */
-    const RÉF_DEVIS = /^R[ée]f[ée]rence\s+devis/i;
-
-    const fromConfigurator = lineItems.some((li) => {
-      if (li.productId != null && CONFIGURATOR_PRODUCT_IDS.includes(li.productId)) {
-        return true;
-      }
-
-      if (typeof li.title === 'string') {
-        const titre = li.title.toLowerCase();
-        if (CONFIGURATOR_PRODUCT_TITLES.some((t) => titre.startsWith(t.toLowerCase()))) {
-          return true;
-        }
-      }
-
-      return (
-        Array.isArray(li.properties) &&
-        li.properties.some((p: Record<string, any>) =>
-          RÉF_DEVIS.test(String(p?.name || '')),
-        )
-      );
-    });
+       `quoteId` est la nouveauté : la propriété « Référence devis » était
+       auparavant testée pour son seul NOM, sa valeur — l'UUID du devis — étant
+       jetée. Le lien devis↔commande devait alors être reconstruit en mémoire à
+       chaque affichage. */
+    const { reconnue: fromConfigurator, quoteId } = evaluerLignes(lineItems);
 
     const entity = this.orders.create({
       shopifyOrderId,
@@ -278,6 +309,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       currency: payload.currency ?? null,
       lineItems,
       fromConfigurator,
+      quoteId,
       financialStatus: payload.financial_status ?? null,
       // Statut d'exécution : Shopify est la source de vérité. null = non traitée.
       fulfillmentStatus: payload.fulfillment_status ?? null,
@@ -305,6 +337,12 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
         if (!entity.customerName) entity.customerName = existing.customerName;
         if (!entity.customerEmail) entity.customerEmail = existing.customerEmail;
         if (!entity.customerPhone) entity.customerPhone = existing.customerPhone;
+        /* MÊME PRUDENCE POUR LE RATTACHEMENT AU DEVIS.
+           Le webhook orders/create porte les propriétés de ligne, mais une
+           re-synchro via /orders.json peut les renvoyer allégées : `quoteId`
+           vaudrait alors null et effacerait un lien déjà acquis. On ne
+           remplace donc que si la nouvelle valeur est renseignée. */
+        if (!entity.quoteId) entity.quoteId = existing.quoteId;
         // customerInfo : on ne remplace que si le nouveau apporte au moins une
         // info (adresse OU e-mail OU téléphone), sinon on garde l'ancien.
         const ni = customerInfo;
@@ -335,9 +373,88 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     // save() fait un upsert sur la clé primaire (shopifyOrderId) : rejouer un
     // webhook ne crée pas de doublon.
     await this.orders.save(entity);
+
+    /* La commande vient d'un devis ET elle est payée : on referme la boucle
+       tout de suite, sans attendre la synchro de 10 minutes. */
+    if (quoteId && this.estPayee(payload)) {
+      await this.marquerDevisPaye(quoteId, shopifyOrderId, payload);
+    }
     this.logger.log(
       `Commande ${entity.orderNumber || shopifyOrderId} enregistrée (${lineItems.length} article(s)).`,
     );
+  }
+
+  /**
+   * La commande est-elle réglée ?
+   *
+   * `paid` couvre le cas courant ; `partially_refunded` désigne une commande
+   * bien payée dont une partie a été remboursée ensuite — elle reste une vente
+   * conclue, et son devis ne doit surtout pas repartir en relance.
+   *
+   * `pending` (virement en attente) est délibérément EXCLU : le devis reste
+   * alors « facture envoyée », ce qui est exact.
+   */
+  private estPayee(payload: Record<string, any>): boolean {
+    const f = String(payload.financial_status || '').toLowerCase();
+    return f === 'paid' || f === 'partially_refunded';
+  }
+
+  /**
+   * Marque le devis comme payé dès l'arrivée de la commande.
+   *
+   * C'était jusqu'ici le rôle exclusif de `QuotesService.syncStatuses`, qui
+   * interroge Shopify toutes les 10 minutes. Ce chemin-ci est immédiat et
+   * n'exige aucun appel réseau : tout est déjà dans le payload reçu.
+   *
+   * Les deux chemins coexistent volontairement. Celui-ci ne s'applique qu'aux
+   * commandes portant une référence devis exploitable ; la synchro périodique
+   * reste le filet pour tout le reste (webhook manqué, référence absente,
+   * paiement enregistré hors commande).
+   *
+   * Ne lève jamais : un devis non mis à jour est rattrapé par la synchro. Faire
+   * échouer le webhook ferait au contraire rejouer TOUT l'enregistrement de la
+   * commande par Shopify, pour un effet de bord secondaire.
+   */
+  private async marquerDevisPaye(
+    quoteId: string,
+    shopifyOrderId: string,
+    payload: Record<string, any>,
+  ): Promise<void> {
+    try {
+      const devis = await this.quotes.findOne({ where: { id: quoteId } });
+      if (!devis) {
+        /* Référence inconnue : devis purgé, ou commande d'une autre boutique.
+           On le signale sans bruit — la commande, elle, est bien enregistrée. */
+        this.logger.warn(
+          `Commande ${shopifyOrderId} : référence devis ${quoteId} introuvable ` +
+            'en base. La commande est enregistrée, mais aucun devis ne lui est ' +
+            'rattaché.',
+        );
+        return;
+      }
+
+      if (devis.draftStatus === 'completed' && devis.paidOrderId) return;
+
+      /* Même prudence qu'ailleurs : on n'écrit un champ que renseigné, pour ne
+         jamais effacer une valeur acquise. */
+      const patch: {
+        draftStatus: string;
+        paidOrderId: string;
+        totalPrice?: string;
+      } = { draftStatus: 'completed', paidOrderId: shopifyOrderId };
+      if (payload.total_price) patch.totalPrice = String(payload.total_price);
+
+      await this.quotes.update(quoteId, patch);
+      this.logger.log(
+        `Devis ${quoteId} marqué payé immédiatement par la commande ` +
+          `${shopifyOrderId} (sans attendre la synchro).`,
+      );
+    } catch (e) {
+      this.logger.warn(
+        `Devis ${quoteId} non marqué payé : ${(e as Error).message}. ` +
+          'La synchro périodique le rattrapera.',
+      );
+    }
   }
 
   /**

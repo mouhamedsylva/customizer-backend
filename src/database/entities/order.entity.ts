@@ -62,6 +62,31 @@ export class Order {
   @Column({ type: 'boolean', default: false })
   fromConfigurator: boolean;
 
+  /**
+   * Devis dont cette commande est issue (UUID), ou null pour une vente directe.
+   *
+   * La valeur vient de la propriété « Référence devis » que `quotes.service.ts`
+   * pose sur CHAQUE ligne du brouillon (l. 332, 395, 422). Shopify la reporte
+   * sur la commande réelle : elle traverse donc tout le parcours intacte.
+   *
+   * Elle était jusqu'ici lue puis jetée — `saveOrder` ne testait que le NOM de
+   * la propriété pour décider `fromConfigurator`, sans jamais regarder sa
+   * valeur. Le rattachement d'une commande à son devis n'existait alors nulle
+   * part en base : il était reconstruit en mémoire à chaque affichage, à partir
+   * de `Quote.paidOrderId`, lui-même renseigné par une synchro de 10 minutes
+   * qui pouvait échouer.
+   *
+   * Cette colonne rend le lien immédiat, persistant et indexé. Elle ne remplace
+   * PAS `Quote.paidOrderId` : les deux sont alimentés par des chemins
+   * indépendants, et se couvrent mutuellement.
+   *
+   * Null sur tout l'historique antérieur : le rapprochement en mémoire est
+   * conservé pour ces commandes-là.
+   */
+  @Index()
+  @Column({ type: 'char', length: 36, nullable: true })
+  quoteId: string | null;
+
   /** Statut financier Shopify (paid, pending…). */
   @Column({ type: 'varchar', length: 32, nullable: true })
   financialStatus: string | null;

@@ -329,18 +329,60 @@ export class AdminController {
       // 4) Reflète immédiatement l'état « facture envoyée » dans le dashboard.
       //    invoiceSentAt sert de point de départ aux relances automatiques ;
       //    le compteur repart à zéro (nouveau cycle de relances).
-      await this.data.updateQuoteStatus(quoteId, {
+      //
+      //    `totalPrice` n'est PLUS remis à null quand Shopify omet le montant.
+      //    L'écriture avait lieu sans condition : une réponse partielle à la
+      //    mise à jour du brouillon effaçait un total déjà acquis, et le devis
+      //    s'affichait sans montant alors que le client venait d'être facturé.
+      //    Même prudence que quotes.service.ts, qui avait été durci sur ce
+      //    point sans que la correction soit reportée ici.
+      const patch: Parameters<typeof this.data.updateQuoteStatus>[1] = {
         draftStatus: 'invoice_sent',
-        totalPrice: draft?.total_price ? String(draft.total_price) : null,
         invoiceSentAt: new Date(),
         remindersSent: 0,
         lastReminderAt: null,
-      });
+      };
+      if (draft?.total_price) patch.totalPrice = String(draft.total_price);
+
+      /* L'ÉCHEC DE CETTE ÉCRITURE EST LE PIRE CAS DE TOUT LE PARCOURS.
+         L'e-mail est parti : le client détient un lien de paiement valide. Si
+         le statut ne passe pas à 'invoice_sent', le dashboard affiche le devis
+         comme non facturé, ET les relances l'ignorent — elles filtrent sur ce
+         statut précis. Le devis devient donc un angle mort permanent.
+
+         On réessaie donc, brièvement, au lieu de laisser l'exception remonter
+         vers le 502 : une coupure MySQL d'une seconde ne doit pas coûter le
+         suivi d'un devis déjà facturé. Trois tentatives espacées suffisent aux
+         micro-coupures ; au-delà, on signale explicitement à l'opérateur que
+         l'e-mail est parti mais que le suivi est à reprendre à la main —
+         message autrement plus utile qu'un « échec » laissant croire que rien
+         n'a été envoyé. */
+      let statutEcrit = false;
+      for (let essai = 1; essai <= 3 && !statutEcrit; essai++) {
+        try {
+          await this.data.updateQuoteStatus(quoteId, patch);
+          statutEcrit = true;
+        } catch (e) {
+          if (essai === 3) {
+            this.logger.error(
+              `Devis ${quoteId} : facture ENVOYÉE au client mais statut non ` +
+                `enregistré après 3 tentatives (${(e as Error).message}). ` +
+                'Le devis restera affiché comme non facturé et ne sera pas ' +
+                'relancé automatiquement : reprise manuelle nécessaire.',
+            );
+          } else {
+            await new Promise((r) => setTimeout(r, 400 * essai));
+          }
+        }
+      }
 
       res.json({
         ok: true,
         to: customer.email,
         total: draft?.total_price ?? null,
+        /* Le dashboard doit pouvoir distinguer « tout s'est bien passé » d'un
+           envoi réussi au suivi incomplet. */
+        ...(statutEcrit ? {} : { avertissement: 'statut-non-enregistre' }),
       });
     } catch (err) {
       res.status(502).json({ ok: false, error: (err as Error).message });
@@ -1022,6 +1064,37 @@ export class AdminController {
     await this.data.markOrdersSeen(Array.isArray(orderIds) ? orderIds : []);
     await this.data.markQuotesSeen(Array.isArray(quoteIds) ? quoteIds : []);
     res.json({ ok: true });
+  }
+
+  /**
+   * POST /api/admin/reevaluer-commandes — rend visibles les commandes du
+   * configurateur qui ne l'étaient pas.
+   *
+   * `fromConfigurator` est figé à l'écriture : une commande enregistrée avant
+   * que les critères ne soient complétés reste invisible POUR TOUJOURS, dans
+   * les deux onglets à la fois si elle vient d'un devis payé. Cette reprise
+   * réévalue les critères sur les données déjà en base, sans appel Shopify.
+   *
+   * Idempotente : relançable autant de fois que voulu.
+   */
+  @Post('reevaluer-commandes')
+  async reevaluerCommandes(
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    try {
+      const bilan = await this.data.reevaluerReconnaissance();
+      res.json({ ok: true, ...bilan });
+    } catch (err) {
+      this.logger.error(
+        `Réévaluation des commandes impossible : ${(err as Error).message}`,
+      );
+      res.status(500).json({ ok: false, error: (err as Error).message });
+    }
   }
 
   // ─────────────────────────────── Prix ───────────────────────────────

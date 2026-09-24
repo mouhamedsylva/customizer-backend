@@ -3571,9 +3571,26 @@ export function dashboardPage(
      NB : les devis payés sont exclus de la liste servie au dashboard
      (getQuotes includePaid=false), on interroge donc allQuotes. */
   const quoteByPaidOrder = new Map<string, Quote>();
+  /* Second index, par UUID de devis : il sert la colonne `Order.quoteId`,
+     renseignée à l'enregistrement de la commande depuis la propriété
+     « Référence devis ».
+
+     Les deux index coexistent à dessein. Celui par UUID est le chemin direct,
+     disponible dès l'arrivée de la commande. Celui par paidOrderId dépend de
+     la synchro périodique des devis, mais il couvre TOUT L'HISTORIQUE, dont
+     les commandes enregistrées avant l'ajout de la colonne : le retirer
+     ferait disparaître la liste des personnes sur les anciennes commandes de
+     groupe. */
+  const quoteById = new Map<string, Quote>();
   (extra.allQuotes || quotes).forEach((q) => {
     if (q.paidOrderId) quoteByPaidOrder.set(String(q.paidOrderId), q);
+    if (q.id) quoteById.set(String(q.id), q);
   });
+
+  /** Devis d'une commande : lien direct d'abord, repli sur l'index historique. */
+  const devisDeLaCommande = (o: Order): Quote | undefined =>
+    (o.quoteId ? quoteById.get(String(o.quoteId)) : undefined) ||
+    quoteByPaidOrder.get(String(o.shopifyOrderId));
 
   const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
   const isGroupQuote = (q: Quote): boolean => {
@@ -3671,6 +3688,12 @@ export function dashboardPage(
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
             <span><b>Messages</b><small>Personnaliser les e-mails de facturation</small></span>
+          </button>
+          <button class="cog-item" role="menuitem" onclick="fromCog(reevaluerCommandes)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>
+            </svg>
+            <span><b>Retrouver des commandes</b><small>Rendre visibles celles qui manquent</small></span>
           </button>
           ${
             isOwner
@@ -3822,7 +3845,7 @@ export function dashboardPage(
                  label: 'Filtrer par période',
                })}
              </div>
-             ${orders.map((o) => orderCard(o, quoteByPaidOrder.get(String(o.shopifyOrderId)))).join('')}
+             ${orders.map((o) => orderCard(o, devisDeLaCommande(o))).join('')}
              <div class="empty-state" id="orders-none" style="display:none">
                <div class="ico">✓</div><p>Aucune commande dans cette catégorie.</p>
              </div>`
@@ -6204,6 +6227,50 @@ export function dashboardPage(
       '{total}': '625,00 €',
       '{entreprise}': 'Massacre Officiel'
     };
+
+    /* Réévalue la reconnaissance des commandes déjà enregistrées.
+
+       Le marqueur « vient du configurateur » est calculé une seule fois, à
+       l'arrivée de la commande. Une commande reçue avant que les critères ne
+       soient complétés reste donc invisible définitivement — et si elle vient
+       d'un devis payé, elle ne figure NI dans Devis (masquée car payée) NI
+       dans Commandes (non reconnue).
+
+       Aucun appel à Shopify : tout est relu depuis la base. */
+    async function reevaluerCommandes(){
+      try{
+        var r=await fetch('/api/admin/reevaluer-commandes',{
+          method:'POST',
+          credentials:'same-origin'
+        });
+        var d=await r.json();
+        if(!d.ok){
+          showAlert('Réévaluation impossible', d.error||'Erreur inconnue.', 'error');
+          return;
+        }
+        if(!d.corrigees && !d.rattachees){
+          showAlert(
+            'Aucune commande manquante',
+            d.examinees + ' commande(s) examinée(s) : toutes celles du ' +
+            'configurateur sont déjà visibles.'
+          );
+          return;
+        }
+        var txt='';
+        if(d.corrigees){
+          txt += d.corrigees + ' commande(s) rendue(s) visible(s)';
+          if(d.numeros && d.numeros.length) txt += ' : ' + d.numeros.join(', ');
+          txt += '. ';
+        }
+        if(d.rattachees){
+          txt += d.rattachees + ' commande(s) rattachée(s) à leur devis. ';
+        }
+        txt += 'Rechargez la page pour les voir.';
+        showAlert('Commandes retrouvées', txt);
+      }catch(e){
+        showAlert('Réévaluation impossible', 'Le serveur ne répond pas.', 'error');
+      }
+    }
 
     function openMessages(){
       document.getElementById('msg-modal').classList.add('open');

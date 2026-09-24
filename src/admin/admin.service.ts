@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
+import { evaluerLignes } from '../shared/reconnaissance-configurateur';
 
 /** Critères de filtrage / tri des commandes. */
 export interface OrderQuery {
@@ -138,6 +139,70 @@ export class AdminService implements OnModuleInit {
         `Relevé des commandes invisibles impossible : ${(e as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Réévalue `fromConfigurator` (et `quoteId`) sur les commandes DÉJÀ en base.
+   *
+   * Ces deux colonnes sont calculées à l'ÉCRITURE, une seule fois. Une commande
+   * enregistrée avant que les critères de reconnaissance ne soient complétés
+   * reste donc marquée `false` pour toujours : elle n'apparaît dans AUCUN des
+   * deux onglets — ni Devis (le devis est payé, donc masqué), ni Commandes (la
+   * commande n'est pas reconnue). La vente est payée et invisible.
+   *
+   * Aucun appel Shopify : `lineItems` est déjà stocké en JSON, tout est en base.
+   *
+   * Idempotent : relançable sans risque, seules les lignes réellement modifiées
+   * sont écrites.
+   */
+  async reevaluerReconnaissance(): Promise<{
+    examinees: number;
+    corrigees: number;
+    rattachees: number;
+    numeros: string[];
+  }> {
+    /* On n'examine QUE les commandes actuellement invisibles. Repasser sur
+       celles déjà reconnues ne pourrait que les faire basculer à false sur un
+       critère devenu plus strict — soit exactement le défaut qu'on répare. */
+    const candidates = await this.orders.find({
+      where: { fromConfigurator: false },
+      order: { receivedAt: 'DESC' },
+      take: 2000,
+    });
+
+    let corrigees = 0;
+    let rattachees = 0;
+    const numeros: string[] = [];
+
+    for (const o of candidates) {
+      const lignes = Array.isArray(o.lineItems)
+        ? (o.lineItems as Array<Record<string, any>>)
+        : [];
+      const { reconnue, quoteId } = evaluerLignes(lignes);
+
+      const patch: { fromConfigurator?: boolean; quoteId?: string } = {};
+      if (reconnue && !o.fromConfigurator) patch.fromConfigurator = true;
+      if (quoteId && !o.quoteId) patch.quoteId = quoteId;
+      if (!Object.keys(patch).length) continue;
+
+      await this.orders.update(o.shopifyOrderId, patch);
+      if (patch.fromConfigurator) {
+        corrigees++;
+        if (numeros.length < 50) {
+          numeros.push(o.orderNumber || `id ${o.shopifyOrderId}`);
+        }
+      }
+      if (patch.quoteId) rattachees++;
+    }
+
+    if (corrigees || rattachees) {
+      this.logger.log(
+        `Reprise : ${corrigees} commande(s) rendue(s) visible(s), ` +
+          `${rattachees} rattachée(s) à leur devis.`,
+      );
+    }
+
+    return { examinees: candidates.length, corrigees, rattachees, numeros };
   }
 
   /**

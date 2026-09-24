@@ -110,6 +110,22 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
       const due = this.reminderDue(q, cfg.reminderDays);
       if (!due) continue;
 
+      /* DERNIER CONTRÔLE AVANT ENVOI : le devis a-t-il été payé entre-temps ?
+         `draftStatus` vient de la synchro périodique (quotes.service.ts), qui
+         ne passe que toutes les 10 minutes et peut échouer durablement sur un
+         devis — un `getDraftOrder` en erreur laisse le statut à
+         'invoice_sent' indéfiniment. La sélection ci-dessus se fiant à ce seul
+         champ, un client AYANT DÉJÀ PAYÉ recevait « votre devis est en attente
+         de paiement » à J+3, J+7 puis J+14.
+
+         Le garde de admin.controller.ts ne couvre que le bouton manuel : cette
+         boucle automatique n'avait aucune protection équivalente.
+
+         Un appel de plus par relance seulement — pas par devis examiné : on est
+         déjà après `reminderDue`, donc sur le point d'envoyer un e-mail réel.
+         Au regard d'un message erroné à un client payant, le coût est nul. */
+      if (await this.dejaPaye(q)) continue;
+
       try {
         await this.sendReminder(q, due.index);
         await this.quotes.update(q.id, {
@@ -128,6 +144,56 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Relances (${reason}) : ${sent} devis relancé(s).`);
     }
     return { sent };
+  }
+
+  /**
+   * Le devis a-t-il été payé depuis l'envoi de la facture ?
+   *
+   * Interroge Shopify, seule source de vérité : `draftStatus` en base peut
+   * dater de 10 minutes, ou n'avoir jamais été rafraîchi si la synchro échoue
+   * sur ce devis précis.
+   *
+   * En cas de doute, on RELANCE. Un e-mail de trop sur un devis impayé est
+   * gênant ; ne jamais relancer un client réellement en retard coûterait la
+   * vente. C'est pourquoi une panne Shopify renvoie `false` et non `true`.
+   *
+   * Effet de bord utile : quand le paiement est constaté ici, le statut est
+   * corrigé en base dans la foulée. Le devis sort donc du périmètre des
+   * relances sans attendre la prochaine synchro, et quitte l'onglet Devis.
+   */
+  private async dejaPaye(q: Quote): Promise<boolean> {
+    if (!q.draftOrderId) return false;
+
+    try {
+      const draft = await this.shopify.getDraftOrder(q.draftOrderId);
+      const statut = (draft?.status as string) ?? null;
+      if (statut !== 'completed') return false;
+
+      /* Même prudence que quotes.service.ts : on n'écrit un champ que s'il est
+         réellement renseigné, pour ne jamais effacer une valeur acquise avec
+         une réponse Shopify partielle. */
+      const patch: {
+        draftStatus: string;
+        paidOrderId?: string;
+        totalPrice?: string;
+      } = { draftStatus: 'completed' };
+      if (draft?.order_id) patch.paidOrderId = String(draft.order_id);
+      if (draft?.total_price) patch.totalPrice = String(draft.total_price);
+
+      await this.quotes.update(q.id, patch);
+      this.logger.log(
+        `Relance du devis ${q.id} annulée : il a été payé entre-temps. ` +
+          'Statut corrigé en base.',
+      );
+      return true;
+    } catch (e) {
+      /* Shopify injoignable : on ne bloque pas la relance (cf. ci-dessus). */
+      this.logger.warn(
+        `Paiement du devis ${q.id} non vérifiable avant relance : ` +
+          `${(e as Error).message}. La relance est maintenue.`,
+      );
+      return false;
+    }
   }
 
   /**

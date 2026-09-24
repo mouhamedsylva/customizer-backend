@@ -2,6 +2,7 @@ import { Controller, Get, Logger, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ShopifyService } from '../shared/shopify.service';
 import { AdminSessionGuard } from '../admin/admin-session.guard';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { PRODUCT_SHOPIFY_IDS } from '../admin/pricing.service';
 
 /**
@@ -25,6 +26,7 @@ export class HealthController {
   constructor(
     private readonly config: ConfigService,
     private readonly shopify: ShopifyService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   /** GET /api/health */
@@ -34,6 +36,42 @@ export class HealthController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       environment: this.config.get<string>('NODE_ENV') || 'development',
+    };
+  }
+
+  /**
+   * GET /api/health/synchro — RÉSERVÉ AUX ADMINS.
+   *
+   * L'arrivée des commandes repose sur une seule boucle périodique. Si elle
+   * s'arrête, plus rien n'entre et le dashboard affiche une liste figée, sans
+   * le moindre signal. Cette route rend cet état observable.
+   *
+   * `degrade` passe à vrai quand la dernière passe remonte à plus de trois
+   * intervalles (6 min pour un cycle de 2 min) : une supervision peut s'y
+   * accrocher sans connaître le détail du mécanisme.
+   */
+  @UseGuards(AdminSessionGuard)
+  @Get('synchro')
+  synchro(): Record<string, unknown> {
+    const etat = this.webhooks.etatSynchro();
+
+    const ageMs = etat.derniereSynchro
+      ? Date.now() - new Date(etat.derniereSynchro).getTime()
+      : null;
+
+    /* Aucune passe encore terminée : c'est normal juste après un démarrage
+       (la première est différée de 8 s), et anormal au-delà. On ne crie donc
+       pas tout de suite. */
+    const degrade =
+      ageMs === null
+        ? process.uptime() > 300
+        : ageMs > 3 * 2 * 60 * 1000;
+
+    return {
+      ...etat,
+      ageSecondes: ageMs === null ? null : Math.round(ageMs / 1000),
+      degrade,
+      uptimeSecondes: Math.round(process.uptime()),
     };
   }
 

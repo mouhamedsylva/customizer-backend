@@ -7,9 +7,24 @@ import {
   HttpStatus,
   UnauthorizedException,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { WebhooksService } from './webhooks.service';
 
+/**
+ * Le limiteur global (120 req/min par IP, app.module.ts) ne s'applique PAS ici.
+ *
+ * Shopify émet depuis un parc d'adresses mutualisé : une opération groupée sur
+ * la boutique — import de commandes, modification en lot — produit une rafale
+ * qui dépassait ce seuil et se voyait refuser en 429. Shopify réessaie, mais
+ * il consomme alors son budget de tentatives, et une commande finit par être
+ * perdue pour de bon.
+ *
+ * La protection de cette route n'est pas le comptage : c'est la signature
+ * HMAC, vérifiée à chaque appel avant toute écriture. Une requête non signée
+ * est rejetée quoi qu'il arrive.
+ */
+@SkipThrottle()
 @Controller('webhooks')
 export class WebhooksController {
   constructor(private readonly webhooks: WebhooksService) {}
@@ -28,6 +43,7 @@ export class WebhooksController {
   async ordersCreate(
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-shopify-hmac-sha256') hmac?: string,
+    @Headers('x-shopify-shop-domain') shop?: string,
   ): Promise<{ ok: true }> {
     const raw = req.rawBody;
 
@@ -35,6 +51,7 @@ export class WebhooksController {
       // Signature invalide : on refuse (probable appel non authentifié).
       throw new UnauthorizedException('Signature webhook invalide.');
     }
+    this.webhooks.verifierBoutique(shop);
 
     // Le corps a déjà été parsé par Nest ; on l'utilise directement.
     const payload = (req.body || {}) as Record<string, any>;
@@ -55,10 +72,12 @@ export class WebhooksController {
   async ordersUpdated(
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-shopify-hmac-sha256') hmac?: string,
+    @Headers('x-shopify-shop-domain') shop?: string,
   ): Promise<{ ok: true }> {
     if (!this.webhooks.verifyHmac(req.rawBody as Buffer, hmac)) {
       throw new UnauthorizedException('Signature webhook invalide.');
     }
+    this.webhooks.verifierBoutique(shop);
 
     const payload = (req.body || {}) as Record<string, any>;
     await this.webhooks.saveOrder(payload);
