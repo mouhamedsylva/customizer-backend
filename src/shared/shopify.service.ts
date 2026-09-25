@@ -306,6 +306,52 @@ export class ShopifyService {
   }
 
   /**
+   * Réglages de TVA d'un draft order, tels que Shopify les applique.
+   *
+   * Le dashboard affichait un taux de 20 % écrit en dur, et SUPPOSAIT la
+   * boutique réglée en prix taxe comprise. Aucune des deux hypothèses n'était
+   * vérifiée : un client exonéré, un taux réduit ou un réglage « prix HT »
+   * dans Shopify rendaient le détail faux — et, dans le dernier cas, le client
+   * payait 20 % de plus que le total affiché à l'opérateur.
+   *
+   * `rate` vaut null quand Shopify n'expose aucune ligne de taxe (brouillon
+   * encore à 0 €, par exemple) : le dashboard retombe alors sur son taux par
+   * défaut et le signale comme une estimation.
+   */
+  static lireTaxes(draft: Record<string, any>): {
+    taxesIncluded: boolean | null;
+    taxExempt: boolean;
+    rate: number | null;
+    totalTax: string | null;
+  } {
+    const taux = (lignes: unknown): number | null => {
+      if (!Array.isArray(lignes)) return null;
+      /* Plusieurs lignes de taxe se cumulent (taxes combinées hors UE) : on
+         additionne leurs taux, comme Shopify pour le total. */
+      const rates = lignes
+        .map((t) => Number(t?.rate))
+        .filter((r) => Number.isFinite(r) && r >= 0);
+      return rates.length ? rates.reduce((a, b) => a + b, 0) : null;
+    };
+
+    let rate = taux(draft.tax_lines);
+    if (rate === null && Array.isArray(draft.line_items)) {
+      for (const li of draft.line_items) {
+        rate = taux(li?.tax_lines);
+        if (rate !== null) break;
+      }
+    }
+
+    return {
+      taxesIncluded:
+        typeof draft.taxes_included === 'boolean' ? draft.taxes_included : null,
+      taxExempt: draft.tax_exempt === true,
+      rate,
+      totalTax: draft.total_tax != null ? String(draft.total_tax) : null,
+    };
+  }
+
+  /**
    * Envoie la facture d'un draft order au client (même action que le bouton
    * « Envoyer la facture » de l'admin Shopify).
    * Le client reçoit un e-mail avec un lien de paiement.

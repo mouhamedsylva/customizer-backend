@@ -178,6 +178,37 @@ export class AdminController {
   }
 
   /**
+   * GET /api/admin/quotes/:id/tax — réglages de TVA du brouillon Shopify.
+   *
+   * Lu UNE fois à l'ouverture de la modale de chiffrage : le détail de la TVA
+   * se recalcule ensuite localement à chaque frappe, sans solliciter Shopify.
+   * Un échec n'est pas bloquant — la modale garde son taux par défaut et
+   * l'affiche comme estimation.
+   */
+  @Get('quotes/:id/tax')
+  async quoteTax(
+    @Req() req: Request,
+    @Param('id') quoteId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const quote = await this.data.getQuote(quoteId);
+    if (!quote?.draftOrderId) {
+      res.status(404).json({ ok: false, error: 'Brouillon Shopify introuvable.' });
+      return;
+    }
+    try {
+      const draft = await this.shopify.getDraftOrder(quote.draftOrderId);
+      res.json({ ok: true, ...ShopifyService.lireTaxes(draft) });
+    } catch (err) {
+      res.status(502).json({ ok: false, error: (err as Error).message });
+    }
+  }
+
+  /**
    * POST /api/admin/quotes/:id/invoice — définit le prix puis envoie la facture.
    * Body : { unitPrice: number, message?: string, attachments?: QuoteAttachmentDto[] }
    * Le prix unitaire est appliqué à la ligne du brouillon Shopify (le total est
@@ -194,6 +225,9 @@ export class AdminController {
        celui-là même qui titre la ligne du brouillon. Absent sur un devis
        mono-produit, où `unitPrice` suffit. */
     @Body('prixParFamille') prixParFamille: unknown,
+    /* Réglage Shopify supposé par la modale pour convertir les prix HT
+       saisis : true = prix envoyés TTC. Vérifié avant l'envoi (étape 1.2). */
+    @Body('taxesIncluses') taxesIncluses: unknown,
     @Body('attachments') attachments: any[],
     @Res() res: Response,
   ): Promise<void> {
@@ -281,6 +315,31 @@ export class AdminController {
         price,
         tarifs,
       );
+
+      /* 1.2) GARDE-FOU TVA — avant que quoi que ce soit ne parte au client.
+         L'opérateur saisit des prix HT ; la modale les convertit selon le
+         réglage Shopify qu'elle a lu à l'ouverture (TTC si la boutique est en
+         prix taxes incluses, HT sinon) et l'indique dans `taxesIncluses`.
+         Si le réglage réel diffère — modifié entre-temps, ou pas encore lu —
+         le client paierait un autre montant que le TTC affiché : 20 % de moins
+         si Shopify extrait la TVA d'un prix HT, 20 % de plus s'il l'ajoute à
+         un prix TTC. Le prix est déjà posé sur le brouillon, mais rien n'est
+         envoyé : rouvrir la modale relit le réglage et recalcule.
+         Absent (page chargée avant cette version), on retient l'hypothèse
+         historique : boutique en prix taxes incluses. */
+      const taxes = ShopifyService.lireTaxes(draft || {});
+      const suppose = taxesIncluses === undefined ? true : taxesIncluses === true;
+      if (taxes.taxesIncluded !== null && taxes.taxesIncluded !== suppose) {
+        res.status(409).json({
+          ok: false,
+          error:
+            'Facture NON envoyée : le réglage de TVA de la boutique Shopify ' +
+            `(prix ${taxes.taxesIncluded ? 'taxes incluses' : 'hors taxe'}) ne ` +
+            'correspond pas à celui utilisé pour le calcul. Fermez et rouvrez ' +
+            'la fenêtre de chiffrage pour recalculer, puis renvoyez.',
+        });
+        return;
+      }
 
       // 1.5) Ajoute les pièces jointes comme propriétés du draft order si présentes
       if (attachments && Array.isArray(attachments) && attachments.length > 0) {
@@ -380,6 +439,8 @@ export class AdminController {
         ok: true,
         to: customer.email,
         total: draft?.total_price ?? null,
+        // TVA calculée par Shopify : le montant officiel, porté sur la facture.
+        totalTax: taxes.totalTax,
         /* Le dashboard doit pouvoir distinguer « tout s'est bien passé » d'un
            envoi réussi au suivi incomplet. */
         ...(statutEcrit ? {} : { avertissement: 'statut-non-enregistre' }),

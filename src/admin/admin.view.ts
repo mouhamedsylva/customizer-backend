@@ -1635,6 +1635,7 @@ body{
   font-size:12.5px;color:var(--muted);text-align:right;
 }
 .inv-tva strong{font-weight:700;color:var(--ink)}
+.inv-tva em{font-style:normal;opacity:.8}
 /* Marqueur TTC : sans lui, le détail de la TVA juste en dessous serait
    incompréhensible — on ne saurait pas de quoi elle est extraite. */
 .inv-ttc{
@@ -2728,10 +2729,19 @@ function quoteStatus(q: Quote): { key: string; pill: string } {
 
 /**
  * Couleurs textiles : nom affiché -> code hex, pour la pastille de couleur.
+ *
  * Les lignes d'une commande de groupe ne stockent que le NOM de la couleur
- * (ex. « Royal Blue ») ; la source de vérité des codes est le configurateur
- * (sections/configurateur.liquid, appels selColor). Toute couleur ajoutée
- * là-bas doit l'être ici, sinon la pastille retombe sur un gris neutre.
+ * (ex. « Noir ») : ce nom est la clé, il doit correspondre au caractère près,
+ * accents compris.
+ *
+ * SOURCE DE VÉRITÉ : `assets/conf-palettes.js` du thème, qui porte les trois
+ * palettes vêtement sous la forme { nom, hex, slug }. Les pastilles ne vivent
+ * plus dans `sections/configurateur.liquid` — elles y sont injectées par
+ * conf-palette-render.js, et ce fichier ne contient donc plus aucune couleur.
+ *
+ * Toute couleur ajoutée là-bas doit l'être ici, sinon la pastille retombe sur
+ * un gris neutre : le nom reste lisible, mais l'information de teinte est
+ * perdue, à l'écran comme sur la fiche de production imprimée.
  */
 const COLOR_HEX: Record<string, string> = {
   Ash: '#eff1f0',
@@ -2774,6 +2784,85 @@ const COLOR_HEX: Record<string, string> = {
   'Urban Purple': '#1e1e6e',
   'Used Black': '#2e3438',
   White: '#ffffff',
+
+  /* ── COULEURS ACTUELLES, EN FRANÇAIS ──────────────────────────────────────
+     Les 40 entrées ci-dessus sont ANGLAISES et correspondent à
+     `TEXTILE_HISTORIQUE` (conf-palettes.js), une palette qu'aucun produit
+     vivant n'utilise plus. Les trois palettes en service — sweatshirt,
+     t-shirt coton, t-shirt polyester — portent des noms FRANÇAIS, et c'est ce
+     nom qui voyage dans `GroupRowDto.color`.
+
+     Les deux vocabulaires n'avaient AUCUN nom en commun : chaque ligne de
+     commande de groupe retombait donc sur le gris de repli. La colonne
+     annonçait « Noir » à côté d'une pastille gris clair — y compris sur la
+     fiche de production imprimée, dont le CSS force pourtant l'impression des
+     aplats pour que l'atelier ne reçoive pas de pastilles blanches.
+
+     Les anglaises sont CONSERVÉES : d'anciennes commandes peuvent encore les
+     porter, et aucun nom ne se chevauche entre les deux jeux. Noter que
+     `Noir` (#020204) n'est pas `Black` (#0a0a0a) — deux palettes distinctes,
+     deux entrées distinctes.
+
+     UN MÊME NOM, PARFOIS DEUX CODES. 20 noms varient légèrement d'un textile à
+     l'autre (« Jaune vif » vaut #fee400 sur sweatshirt, #fce614 sur
+     polyester). On retient la première palette où le nom apparaît : l'écart
+     est de quelques unités, invisible sur une pastille de 13 px, et indexer
+     par produit alourdirait la table comme la signature de `colorCell` sans
+     bénéfice perceptible. */
+  'Beige taupe': '#9a8a70',
+  Blanc: '#fefefd',
+  'Blanc / Transparent': '#f0ecec',
+  'Blanc cassé': '#ededed',
+  'Blanc rosé': '#f0e6e5',
+  'Bleu ardoise': '#4d6884',
+  'Bleu azur': '#50b0d9',
+  'Bleu ciel': '#4987bc',
+  'Bleu ciel pâle': '#c6def1',
+  'Bleu cyan': '#0291c1',
+  'Bleu gris': '#a0a9bd',
+  'Bleu marine': '#3f516c',
+  'Bleu marine foncé': '#021f44',
+  'Bleu roi': '#0461ab',
+  'Bleu turquoise': '#04a1d2',
+  Bordeaux: '#8d1713',
+  Camel: '#c09f80',
+  Caramel: '#bc7a2c',
+  Corail: '#fb8b89',
+  'Gris anthracite': '#5e5c68',
+  'Gris ardoise': '#587283',
+  'Gris ardoise foncé': '#374047',
+  'Gris bleuté': '#6d7880',
+  'Gris clair': '#cececd',
+  'Gris perle': '#b4afab',
+  'Jaune citron': '#ebe567',
+  'Jaune vif': '#fee400',
+  'Kaki doré': '#938e50',
+  'Kaki foncé': '#535f49',
+  'Marron chocolat': '#683d2f',
+  'Mauve foncé': '#a4767e',
+  'Mauve orchidée': '#c57bb0',
+  Noir: '#020204',
+  'Orange vif': '#f08927',
+  Prune: '#875560',
+  'Rose fuchsia': '#d93280',
+  'Rose pâle': '#f7d7db',
+  'Rose taupe': '#d9b8a7',
+  'Rouge cerise': '#d3315c',
+  'Rouge écarlate': '#dc0431',
+  Taupe: '#b7a298',
+  'Taupe rosé': '#e0cbc0',
+  'Vert amande': '#d4dcc4',
+  'Vert anis': '#9abf11',
+  'Vert anis clair': '#c2d786',
+  'Vert émeraude': '#078d19',
+  'Vert kaki': '#7f8783',
+  'Vert militaire': '#484e42',
+  'Vert olive': '#766e4a',
+  'Vert pomme': '#80b95b',
+  'Vert prairie': '#559f2a',
+  'Vert sapin': '#004238',
+  'Violet aubergine': '#760e67',
+  'Violet indigo': '#49378a',
 };
 
 /**
@@ -3906,16 +3995,9 @@ export function dashboardPage(
         <strong id="inv-grand" class="mono">—</strong>
       </div>
 
-      <!-- DÉTAIL DE LA TVA — lecture seule, ne change RIEN au montant envoyé.
-
-           La boutique est réglée en prix taxe comprise (taxes_included) : le
-           montant saisi ici est donc déjà TTC, et Shopify en retranche la TVA
-           pour la faire figurer sur la facture. Il ne l'ajoute pas.
-
-           Cette ligne n'existait pas : la modale ne portait aucune mention TTC
-           ni HT, et l'opérateur chiffrait sans savoir si son prix incluait la
-           taxe. Elle rend visible ce que Shopify calculera, sans rien modifier
-           à ce qui lui est transmis. -->
+      <!-- DÉTAIL HT → TTC. Les prix sont saisis HORS TAXE ; la TVA s'y ajoute
+           et le total ci-dessus est le TTC payé par le client. Voir le bloc
+           « TVA : les prix sont SAISIS HORS TAXE » dans le script. -->
       <p class="inv-tva" id="inv-tva" style="display:none"></p>
 
       <!-- MULTI-PRODUITS : une ligne de prix par famille.
@@ -3923,7 +4005,7 @@ export function dashboardPage(
            appliqué à toutes les pièces — un patch à 2 € et un sweatshirt à 40 €
            recevaient le même tarif. Chaque famille a désormais le sien. -->
       <div id="inv-familles-block" style="display:none">
-        <label class="lbl">Prix par type de produit</label>
+        <label class="lbl">Prix unitaire HT par type de produit</label>
         <div id="inv-familles"></div>
       </div>
 
@@ -3932,7 +4014,7 @@ export function dashboardPage(
            base, qui ne portent pas de familles. -->
       <div class="price-row" id="inv-simple-block">
         <div>
-          <label class="lbl">Prix unitaire (€)</label>
+          <label class="lbl">Prix unitaire HT (€)</label>
           <input type="number" id="inv-price" min="0.01" step="0.01" placeholder="0,00"
                  oninput="updateInvoiceTotal()" class="price-input mono">
         </div>
@@ -3946,7 +4028,7 @@ export function dashboardPage(
       <div id="inv-flock-block" style="display:none;margin-top:12px;background:var(--raise);border-radius:10px;padding:12px 14px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:150px">
-            <label class="lbl">Prix par flocage (€)</label>
+            <label class="lbl">Prix par flocage HT (€)</label>
             <input type="number" id="inv-flock-price" min="0" step="0.01" placeholder="0,00"
                    oninput="updateInvoiceTotal()" class="price-input mono">
           </div>
@@ -5693,36 +5775,111 @@ export function dashboardPage(
     var invQuoteId=null, invQty=1;
     function euro(n){return n.toFixed(2).replace('.',',')+' €';}
 
-    /* Taux de TVA appliqué à l'AFFICHAGE du détail, sous le total.
+    /* ── TVA : les prix sont SAISIS HORS TAXE ──
 
-       Défini ici, en un seul endroit, pour être corrigé d'un seul geste si le
-       taux change ou si un produit relève d'un taux réduit.
+       L'opérateur chiffre en HT (10 € la pièce × 200 = 2000 € HT) et la TVA
+       s'AJOUTE : 2000 € HT + 400 € de TVA = 2400 € TTC payés par le client.
 
-       CE TAUX NE SERT QU'À LIRE. Le montant réellement porté sur la facture
-       est calculé par Shopify à partir des règles de taxe de la boutique, qui
-       restent seules faisant foi : un écart de quelques centimes entre cette
-       estimation et la facture est normal et sans conséquence. */
-    var TVA_TAUX = 0.20;
+       La modale extrayait auparavant la TVA du montant saisi, le prenant pour
+       du TTC : 2000 € devenaient 1666,67 € HT + 333,33 € de TVA, et le client
+       payait 2000 € au lieu de 2400 €. L'entreprise perdait toute la TVA.
 
-    /* Décompose un total TTC et affiche la part de TVA qu'il contient.
+       Ce qui part à Shopify dépend du réglage de la boutique :
+       - prix taxes incluses (cas normal) : on envoie le prix TTC, et Shopify
+         en extrait lui-même la TVA sur la facture ;
+       - prix hors taxe : on envoie le prix HT, et Shopify ajoute la TVA ;
+       - client exonéré : on envoie le prix HT, aucune TVA n'est due. */
 
-       La boutique est réglée en prix taxe comprise : la TVA se RETRANCHE du
-       total, elle ne s'y ajoute pas. D'où la division par (1 + taux), et non
-       une multiplication — c'est toute la différence entre informer
-       l'opérateur et surfacturer le client de 20 %.
+    /* Taux de REPLI, utilisé seulement tant que Shopify n'a pas répondu, ou
+       s'il n'expose aucune ligne de taxe (brouillon encore à 0 €). Le détail
+       est alors marqué « taux estimé ». */
+    var TVA_TAUX_DEFAUT = 0.20;
 
-       Un total à zéro masque la ligne : afficher « dont TVA 0,00 € » sous un
-       total vide n'apprendrait rien. */
-    function afficherTva(total){
+    /* Réglages de TVA du brouillon, lus UNE fois à l'ouverture de la modale
+       (GET /quotes/:id/tax) : le recalcul à chaque frappe reste local.
+       - rate          : taux appliqué par Shopify (null = inconnu → repli)
+       - taxesIncluded : true = boutique en prix TTC ; null = pas encore lu,
+                         traité comme true (réglage attendu de la boutique)
+       - taxExempt     : client exonéré, aucune TVA facturée */
+    var invTaxe = { rate: null, taxesIncluded: null, taxExempt: false };
+
+    function tauxTva(){
+      if (invTaxe.taxExempt) return 0;
+      return invTaxe.rate === null ? TVA_TAUX_DEFAUT : invTaxe.rate;
+    }
+
+    /* Vrai quand Shopify attend des prix TTC : il faut alors convertir le HT
+       saisi avant l'envoi. Faux pour une boutique en HT ou un client exonéré. */
+    function envoiEnTtc(){
+      return !invTaxe.taxExempt && invTaxe.taxesIncluded !== false;
+    }
+
+    function arrondi(n){ return Math.round(n * 100) / 100; }
+
+    /* Prix UNITAIRE transmis à Shopify pour un prix unitaire HT saisi.
+       Arrondi au centime, car Shopify n'accepte qu'un prix au centime par
+       ligne et facture prix × quantité : c'est ce prix arrondi qui fixe le
+       total réellement payé. */
+    function prixUnitaireEnvoye(unitHt){
+      return envoiEnTtc() ? arrondi(unitHt * (1 + tauxTva())) : unitHt;
+    }
+
+    /* Total TTC que paiera le client pour un prix unitaire HT × quantité.
+       En boutique TTC, il découle du prix unitaire ARRONDI envoyé : c'est
+       exactement ce que Shopify facturera, au centime près. */
+    function ttcLigne(unitHt, qty){
+      if (envoiEnTtc()) return prixUnitaireEnvoye(unitHt) * qty;
+      return arrondi(unitHt * qty * (1 + tauxTva()));
+    }
+
+    function tauxTexte(r){
+      return String(Math.round(r * 1000) / 10).replace('.', ',');
+    }
+
+    /* Affiche le passage HT → TTC sous le total. Un total vide masque la
+       ligne : « TVA 0,00 € » sous un total vide n'apprendrait rien. */
+    function afficherTva(ht, ttc){
       var el = document.getElementById('inv-tva');
       if (!el) return;
-      if (!(total > 0)) { el.style.display = 'none'; el.textContent = ''; return; }
-      var ht = total / (1 + TVA_TAUX);
-      var tva = total - ht;
+      if (!(ht > 0)) { el.style.display = 'none'; el.textContent = ''; return; }
+
+      if (invTaxe.taxExempt) {
+        el.innerHTML = 'HT : ' + euro(ht) + ' · Client <strong>exonéré de TVA</strong> (Shopify)';
+        el.style.display = '';
+        return;
+      }
+
+      var estime = invTaxe.rate === null;
       el.innerHTML =
-        'dont TVA ' + Math.round(TVA_TAUX * 100) + ' % : <strong>' + euro(tva) +
-        '</strong> · HT : ' + euro(ht);
+        'HT : ' + euro(ht) + ' + TVA ' + tauxTexte(tauxTva()) + ' % : <strong>' +
+        euro(ttc - ht) + '</strong>' +
+        (estime ? ' <em>(taux estimé)</em>' : '');
       el.style.display = '';
+    }
+
+    /* Charge les réglages de TVA du devis ouvert. La réponse est ignorée si
+       l'opérateur a entre-temps ouvert un AUTRE devis : sans cette garde, le
+       taux d'un client s'afficherait sous le total d'un autre. */
+    function chargerTaxes(quoteId){
+      invTaxe = { rate: null, taxesIncluded: null, taxExempt: false };
+      if (!quoteId) return;
+      fetch('/api/admin/quotes/' + encodeURIComponent(quoteId) + '/tax',
+            { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (invQuoteId !== quoteId || !d || !d.ok) return;
+          invTaxe = {
+            rate: typeof d.rate === 'number' ? d.rate : null,
+            taxesIncluded: typeof d.taxesIncluded === 'boolean' ? d.taxesIncluded : null,
+            taxExempt: d.taxExempt === true
+          };
+          updateInvoiceTotal();
+        })
+        .catch(function(e){
+          /* Non bloquant : le détail reste affiché au taux de repli, marqué
+             « estimé ». Le garde-fou serveur protège quand même l'envoi. */
+          console.warn('Réglages de TVA Shopify indisponibles :', e);
+        });
     }
 
     var invFlockCount = 0;   // nombre de pièces floquées (commande de groupe)
@@ -5761,6 +5918,7 @@ export function dashboardPage(
       document.getElementById('inv-total').textContent='—';
       /* Remise à zéro : sans elle, la modale rouverte sur un AUTRE devis
          afficherait encore la TVA du précédent, sous un total vide. */
+      chargerTaxes(invQuoteId);
       afficherTva(0);
 
       construireLignesFamilles();
@@ -5858,7 +6016,7 @@ export function dashboardPage(
         champ.step = '0.01';
         champ.placeholder = '0,00';
         champ.setAttribute('data-fam', String(i));
-        champ.setAttribute('aria-label', 'Prix unitaire — ' + f.libelle);
+        champ.setAttribute('aria-label', 'Prix unitaire HT — ' + f.libelle);
         champ.addEventListener('input', updateInvoiceTotal);
 
         var total = document.createElement('div');
@@ -5874,26 +6032,32 @@ export function dashboardPage(
     }
 
     /**
-     * Les prix saisis par famille, indexés par libellé.
-     * @returns {{tarifs:Object, total:number, complet:boolean}}
+     * Les prix HT saisis par famille, et ce qu'ils deviennent chez Shopify.
+     * - total   : total HT (somme prix HT × quantité)
+     * - ttc     : total que paiera le client
+     * - tarifs  : prix unitaires À ENVOYER, indexés par libellé (TTC en
+     *             boutique TTC, HT sinon — voir prixUnitaireEnvoye)
+     * @returns {{tarifs:Object, total:number, ttc:number, complet:boolean}}
      */
     function lireTarifsFamilles(){
-      var tarifs = {}, total = 0, complet = true;
+      var tarifs = {}, total = 0, ttc = 0, complet = true;
       invFamilles.forEach(function(f, i){
         var champ = document.querySelector('#inv-familles [data-fam="'+i+'"]');
         var v = champ ? parseFloat(champ.value) : NaN;
         var cellule = document.querySelector('#inv-familles [data-fam-total="'+i+'"]');
         if (isFinite(v) && v > 0) {
-          tarifs[f.libelle] = v;
+          tarifs[f.libelle] = prixUnitaireEnvoye(v);
           var sousTotal = v * f.qty;
           total += sousTotal;
+          ttc += ttcLigne(v, f.qty);
+          // Sous-total de ligne en HT : il répond au prix HT saisi à côté.
           if (cellule) { cellule.textContent = euro(sousTotal); cellule.className = 'inv-fam-total'; }
         } else {
           complet = false;
           if (cellule) { cellule.textContent = '—'; cellule.className = 'inv-fam-total is-empty'; }
         }
       });
-      return { tarifs: tarifs, total: total, complet: complet };
+      return { tarifs: tarifs, total: arrondi(total), ttc: arrondi(ttc), complet: complet };
     }
 
     function updateInvoiceTotal(){
@@ -5903,12 +6067,9 @@ export function dashboardPage(
       if (invFamilles.length) {
         var lu = lireTarifsFamilles();
         var grandEl = document.getElementById('inv-grand');
-        if (grandEl) grandEl.textContent = lu.total > 0 ? euro(lu.total) : '—';
-        /* La TVA porte sur le TOTAL GÉNÉRAL, pas sur chaque famille : c'est
-           le montant que le client règle, et le seul qui figure sur la
-           facture. Un détail par ligne n'apporterait rien et multiplierait
-           les écarts d'arrondi. */
-        afficherTva(lu.total);
+        // En tête : le TTC, c'est-à-dire ce que le client paiera.
+        if (grandEl) grandEl.textContent = lu.total > 0 ? euro(lu.ttc) : '—';
+        afficherTva(lu.total, lu.ttc);
         return;
       }
 
@@ -5923,25 +6084,31 @@ export function dashboardPage(
         if(isFinite(flockUnit) && flockUnit>=0) flockTotal=flockUnit*invFlockCount;
       }
 
-      var grand=base+flockTotal;
+      var grand=base+flockTotal;   // total HT (articles + flocages)
+
+      /* Montant transmis à Shopify, réparti ensuite en prix unitaires au
+         centime par le serveur : TTC en boutique TTC, HT sinon. */
+      var envoye = envoiEnTtc() ? arrondi(grand*(1+tauxTva())) : grand;
+      var ttc = envoiEnTtc() ? envoye : arrondi(grand*(1+tauxTva()));
+
       var totalEl=document.getElementById('inv-total');
-      totalEl.textContent = base>0 ? euro(grand) : '—';
+      totalEl.textContent = base>0 ? euro(ttc) : '—';
 
       /* Le flocage est compris dans le total soumis à la TVA : c'est une
          prestation facturée au même titre que l'article. */
-      afficherTva(grand);
+      afficherTva(base>0 ? grand : 0, ttc);
 
       // Détail du calcul (transparence).
       var bd=document.getElementById('inv-breakdown');
       if(bd && invFlockCount>0){
         if(base>0){
-          var unitAvg = grand/invQty;               // prix unitaire moyen
+          var unitAvg = envoye/invQty;              // prix unitaire moyen envoyé
           var unitRounded = Math.round(unitAvg*100)/100;
           var shopifyTotal = unitRounded*invQty;    // ce que Shopify facturera
-          var diff = Math.round((shopifyTotal-grand)*100)/100;
+          var diff = Math.round((shopifyTotal-envoye)*100)/100;
           bd.innerHTML='Base : '+euro(p||0)+' × '+invQty+' = <strong>'+euro(base)+'</strong>'+
             (flockTotal>0 ? ' · Flocage : '+euro(flockUnit)+' × '+invFlockCount+' = <strong>'+euro(flockTotal)+'</strong>' : '')+
-            ' → Prix unitaire : <strong>'+euro(unitRounded)+'</strong>'+
+            ' → Prix unitaire facturé'+(envoiEnTtc()?' TTC':'')+' : <strong>'+euro(unitRounded)+'</strong>'+
             (Math.abs(diff)>=0.01 ? ' <span style="color:var(--warn)">(total facturé '+euro(shopifyTotal)+', soit '+(diff>0?'+':'')+euro(diff)+' d\\'arrondi)</span>' : '');
         } else {
           bd.textContent='Saisissez le prix unitaire pour calculer le total.';
@@ -5949,7 +6116,7 @@ export function dashboardPage(
       }
 
       // Prix unitaire moyen mémorisé pour l'envoi (Shopify facture unit × qty).
-      window._invUnitToSend = (base>0) ? (grand/invQty) : 0;
+      window._invUnitToSend = (base>0) ? (envoye/invQty) : 0;
     }
 
     function closeInvoice(){
@@ -6172,11 +6339,11 @@ export function dashboardPage(
           if (manquant) manquant.focus();
           return;
         }
-        tarifs = lu.tarifs;
+        tarifs = lu.tarifs;   // déjà convertis (TTC en boutique TTC)
         /* Le prix unique part quand même : il sert de repli serveur si une
            ligne du brouillon ne correspond à aucune famille (devis retouché
            dans Shopify). On envoie la moyenne, cohérente avec le total. */
-        price = lu.total / Math.max(1, invQty);
+        price = (envoiEnTtc() ? lu.ttc : lu.total) / Math.max(1, invQty);
       }
 
       if(!isFinite(price) || price<=0){
@@ -6187,10 +6354,11 @@ export function dashboardPage(
         return;
       }
 
-      // Commande de groupe avec flocage : on facture le prix unitaire MOYEN
-      // (base + flocages réparti sur toutes les pièces), calculé en direct.
+      // Mode simple : le prix saisi est HT, on envoie le prix unitaire calculé
+      // par updateInvoiceTotal (converti en TTC en boutique TTC, et incluant
+      // les flocages répartis sur toutes les pièces le cas échéant).
       var unitToSend = price;
-      if(invFlockCount>0){
+      if(!invFamilles.length){
         updateInvoiceTotal();
         if(window._invUnitToSend>0) unitToSend = window._invUnitToSend;
       }
@@ -6207,6 +6375,10 @@ export function dashboardPage(
              ligne du brouillon, donc l'appariement est stable. Omis pour un
              devis mono-produit : le serveur applique alors le prix unique. */
           prixParFamille: tarifs || undefined,
+          /* Le réglage Shopify sur lequel la conversion HT → prix envoyé
+             s'est fondée. Le serveur refuse l'envoi s'il a changé entre-temps :
+             le client paierait alors un autre montant que celui affiché. */
+          taxesIncluses: invTaxe.taxesIncluded !== false,
           message:document.getElementById('inv-msg').value,
           attachments: window.invoiceAttachments || []
         })
@@ -6216,7 +6388,10 @@ export function dashboardPage(
         if(res.ok && res.body.ok){
           st.className='hint ok';
           st.textContent='Facture envoyée'+(res.body.to?(' à '+res.body.to):'')+
-            (res.body.total?(' — total '+String(res.body.total).replace('.',',')+' €'):'')+'.';
+            (res.body.total?(' — total '+String(res.body.total).replace('.',',')+' €'):'')+
+            /* TVA OFFICIELLE, calculée par Shopify : c'est elle qui figure sur
+               la facture, pas l'estimation affichée pendant la saisie. */
+            (res.body.totalTax?(' dont TVA '+String(res.body.totalTax).replace('.',',')+' €'):'')+'.';
           btn.textContent='Envoyée';
           setTimeout(function(){closeInvoice();location.reload();},1800);
         }else{
