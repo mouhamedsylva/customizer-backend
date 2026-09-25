@@ -1627,6 +1627,20 @@ body{
   border-radius:12px;padding:11px 16px;margin-bottom:14px;
 }
 .inv-grand strong{font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--accent)}
+/* Détail de la TVA : discret, sous le total. C'est une information de
+   contrôle pour l'opérateur, pas un montant à saisir — d'où la taille
+   réduite et la couleur atténuée, qui la distinguent des champs actifs. */
+.inv-tva{
+  margin:-8px 0 14px;padding:0 16px;
+  font-size:12.5px;color:var(--muted);text-align:right;
+}
+.inv-tva strong{font-weight:700;color:var(--ink)}
+/* Marqueur TTC : sans lui, le détail de la TVA juste en dessous serait
+   incompréhensible — on ne saurait pas de quoi elle est extraite. */
+.inv-ttc{
+  font-size:11px;font-weight:700;letter-spacing:.03em;
+  color:var(--muted);margin-left:3px;
+}
 /* Une ligne par famille : libellé + quantité, champ de prix, total de ligne. */
 .inv-fam{
   display:flex;align-items:center;gap:12px;
@@ -3888,9 +3902,21 @@ export function dashboardPage(
            ce que l'admin vérifie en dernier avant d'envoyer. Il se met à jour
            à chaque frappe, quel que soit le mode de saisie. -->
       <div class="inv-grand" id="inv-grand-block" style="display:none">
-        <span class="lbl">Total de la commande</span>
+        <span class="lbl">Total de la commande <small class="inv-ttc">TTC</small></span>
         <strong id="inv-grand" class="mono">—</strong>
       </div>
+
+      <!-- DÉTAIL DE LA TVA — lecture seule, ne change RIEN au montant envoyé.
+
+           La boutique est réglée en prix taxe comprise (taxes_included) : le
+           montant saisi ici est donc déjà TTC, et Shopify en retranche la TVA
+           pour la faire figurer sur la facture. Il ne l'ajoute pas.
+
+           Cette ligne n'existait pas : la modale ne portait aucune mention TTC
+           ni HT, et l'opérateur chiffrait sans savoir si son prix incluait la
+           taxe. Elle rend visible ce que Shopify calculera, sans rien modifier
+           à ce qui lui est transmis. -->
+      <p class="inv-tva" id="inv-tva" style="display:none"></p>
 
       <!-- MULTI-PRODUITS : une ligne de prix par famille.
            Un panier mêlant patchs, coins et textiles partait sur un prix unique
@@ -3911,7 +3937,7 @@ export function dashboardPage(
                  oninput="updateInvoiceTotal()" class="price-input mono">
         </div>
         <div class="price-total">
-          <span class="lbl">Total (<span id="inv-qty" class="mono">1</span> unités)</span>
+          <span class="lbl">Total (<span id="inv-qty" class="mono">1</span> unités) <small class="inv-ttc">TTC</small></span>
           <strong id="inv-total" class="mono">—</strong>
         </div>
       </div>
@@ -4041,7 +4067,13 @@ export function dashboardPage(
   <div class="modal" id="price-modal" onclick="if(event.target===this)closePricing()">
     <div class="modal-box" style="max-width:620px">
       <h3>Prix du configurateur</h3>
-      <p class="sub">Prix unitaires HT et tarifs dégressifs par quantité.</p>
+      <!-- TTC, et non HT : ces prix sont servis TELS QUELS au configurateur,
+           qui les affiche « Taxes incluses » d'un bout à l'autre du parcours,
+           et la boutique est réglée en prix taxe comprise. Le libellé « HT »
+           qui figurait ici désignait donc les mêmes nombres sous un régime
+           inverse : un administrateur saisissant un tarif s'est trompé de
+           20 % tant que cette mention est restée. -->
+      <p class="sub">Prix unitaires TTC et tarifs dégressifs par quantité.</p>
 
       <div class="set-block">
         <div id="price-list"><p class="hint">Chargement…</p></div>
@@ -5062,7 +5094,7 @@ export function dashboardPage(
             : '<div class="price-field">'+
                 '<input type="number" id="price-'+k+'" class="price-input mono" '+
                   'step="0.01" min="0" value="'+Number(d.prices[k]).toFixed(2)+'">'+
-                '<span class="price-cur">€ HT</span>'+
+                '<span class="price-cur">€ TTC</span>'+
               '</div>';
           return '<div class="price-line">'+
                    '<div class="price-lbl">'+
@@ -5106,7 +5138,7 @@ export function dashboardPage(
                '<input type="number" class="tier-min mono" min="1" step="1" value="'+(min||1)+'">'+
                '<span class="tier-unit">art.</span>'+
                '<input type="number" class="tier-price mono" min="0" step="0.01" value="'+Number(price||0).toFixed(2)+'">'+
-               '<span class="tier-cur">€ HT</span>'+
+               '<span class="tier-cur">€ TTC</span>'+
                '<button type="button" class="tier-del" onclick="delTier(this)" aria-label="Supprimer ce palier">'+
                  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>'+
                '</button>'+
@@ -5661,6 +5693,38 @@ export function dashboardPage(
     var invQuoteId=null, invQty=1;
     function euro(n){return n.toFixed(2).replace('.',',')+' €';}
 
+    /* Taux de TVA appliqué à l'AFFICHAGE du détail, sous le total.
+
+       Défini ici, en un seul endroit, pour être corrigé d'un seul geste si le
+       taux change ou si un produit relève d'un taux réduit.
+
+       CE TAUX NE SERT QU'À LIRE. Le montant réellement porté sur la facture
+       est calculé par Shopify à partir des règles de taxe de la boutique, qui
+       restent seules faisant foi : un écart de quelques centimes entre cette
+       estimation et la facture est normal et sans conséquence. */
+    var TVA_TAUX = 0.20;
+
+    /* Décompose un total TTC et affiche la part de TVA qu'il contient.
+
+       La boutique est réglée en prix taxe comprise : la TVA se RETRANCHE du
+       total, elle ne s'y ajoute pas. D'où la division par (1 + taux), et non
+       une multiplication — c'est toute la différence entre informer
+       l'opérateur et surfacturer le client de 20 %.
+
+       Un total à zéro masque la ligne : afficher « dont TVA 0,00 € » sous un
+       total vide n'apprendrait rien. */
+    function afficherTva(total){
+      var el = document.getElementById('inv-tva');
+      if (!el) return;
+      if (!(total > 0)) { el.style.display = 'none'; el.textContent = ''; return; }
+      var ht = total / (1 + TVA_TAUX);
+      var tva = total - ht;
+      el.innerHTML =
+        'dont TVA ' + Math.round(TVA_TAUX * 100) + ' % : <strong>' + euro(tva) +
+        '</strong> · HT : ' + euro(ht);
+      el.style.display = '';
+    }
+
     var invFlockCount = 0;   // nombre de pièces floquées (commande de groupe)
 
     /* Familles du devis en cours : [{libelle, qty}]. Vide pour un devis
@@ -5695,6 +5759,9 @@ export function dashboardPage(
       document.getElementById('inv-qty').textContent = invQty;
       document.getElementById('inv-price').value='';
       document.getElementById('inv-total').textContent='—';
+      /* Remise à zéro : sans elle, la modale rouverte sur un AUTRE devis
+         afficherait encore la TVA du précédent, sous un total vide. */
+      afficherTva(0);
 
       construireLignesFamilles();
 
@@ -5837,6 +5904,11 @@ export function dashboardPage(
         var lu = lireTarifsFamilles();
         var grandEl = document.getElementById('inv-grand');
         if (grandEl) grandEl.textContent = lu.total > 0 ? euro(lu.total) : '—';
+        /* La TVA porte sur le TOTAL GÉNÉRAL, pas sur chaque famille : c'est
+           le montant que le client règle, et le seul qui figure sur la
+           facture. Un détail par ligne n'apporterait rien et multiplierait
+           les écarts d'arrondi. */
+        afficherTva(lu.total);
         return;
       }
 
@@ -5854,6 +5926,10 @@ export function dashboardPage(
       var grand=base+flockTotal;
       var totalEl=document.getElementById('inv-total');
       totalEl.textContent = base>0 ? euro(grand) : '—';
+
+      /* Le flocage est compris dans le total soumis à la TVA : c'est une
+         prestation facturée au même titre que l'article. */
+      afficherTva(grand);
 
       // Détail du calcul (transparence).
       var bd=document.getElementById('inv-breakdown');

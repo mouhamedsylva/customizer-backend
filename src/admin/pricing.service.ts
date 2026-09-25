@@ -60,7 +60,14 @@ export const PRODUCT_LABELS: Record<ProductKey, string> = {
   manche: 'Personnalisation manche',
 };
 
-/** Prix unitaires HT par produit. */
+/**
+ * Prix unitaires TTC par produit.
+ *
+ * TTC et non HT : la boutique est réglée en prix taxe comprise, et le
+ * configurateur affiche ces mêmes valeurs « Taxes incluses » sur tout le
+ * parcours client. Le commentaire disait « HT », ce qui décrivait les mêmes
+ * nombres sous un régime opposé.
+ */
 export type Pricing = Record<ProductKey, number>;
 
 /**

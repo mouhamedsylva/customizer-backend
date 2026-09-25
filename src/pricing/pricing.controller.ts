@@ -13,7 +13,7 @@ export class PricingController {
   constructor(private readonly pricing: PricingService) {}
 
   /**
-   * GET /api/pricing — prix unitaires HT par produit + grilles dégressives.
+   * GET /api/pricing — prix unitaires TTC par produit + grilles dégressives.
    *
    * `tiers` remplace la table qui était codée en dur dans le thème
    * (conf-pricing-tiers.js) : elle y sert désormais de simple repli si le
