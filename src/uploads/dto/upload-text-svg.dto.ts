@@ -27,9 +27,30 @@ export class TextSegmentDto {
   @MaxLength(50)
   fontFamily!: string;
 
-  /** Taille de police en pixels. */
+  /**
+   * Taille de police en pixels.
+   *
+   * PLANCHER À 1, ET NON À 8.
+   *
+   * Le configurateur réduit un texte jusqu'à 4 px pour le faire tenir dans sa
+   * zone (conf-text-clamp.js) — un nom long sur une manche, par exemple. Avec
+   * un `@Min(8)`, ces textes parfaitement légitimes étaient rejetés en 400 :
+   * le thème retombait alors sur son rendu local, dont le téléversement
+   * échouait à son tour et était avalé en silence. Résultat : le texte
+   * s'affichait sur la planche d'aperçu mais n'arrivait JAMAIS à l'atelier en
+   * fichier séparé.
+   *
+   * La validation n'a pas à trancher cette question : `normalizeFontParams`
+   * (text-svg.service.ts) remonte déjà toute valeur sous 8 px à 8 —
+   * `Math.max(8, Math.min(300, ...))` — et le contrôleur l'applique à chaque
+   * segment AVANT le rendu (uploads.controller.ts:149). Le refus arrivait donc
+   * avant le seul code capable de traiter le cas.
+   *
+   * On garde un plancher strictement positif : une taille nulle ou négative
+   * reste une donnée aberrante, pas un texte à rendre petit.
+   */
   @IsNumber()
-  @Min(8)
+  @Min(1)
   @Max(300)
   fontSize!: number;
 
