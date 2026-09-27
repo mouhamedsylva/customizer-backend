@@ -114,6 +114,15 @@ function isImg(u: unknown): u is string {
     /\.(png|jpe?g|webp|gif|avif)$/i.test(path) || !/\.[a-z0-9]{1,5}$/i.test(path)
   );
 }
+/** SVG distant sur un hôte d'images autorisé (le fichier de découpe des textes). */
+function isSvgUrl(u: unknown): u is string {
+  if (typeof u !== 'string' || !isAllowedImgHost(u)) return false;
+  try {
+    return /\.svg$/i.test(new URL(u).pathname);
+  } catch {
+    return false;
+  }
+}
 function isUrl(u: unknown): u is string {
   return typeof u === 'string' && /^https?:\/\//i.test(u);
 }
@@ -1595,6 +1604,10 @@ body{
     linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%),
     linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%);
   background-size:22px 22px;background-position:0 0,11px 11px}
+/* SVG de découpe : un vectoriel s'affiche à sa taille intrinsèque, que
+   max-width ne fait que borner — il restait en timbre-poste au centre de
+   l'écran. On l'étire à la largeur disponible, proportions conservées. */
+.lightbox img.svg{width:min(92vw,1100px);height:auto;object-fit:contain;padding:24px}
 
 /* Modale : envoi de facture */
 .modal{position:fixed;inset:0;background:rgba(10,10,12,.6);backdrop-filter:blur(3px);
@@ -2271,18 +2284,124 @@ function statusPill(status: string | null): string {
   return `<span class="pill neutral">${esc(status || '—')}</span>`;
 }
 
+/**
+ * Typo du texte choisie par le client (police, taille, gras, italique,
+ * couleur…), en pastilles lisibles sur la carte de commande.
+ *
+ * Lit les propriétés `_Texte*` écrites par le thème (recapitulatif.liquid),
+ * les mêmes que la fiche de production (`blocTypoFiche`). Affichées brutes,
+ * elles donnaient une vingtaine de pastilles « _TexteFontFamily »,
+ * « _TexteDataMaxFit »… illisibles pour l'atelier.
+ */
+/**
+ * Typo RETROUVÉE depuis le SVG (anciennes commandes, `Order.typoRetrouvee`),
+ * convertie en pseudo-propriétés `_Texte*` : dashboard et fiche l'affichent
+ * avec le même code que les propriétés envoyées par le thème. Une liste par
+ * zone, face d'abord.
+ */
+function proprietesRetrouvees(parZone: any): Array<Array<{ name: string; value: string }>> {
+  if (!parZone || typeof parZone !== 'object') return [];
+  return ['f', 'fr', 'b']
+    .filter((z) => parZone[z] && typeof parZone[z] === 'object')
+    .map((z) => {
+      const t = parZone[z];
+      return [
+        { name: '_TexteContenu', value: String(t.texte ?? '') },
+        { name: '_TexteFontFamily', value: String(t.police ?? '') },
+        { name: '_TexteFontSize', value: t.taillePx ? `${t.taillePx}px` : '' },
+        { name: '_TexteColor', value: String(t.couleur ?? '') },
+        { name: '_TexteDecoration', value: t.souligne ? 'underline' : 'none' },
+        { name: '_TexteZone', value: z },
+        { name: '_TexteSource', value: 'svg' },
+      ].filter((p) => p.value);
+    });
+}
+
+/** Propriétés typo d'une ligne : celles du thème, sinon celles retrouvées. */
+function typosDeLigne(li: any): Array<Array<{ name: string; value: string }>> {
+  const props: Array<{ name: string; value: string }> = Array.isArray(li?.properties) ? li.properties : [];
+  const envoyees = props.filter((p) => /^_Texte[A-Z]/.test(String(p.name || '')));
+  return envoyees.length ? [envoyees] : proprietesRetrouvees(li?.__typoRetrouvee);
+}
+
+/** Attache à chaque ligne sa typo retrouvée, AVANT collapseSizeGroup (qui perd l'index). */
+function avecTypoRetrouvee(o: Order, items: any[]): any[] {
+  const t: any = (o as any).typoRetrouvee;
+  if (!t) return items;
+  return items.map((li, i) => (t[i] ? { ...li, __typoRetrouvee: t[i] } : li));
+}
+
+function specsTypo(props: Array<{ name: string; value: string }>): string {
+  const val = (nom: string) => {
+    const p = props.find((x) => x.name === nom);
+    return p ? String(p.value ?? '').trim() : '';
+  };
+  const police = val('_TexteFontFamily').split(',')[0].replace(/['"]/g, '').trim();
+  if (!police && !val('_TexteFontSize')) return '';
+
+  const graisse = parseInt(val('_TexteFontWeight'), 10);
+  const deco = val('_TexteDecoration');
+  const couleur = val('_TexteColor');
+  const ZONES: Record<string, string> = { f: 'Face', fr: 'Poitrine droite', b: 'Dos' };
+
+  const contenu = val('_TexteContenu');
+  const bouts: Array<[string, string]> = [
+    ['Texte', contenu ? `« ${contenu} »` : ''],
+    ['Police', police],
+    ['Taille', val('_TexteFontSize')],
+    ['Gras', Number.isFinite(graisse) ? (graisse >= 600 ? 'oui' : 'non') : ''],
+    ['Italique', val('_TexteFontStyle') ? (val('_TexteFontStyle') === 'italic' ? 'oui' : 'non') : ''],
+    ['Souligné', deco ? (deco.includes('underline') ? 'oui' : 'non') : ''],
+    ['Emplacement', ZONES[val('_TexteZone')] || val('_TexteZone')],
+    ['Courbé', val('_TexteCurved') === 'true' ? 'oui' : ''],
+  ];
+
+  const pastilles = bouts
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<span class="spec"><b>${esc(k)}</b> ${esc(v)}</span>`);
+  if (couleur) {
+    /* La valeur vient du panier : seule une vraie couleur entre dans `style`,
+       jamais une déclaration CSS arbitraire (« red;background:url(…) »). */
+    const sure = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i.test(couleur);
+    const point = sure ? `<span class="typo-dot" style="background:${esc(couleur)}"></span> ` : '';
+    pastilles.push(`<span class="spec"><b>Couleur texte</b> ${point}${esc(couleur)}</span>`);
+  }
+  /* Typo reconstituée depuis le SVG (ancienne commande) : l'atelier doit
+     savoir que le gras et l'italique n'ont pas pu être retrouvés. */
+  if (val('_TexteSource') === 'svg') {
+    pastilles.push(
+      `<span class="spec" title="Commande antérieure à l'enregistrement de la typo : texte, police, taille et couleur relus dans le fichier de découpe."><b>Origine</b> retrouvé depuis le SVG — gras/italique inconnus</span>`,
+    );
+  }
+  return `<div class="specs">${pastilles.join('')}</div>`;
+}
+
 function itemRow(li: any): string {
   const props: Array<{ name: string; value: string }> = Array.isArray(li.properties) ? li.properties : [];
   const imgs = props.filter((p) => isImg(p.value));
   const links = props.filter((p) => !isImg(p.value) && isUrl(p.value));
-  const texts = props.filter((p) => !isUrl(p.value));
+  /* Les `_Texte*` sont regroupés par specsTypo — même test que la fiche. */
+  const estTypo = (p: { name: string }) => /^_Texte[A-Z]/.test(String(p.name || ''));
+  const texts = props.filter((p) => !isUrl(p.value) && !estTypo(p));
   const thumbs = imgs.length
     ? `<div class="thumbs">${imgs.map((p) => `<img class="thumb js-zoom" src="${esc(p.value)}" title="${esc(p.name)}" data-zoom="${esc(p.value)}" alt="${esc(p.name)}">`).join('')}</div>`
     : `<div class="no-thumb">Sans aperçu</div>`;
-  const specs = texts.length
-    ? `<div class="specs">${texts.map((p) => `<span class="spec"><b>${esc(p.name)}</b> ${esc(p.value)}</span>`).join('')}</div>`
-    : '';
-  const dls = links.map((p) => `<a class="dl" href="${esc(p.value)}" target="_blank" rel="noopener">↓ ${esc(p.name.replace(/^_/, ''))}</a>`).join('');
+  const specs =
+    (texts.length
+      ? `<div class="specs">${texts.map((p) => `<span class="spec"><b>${esc(p.name)}</b> ${esc(p.value)}</span>`).join('')}</div>`
+      : '') + typosDeLigne(li).map(specsTypo).join('');
+  /* « Voir le SVG » : le fichier de découpe, affiché en <img> — un SVG n'y
+     exécute aucun script — et seulement AU CLIC, jamais à l'ouverture de la
+     page (d'où son exclusion d'isImg). Hôtes d'images autorisés seulement. */
+  const dls = links
+    .map((p) => {
+      const lien = `<a class="dl" href="${esc(p.value)}" target="_blank" rel="noopener">↓ ${esc(p.name.replace(/^_/, ''))}</a>`;
+      const svg = isSvgUrl(p.value)
+        ? `<a class="dl js-zoom" href="${esc(p.value)}" data-zoom="${esc(p.value)}" onclick="return false">👁 Voir le SVG</a>`
+        : '';
+      return lien + svg;
+    })
+    .join('');
   return `<div class="item">
     ${thumbs}
     <div class="item-body">
@@ -2538,6 +2657,7 @@ function blocTypoFiche(props: Array<{ name: string; value: string }>): string {
      (données de repositionnement, sans usage en production) sont écartées :
      une fiche imprimée doit tenir sur une page. */
   const LIBELLES: Record<string, string> = {
+    _TexteContenu: 'Texte',
     _TexteFontFamily: 'Police',
     _TexteFontSize: 'Corps',
     _TexteFontWeight: 'Graisse',
@@ -2552,6 +2672,7 @@ function blocTypoFiche(props: Array<{ name: string; value: string }>): string {
     _TexteWidth: 'Largeur',
     _TexteZone: 'Zone',
     _TexteCurved: 'Courbé',
+    _TexteSource: 'Origine',
   };
 
   const lignes = props
@@ -2565,6 +2686,9 @@ function blocTypoFiche(props: Array<{ name: string; value: string }>): string {
       }
       if (p.name === '_TexteCurved') {
         valeur = valeur === 'true' ? 'oui' : 'non';
+      }
+      if (p.name === '_TexteSource') {
+        valeur = 'retrouvé depuis le SVG — gras/italique inconnus';
       }
 
       const pastille =
@@ -2674,7 +2798,7 @@ function orderCard(o: Order, srcQuote?: Quote): string {
            fois le même article — le détail des tailles est déjà donné par le
            tableau récapitulatif juste au-dessus. On n'en montre donc qu'une,
            avec la quantité totale. */
-        const rows = collapseSizeGroup(items);
+        const rows = collapseSizeGroup(avecTypoRetrouvee(o, items));
         return (
           rows.map(itemRow).join('') ||
           '<div class="kv"><span class="empty">Aucun article.</span></div>'
@@ -3147,7 +3271,7 @@ export function productionSheetPage(o: Order, nonce = ''): string {
      Le détail par taille est donné par le tableau ci-dessous — répéter le même
      sweatshirt une fois par taille allongeait la fiche sans rien apporter à
      l'atelier. */
-  const sheetItems = collapseSizeGroup(items);
+  const sheetItems = collapseSizeGroup(avecTypoRetrouvee(o, items));
 
   const itemsHtml = sheetItems
     .map((li: any, idx: number) => {
@@ -3170,7 +3294,7 @@ export function productionSheetPage(o: Order, nonce = ''): string {
         <div class="ps-specs">
           ${texts.map((p) => `<div><b>${esc(p.name)}</b><span>${esc(p.value)}</span></div>`).join('') || '<div><span>Aucune spécification.</span></div>'}
         </div>
-        ${typo.length ? blocTypoFiche(typo) : ''}
+        ${typo.length ? blocTypoFiche(typo) : typosDeLigne(li).map(blocTypoFiche).join('')}
         <div class="ps-visuals">
           ${
             imgs.length
@@ -5742,7 +5866,7 @@ export function dashboardPage(
            serait intrusive alors que rien n'est perdu. */
       });
     }
-    function zoom(u){var lb=document.getElementById('lb');document.getElementById('lb-img').src=u;lb.classList.add('open');}
+    function zoom(u){var lb=document.getElementById('lb');var im=document.getElementById('lb-img');im.classList.toggle('svg',/\\.svg(\\?|#|$)/i.test(u));im.src=u;lb.classList.add('open');}
 
     /* ── Écouteurs délégués : les données ne transitent plus par onclick ──
        Un attribut onclick est du CODE : y interpoler une valeur venant du

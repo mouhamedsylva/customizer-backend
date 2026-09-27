@@ -169,22 +169,32 @@ export class UploadsController {
          ou résiste : le texte part alors en PNG seul, jamais bloqué. */
       const svgVectoriel = await this.textOutline.genererSvgVectoriel(
         normalizedSegments,
-        { scale: 1, padding },
+        { scale, padding },
       );
 
       /* ── 2. Le PNG : l'aperçu ──────────────────────────────────────────
          Il sert la vignette du dashboard, qui refuse les SVG (isImg,
          admin.view.ts) — un SVG est du XML exécutable, et ces URLs sont
          chargées automatiquement à l'ouverture de la page. Le PNG reste donc
-         nécessaire, et c'est lui qui est renvoyé comme résultat principal. */
-      const svgPourRendu = await this.textSvg.generateTextSvg(normalizedSegments, {
-        scale,
-        padding,
-        backgroundColor: dto.renderOptions?.backgroundColor,
-      });
+         nécessaire, et c'est lui qui est renvoyé comme résultat principal.
+
+         Rendu DEPUIS le SVG vectoriel quand il existe : même police, même
+         graisse, même cadre que le fichier de découpe. L'ancien rendu
+         (`<text font-family>`) sortait en DejaVu — seule police du serveur —
+         avec une largeur estimée à 0,6 × taille par caractère : l'aperçu
+         validé par l'atelier n'était pas le fichier découpé. */
+      const backgroundColor = dto.renderOptions?.backgroundColor;
+      const svgPourRendu =
+        svgVectoriel ??
+        (await this.textSvg.generateTextSvg(normalizedSegments, {
+          scale,
+          padding,
+          backgroundColor,
+        }));
       const pngBuffer = await this.textSvg.renderSvgToPng(svgPourRendu, {
         scale,
         padding,
+        backgroundColor,
       });
       const resultatPng = await this.cloudinary.uploadTextAsset(
         pngBuffer,

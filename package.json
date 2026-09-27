@@ -15,7 +15,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
-    "apercu:texte": "node scripts/apercu-texte-svg.mjs"
+    "apercu:texte": "node scripts/apercu-texte-svg.mjs",
+    "verif:polices": "node scripts/verif-polices.mjs"
   },
   "engines": {
     "node": ">=20"

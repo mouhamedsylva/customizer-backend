@@ -15,7 +15,38 @@ Un `.ttf` (ou `.otf`) par police proposée dans le configurateur
 
 Le nom du fichier sert de clé de recherche, à la casse et aux séparateurs près :
 `Bebas Neue` trouve `BebasNeue.ttf`, `Bebas-Neue.ttf` ou `bebasneue.ttf`. Un
-suffixe de style est toléré : `Anton-Regular.ttf` répond à la demande `Anton`.
+suffixe de style donne la graisse du fichier : `Lato-Bold.ttf` est le Lato 700,
+`Oswald-SemiBold.ttf` l'Oswald 600, un fichier sans suffixe vaut 400.
+
+## ⚠ La graisse doit être celle de la boutique
+
+La boutique ne charge qu'**une graisse par police** (lien Google Fonts de
+`Configurateur-travail/layout/configurateur.liquid`) : `family=Lora:wght@700`
+signifie que Lora n'existe à l'écran **qu'en 700**. Le SVG doit être tracé avec
+ce même fichier, sinon l'atelier découpe des lettres plus fines que celles
+validées par le client.
+
+Ces graisses sont recopiées dans `GRAISSES_BOUTIQUE`
+(`src/shared/text-outline.service.ts`). **Si vous modifiez le lien Google Fonts,
+mettez les deux à jour**, puis :
+
+```bash
+npm run build && npm run verif:polices
+```
+
+Le script signale tout écart de graisse, tout NaN dans un tracé, tout contour
+rogné, et toute désynchronisation avec le thème.
+
+**Préférez des fichiers STATIQUES** à la bonne graisse. Les polices variables
+fonctionnent, mais le moteur de variation d'opentype.js fait exploser certains
+glyphes composites (le « é » de Merriweather 700). Le fichier exact que voit le
+navigateur s'obtient directement auprès de l'API Google Fonts, qui sert du TTF
+statique aux clients sans user-agent :
+
+```bash
+curl -s "https://fonts.googleapis.com/css2?family=Lora:wght@700" | grep -o 'https://[^)]*\.ttf'
+# puis télécharger l'URL obtenue sous assets/fonts/Lora-Bold.ttf
+```
 
 ## Les 58 polices à récupérer
 
@@ -42,9 +73,8 @@ Plus, si vous les avez sous licence : `Arial`, `Impact`, `Courier New`,
 **Le plus simple** — l'archive complète de Google Fonts :
 
 1. <https://fonts.google.com> → chercher la police → **Get font** → **Download all**
-2. Décompresser, garder le `.ttf` **Regular** (les variantes Bold / Italic ne
-   sont pas nécessaires : le configurateur applique la graisse par le style CSS,
-   pas par un fichier distinct)
+2. Décompresser, garder le `.ttf` **de la graisse chargée par la boutique**
+   (voir plus haut) — pas forcément le Regular
 3. Déposer le fichier ici
 
 **Plus rapide, en une fois** — le dépôt officiel :
@@ -90,10 +120,17 @@ une, tracés confirmés, aucun `<text>` ni `font-family` résiduel.
 
 Deux points relevés à cette occasion :
 
-- **« Fredoka One » s'appelle désormais « Fredoka »** chez Google, et c'est une
-  police variable (`Fredoka[wdth,wght].ttf`). Elle est déposée ici sous
-  `FredokaOne.ttf`, le nom qu'utilise le configurateur. Les polices variables
-  se vectorisent sans difficulté (leur instance par défaut est utilisée).
+- **`FredokaOne.ttf` est la vraie Fredoka One**, telle que servie par l'API
+  Google Fonts. Ce fichier contenait auparavant la variable « Fredoka », tracée
+  en 300 : nettement plus fine que l'écran.
+
+- **Graisses (septembre 2026)** : 29 polices étaient tracées dans une autre
+  graisse qu'à l'écran (Montserrat et Raleway en Thin 100 au lieu de Bold 700 !).
+  Les fichiers `-Bold` / `-SemiBold` ont été ajoutés pour les 23 concernées.
+
+- **NaN dans les tracés** : `Path.toPathData` d'opentype.js produisait des
+  coordonnées `NaN` (11 sur « Martin » en Lora 20 px) qui coupaient le dessin
+  des lettres. Le service sérialise désormais lui-même (`enDonneesSvg`).
 
 - **Dix polices** — dont Oswald, Roboto et Great Vibes — utilisent des tables
   de substitution qu'`opentype.js` ne sait pas lire : ses fonctions de haut

@@ -143,10 +143,20 @@ export class TextSvgService {
       
       // Conversion SVG → PNG avec Sharp
       // Sharp gère nativement le SVG et produit un rendu de haute qualité
-      const pngBuffer = await sharp(svgBuffer)
+      /* Le SVG vectoriel n'a pas de fond (découpe vinyle) : on l'ajoute ici
+         si l'appelant en demande un. Sans effet sur l'ancien SVG, qui dessine
+         déjà son rectangle de fond. */
+      let rendu = sharp(svgBuffer);
+      const fond = options.backgroundColor;
+      if (fond && fond !== 'transparent') rendu = rendu.flatten({ background: fond });
+
+      const pngBuffer = await rendu
         .png({ 
           quality: 100, 
-          compressionLevel: 0,  // Pas de compression pour texte
+          /* La compression PNG est SANS PERTE : 0 ne gagnait rien en qualité
+             et pesait ~1 Mo par texte depuis que le rendu vient du SVG
+             vectoriel, plus grand (TAILLE_MIN_SORTIE). */
+          compressionLevel: 6,
           palette: false        // Force RGB complet
         })
         .toBuffer();
@@ -249,7 +259,10 @@ export class TextSvgService {
     return {
       ...segment,
       fontFamily: segment.fontFamily || 'sans-serif',
-      fontSize: Math.max(8, Math.min(300, segment.fontSize || 16)), // Bornes raisonnables
+      /* Plancher à 1, comme le DTO : la boutique réduit les textes jusqu'à
+         4 px sur mobile. Remonter à 8 déformait les proportions entre
+         segments ; la taille de SORTIE est gérée par l'échelle du SVG. */
+      fontSize: Math.max(1, Math.min(300, segment.fontSize || 16)),
       fontWeight: this.normalizeFontWeight(segment.fontWeight),
       color: this.normalizeColor(segment.color)
     };

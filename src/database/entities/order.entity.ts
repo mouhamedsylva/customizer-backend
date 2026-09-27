@@ -121,6 +121,19 @@ export class Order {
   @Column({ type: 'datetime', nullable: true })
   productionUpdatedAt: Date | null;
 
+  /**
+   * Typo du texte RETROUVÉE depuis le SVG de découpe, pour les commandes
+   * passées avant l'envoi des propriétés `_Texte*` (septembre 2026).
+   * `{ [indexLigne]: { [zone 'f'|'fr'|'b']: TypoRetrouvee } }` — voir
+   * TypoSvgService et scripts/retrouver-typo.
+   *
+   * Colonne À PART, jamais dans `lineItems` : `saveOrder` réécrit `lineItems`
+   * à chaque resynchronisation Shopify, la récupération serait effacée. Le
+   * webhook ne renseigne pas ce champ, `save()` le laisse donc intact.
+   */
+  @Column({ type: 'json', nullable: true })
+  typoRetrouvee: Record<string, Record<string, any>> | null;
+
   /** Note interne de l'équipe (invisible du client). */
   @Column({ type: 'text', nullable: true })
   internalNote: string | null;
