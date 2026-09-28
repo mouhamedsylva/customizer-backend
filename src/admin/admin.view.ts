@@ -5,6 +5,7 @@
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
+import { articlesDuDevis } from '../quotes/articles-devis';
 
 /**
  * Échappement HTML.
@@ -3217,6 +3218,14 @@ function quoteCard(q: Quote, shopDomain: string): string {
                        Array.isArray(coin.familles) && coin.familles.length
                          ? `data-familles="${esc(JSON.stringify(coin.familles.map((f: any) => ({ libelle: String(f.libelle || ''), qty: Number(f.qty) || 0 }))))}"`
                          : ''
+                     }
+                     ${
+                       /* Un prix PAR ARTICLE : prioritaire sur les familles, et
+                          disponible aussi pour les devis d'avant les familles. */
+                       (() => {
+                         const articles = group ? null : articlesDuDevis(q.quoteData);
+                         return articles ? `data-articles="${esc(JSON.stringify(articles))}"` : '';
+                       })()
                      }>
                    ✉ ${st.key === 'sent' ? 'Corriger le prix et renvoyer' : 'Chiffrer et envoyer la facture'}
                  </button>
@@ -4129,7 +4138,7 @@ export function dashboardPage(
            appliqué à toutes les pièces — un patch à 2 € et un sweatshirt à 40 €
            recevaient le même tarif. Chaque famille a désormais le sien. -->
       <div id="inv-familles-block" style="display:none">
-        <label class="lbl">Prix unitaire HT par type de produit</label>
+        <label class="lbl" id="inv-familles-lbl">Prix unitaire HT par type de produit</label>
         <div id="inv-familles"></div>
       </div>
 
@@ -5890,7 +5899,8 @@ export function dashboardPage(
           inv.getAttribute('data-produit') || '',
           inv.getAttribute('data-qty') || '1',
           inv.getAttribute('data-flock') || '0',
-          inv.getAttribute('data-familles') || ''
+          inv.getAttribute('data-familles') || '',
+          inv.getAttribute('data-articles') || ''
         );
       }
     });
@@ -6013,13 +6023,36 @@ export function dashboardPage(
        la modale retombe alors sur son champ unique. */
     var invFamilles = [];
 
-    function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson){
+    /* Vrai quand les lignes de invFamilles sont des ARTICLES (un prix par
+       article, apparié par position côté serveur) et non des familles. Les
+       deux partagent l'affichage ; seuls l'envoi et les libellés diffèrent. */
+    var invParArticle = false;
+
+    function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson,articlesJson){
       invQuoteId=id;
       invQty=Math.max(1,parseInt(qty,10)||1);
       invFlockCount=Math.max(0,parseInt(flockCount,10)||0);
 
       invFamilles = [];
-      if (famillesJson) {
+      invParArticle = false;
+      if (articlesJson) {
+        try {
+          var articles = JSON.parse(articlesJson);
+          if (Array.isArray(articles) && articles.length > 1) {
+            invFamilles = articles.map(function(a, i){
+              return {
+                libelle: 'Article ' + (i + 1) + ' — ' + String(a.libelle || 'Article'),
+                options: String(a.options || ''),
+                qty: Number(a.qty) || 0
+              };
+            });
+            invParArticle = true;
+          }
+        } catch (e) {
+          console.warn('Articles du devis illisibles, chiffrage par famille :', e);
+        }
+      }
+      if (!invParArticle && famillesJson) {
         try {
           var lues = JSON.parse(famillesJson);
           if (Array.isArray(lues)) {
@@ -6119,6 +6152,12 @@ export function dashboardPage(
       if (blocGrand) blocGrand.style.display = multi ? 'flex' : 'none';
 
       liste.innerHTML = '';
+      var titre = document.getElementById('inv-familles-lbl');
+      if (titre) {
+        titre.textContent = invParArticle
+          ? 'Prix unitaire HT par article — total TTC de chaque ligne'
+          : 'Prix unitaire HT par type de produit';
+      }
       if (!multi) return;
 
       invFamilles.forEach(function(f, i){
@@ -6130,6 +6169,11 @@ export function dashboardPage(
         /* textContent et non innerHTML : le libellé vient des données du
            devis, donc du client. */
         nom.textContent = f.libelle;
+        if (f.options) {
+          var opts = document.createElement('small');
+          opts.textContent = f.options;
+          nom.appendChild(opts);
+        }
         var qte = document.createElement('small');
         qte.textContent = f.qty + ' pièce(s)';
         nom.appendChild(qte);
@@ -6164,24 +6208,33 @@ export function dashboardPage(
      * @returns {{tarifs:Object, total:number, ttc:number, complet:boolean}}
      */
     function lireTarifsFamilles(){
-      var tarifs = {}, total = 0, ttc = 0, complet = true;
+      var tarifs = {}, parIndex = [], total = 0, ttc = 0, complet = true;
       invFamilles.forEach(function(f, i){
         var champ = document.querySelector('#inv-familles [data-fam="'+i+'"]');
         var v = champ ? parseFloat(champ.value) : NaN;
         var cellule = document.querySelector('#inv-familles [data-fam-total="'+i+'"]');
         if (isFinite(v) && v > 0) {
           tarifs[f.libelle] = prixUnitaireEnvoye(v);
+          /* Par article : le prix à envoyer, dans l'ORDRE des articles — deux
+             articles identiques peuvent porter deux prix différents. */
+          parIndex[i] = prixUnitaireEnvoye(v);
           var sousTotal = v * f.qty;
+          var ttcL = ttcLigne(v, f.qty);
           total += sousTotal;
-          ttc += ttcLigne(v, f.qty);
-          // Sous-total de ligne en HT : il répond au prix HT saisi à côté.
-          if (cellule) { cellule.textContent = euro(sousTotal); cellule.className = 'inv-fam-total'; }
+          ttc += ttcL;
+          /* Famille : sous-total HT, il répond au prix HT saisi à côté.
+             Article : total TTC de la ligne, qui s'additionne au total en tête. */
+          if (cellule) {
+            cellule.textContent = invParArticle ? euro(ttcL) + ' TTC' : euro(sousTotal);
+            cellule.className = 'inv-fam-total';
+          }
         } else {
           complet = false;
+          parIndex[i] = null;
           if (cellule) { cellule.textContent = '—'; cellule.className = 'inv-fam-total is-empty'; }
         }
       });
-      return { tarifs: tarifs, total: arrondi(total), ttc: arrondi(ttc), complet: complet };
+      return { tarifs: tarifs, parIndex: parIndex, total: arrondi(total), ttc: arrondi(ttc), complet: complet };
     }
 
     function updateInvoiceTotal(){
@@ -6452,18 +6505,21 @@ export function dashboardPage(
       /* MULTI-FAMILLES : chaque ligne doit porter un prix. En laisser une vide
          enverrait une facture où un article est offert — au client de s'en
          apercevoir, ce qui n'arrive jamais. */
-      var tarifs;
+      var tarifs, prixArticles;
       if (invFamilles.length) {
         var lu = lireTarifsFamilles();
         if (!lu.complet) {
           st.className='hint err';
-          st.textContent='Indiquez un prix pour chaque type de produit.';
+          st.textContent = invParArticle
+            ? 'Indiquez un prix pour chaque article.'
+            : 'Indiquez un prix pour chaque type de produit.';
           var manquant = document.querySelector('#inv-familles input:placeholder-shown')
                       || document.querySelector('#inv-familles input');
           if (manquant) manquant.focus();
           return;
         }
-        tarifs = lu.tarifs;   // déjà convertis (TTC en boutique TTC)
+        if (invParArticle) prixArticles = lu.parIndex;   // dans l'ordre des articles
+        else tarifs = lu.tarifs;   // déjà convertis (TTC en boutique TTC)
         /* Le prix unique part quand même : il sert de repli serveur si une
            ligne du brouillon ne correspond à aucune famille (devis retouché
            dans Shopify). On envoie la moyenne, cohérente avec le total. */
@@ -6499,6 +6555,9 @@ export function dashboardPage(
              ligne du brouillon, donc l'appariement est stable. Omis pour un
              devis mono-produit : le serveur applique alors le prix unique. */
           prixParFamille: tarifs || undefined,
+          /* Un prix par article, apparié PAR POSITION : le serveur recalcule
+             la liste des articles et refuse un décalage. */
+          prixParArticle: prixArticles || undefined,
           /* Le réglage Shopify sur lequel la conversion HT → prix envoyé
              s'est fondée. Le serveur refuse l'envoi s'il a changé entre-temps :
              le client paierait alors un autre montant que celui affiché. */

@@ -25,6 +25,7 @@ import {
   QUOTE_ONLY_KEYS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
+import { articlesDuDevis } from '../quotes/articles-devis';
 import {
   loginPage,
   dashboardPage,
@@ -225,6 +226,10 @@ export class AdminController {
        celui-là même qui titre la ligne du brouillon. Absent sur un devis
        mono-produit, où `unitPrice` suffit. */
     @Body('prixParFamille') prixParFamille: unknown,
+    /* Devis multi-articles : un prix par ARTICLE, dans l'ordre de
+       articlesDuDevis (recalculé ici, jamais pris du navigateur). Prioritaire
+       sur prixParFamille. */
+    @Body('prixParArticle') prixParArticle: unknown,
     /* Réglage Shopify supposé par la modale pour convertir les prix HT
        saisis : true = prix envoyés TTC. Vérifié avant l'envoi (étape 1.2). */
     @Body('taxesIncluses') taxesIncluses: unknown,
@@ -308,13 +313,39 @@ export class AdminController {
     const customer = data.customer || {};
     const productName = data.coin?.name || 'votre commande personnalisée';
 
+    /* PRIX PAR ARTICLE — la liste des articles est RECALCULÉE depuis le devis :
+       le navigateur n'envoie que des prix, dans le même ordre. Un décalage
+       (devis modifié entre l'ouverture de la fenêtre et l'envoi) est refusé
+       plutôt que de facturer un article au prix d'un autre. */
+    let prixArticles: number[] | undefined;
+    const articles = articlesDuDevis(data);
+    if (Array.isArray(prixParArticle)) {
+      if (!articles || articles.length !== prixParArticle.length) {
+        res.status(400).json({
+          ok: false,
+          error: "La liste des articles du devis a changé : rechargez la page avant d'envoyer.",
+        });
+        return;
+      }
+      prixArticles = [];
+      for (let i = 0; i < prixParArticle.length; i++) {
+        const n = Number(prixParArticle[i]);
+        if (!Number.isFinite(n) || n <= 0) {
+          res.status(400).json({
+            ok: false,
+            error: `Indiquez un prix supérieur à 0 pour l'article ${i + 1} (${articles[i].libelle}).`,
+          });
+          return;
+        }
+        prixArticles.push(n);
+      }
+    }
+
     try {
-      // 1) Applique le prix à la ligne du brouillon (total recalculé par Shopify).
-      const draft = await this.shopify.setDraftOrderPrice(
-        quote.draftOrderId,
-        price,
-        tarifs,
-      );
+      // 1) Applique le prix au brouillon (total recalculé par Shopify).
+      const draft = prixArticles && articles
+        ? await this.shopify.setDraftOrderArticles(quote.draftOrderId, articles, prixArticles)
+        : await this.shopify.setDraftOrderPrice(quote.draftOrderId, price, tarifs);
 
       /* 1.2) GARDE-FOU TVA — avant que quoi que ce soit ne parte au client.
          L'opérateur saisit des prix HT ; la modale les convertit selon le

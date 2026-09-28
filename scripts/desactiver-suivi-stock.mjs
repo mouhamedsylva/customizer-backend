@@ -39,6 +39,12 @@ const HANDLES = [
 let jeton = null;
 async function token() {
   if (jeton) return jeton;
+  /* Repli sans identifiants d'application : une boutique de développement ne
+     délivre qu'un jeton fixe (shpat_). Les identifiants restent prioritaires :
+     un ancien jeton de dev resté dans le .env renverrait 401 en production. */
+  if (!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET) && process.env.SHOPIFY_ACCESS_TOKEN) {
+    return (jeton = process.env.SHOPIFY_ACCESS_TOKEN);
+  }
   const r = await fetch(`https://${STORE}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -84,8 +90,8 @@ const M_UNTRACK = `
   }`;
 
 async function principal() {
-  if (!STORE || !process.env.SHOPIFY_CLIENT_ID) {
-    console.error('SHOPIFY_STORE_URL et SHOPIFY_CLIENT_ID/SECRET requis.');
+  if (!STORE || !(process.env.SHOPIFY_CLIENT_ID || process.env.SHOPIFY_ACCESS_TOKEN)) {
+    console.error('SHOPIFY_STORE_URL et SHOPIFY_CLIENT_ID/SECRET (ou SHOPIFY_ACCESS_TOKEN) requis.');
     process.exit(1);
   }
   console.log(`Boutique : ${STORE}`);

@@ -821,6 +821,69 @@ export class ShopifyService {
   }
 
   /**
+   * Chiffre un devis multi-articles LIGNE PAR LIGNE : les lignes du brouillon
+   * sont REMPLACÉES par une ligne personnalisée par article, chacune à son prix.
+   *
+   * Pourquoi reconstruire plutôt que retarifer : les brouillons d'avant le
+   * 23 septembre 2026 n'ont qu'une ligne « Commande sur devis × 70 », et ceux
+   * d'après une ligne par FAMILLE (deux articles de patch sous un même prix).
+   * Aucun des deux ne permet un prix par article.
+   *
+   * `articles` et `prix` sont appariés par POSITION : deux articles identiques
+   * (« 10× Patch » deux fois) doivent pouvoir porter deux prix différents, ce
+   * qu'un appariement par titre rendait impossible.
+   *
+   * Les propriétés du brouillon sont conservées : « Référence devis » sur
+   * chaque ligne (c'est elle qui rattache la commande payée au devis), le
+   * reste — aperçus, fichier client, détails — sur la première.
+   */
+  async setDraftOrderArticles(
+    draftOrderId: string | number,
+    articles: Array<{ libelle: string; options: string; qty: number }>,
+    prix: number[],
+  ): Promise<Record<string, any>> {
+    if (!articles.length || articles.length !== prix.length) {
+      throw new Error('Un prix est attendu pour chaque article.');
+    }
+    const draft = await this.getDraftOrder(draftOrderId);
+    const items: Array<Record<string, any>> = Array.isArray(draft.line_items)
+      ? draft.line_items
+      : [];
+    if (!items.length) {
+      throw new Error('Ce brouillon ne contient aucune ligne.');
+    }
+
+    const toutes = items.flatMap((li) => (Array.isArray(li.properties) ? li.properties : []));
+    const reference = toutes.filter((p: any) => p?.name === 'Référence devis').slice(0, 1);
+    /* Propriétés communes : celles de la 1re ligne, sans la référence (remise
+       sur chaque ligne) ni les « Article n » / « Options » propres à une
+       ancienne ligne de famille. */
+    const communes = (Array.isArray(items[0].properties) ? items[0].properties : []).filter(
+      (p: any) => p?.name !== 'Référence devis' && !/^(Article \d+|Article|Options)$/.test(String(p?.name)),
+    );
+    const modele = items[0];
+
+    const lignes: ShopifyLineItem[] = articles.map((a, i) => ({
+      title: a.libelle,
+      price: prix[i].toFixed(2),
+      quantity: a.qty,
+      custom: true,
+      properties: [
+        ...reference,
+        { name: 'Article', value: `${i + 1} / ${articles.length}` },
+        ...(a.options ? [{ name: 'Options', value: a.options }] : []),
+        ...(i === 0 ? communes : []),
+      ],
+      ...(modele.taxable !== undefined ? { taxable: modele.taxable } : {}),
+      ...(modele.requires_shipping !== undefined
+        ? { requires_shipping: modele.requires_shipping }
+        : {}),
+    }));
+
+    return this.updateDraftOrderLineItems(draftOrderId, lignes);
+  }
+
+  /**
    * Retire une ligne d'un draft order.
    * Shopify ne supprime pas une ligne individuellement : on recupere le draft,
    * on filtre la ligne visee, puis on remet a jour la liste des line_items.

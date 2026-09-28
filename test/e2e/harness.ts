@@ -157,6 +157,12 @@ export class FakeShopify {
     return { id, total_price: String(price) };
   }
 
+  async setDraftOrderArticles(id: unknown, articles: Array<{ qty: number }>, prix: number[]) {
+    this.record('setDraftOrderArticles', [id, articles, prix]);
+    const total = articles.reduce((s, a, i) => s + a.qty * prix[i], 0);
+    return { id, total_price: total.toFixed(2) };
+  }
+
   async sendDraftOrderInvoice(id: unknown, message?: unknown) {
     this.record('sendDraftOrderInvoice', [id, message]);
     return { id, status: 'invoice_sent' };

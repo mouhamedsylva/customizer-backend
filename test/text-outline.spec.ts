@@ -102,6 +102,10 @@ describe('genererSvgVectoriel', () => {
     expect(h).toBeLessThan(400);
   });
 
+  it('vectorise « Bebas » (retirée du thème) avec Bebas Neue', async () => {
+    expect(await service().genererSvgVectoriel([segment('PAUL', 'Bebas')])).not.toBeNull();
+  });
+
   it('renvoie null pour une police absente ou un texte vide', async () => {
     const s = service();
     expect(await s.genererSvgVectoriel([segment('x', 'Comic Sans')])).toBeNull();

@@ -89,6 +89,18 @@ export const GRAISSES_BOUTIQUE: Readonly<Record<string, readonly number[]>> = {
 };
 
 /**
+ * Noms de police demandés → police réellement disponible.
+ *
+ * « Bebas » a été proposée par le configurateur alors qu'elle n'existe pas
+ * chez Google Fonts : seule « Bebas Neue » existe. Elle est retirée du
+ * thème (septembre 2026) ; l'alias sert une page restée ouverte avec
+ * l'ancienne liste, qui obtient ainsi son SVG au lieu du PNG seul.
+ */
+const ALIAS_POLICES: Readonly<Record<string, string>> = {
+  bebas: 'bebasneue',
+};
+
+/**
  * Hauteur minimale du corps de texte dans le fichier produit, en unités SVG.
  *
  * Un tracé n'a pas de résolution, mais `width`/`height` fixent la taille
@@ -210,11 +222,12 @@ export class TextOutlineService {
 
   /** Minuscules, sans espaces ni ponctuation : « Press Start 2P » -> « pressstart2p ». */
   private normaliser(nom: string): string {
-    return String(nom || '')
+    const cle = String(nom || '')
       .replace(/['"]/g, '')
       .split(',')[0]
       .replace(/[^a-z0-9]/gi, '')
       .toLowerCase();
+    return ALIAS_POLICES[cle] ?? cle;
   }
 
   /** Lit et analyse un fichier (mis en cache), ou `null` s'il est illisible. */

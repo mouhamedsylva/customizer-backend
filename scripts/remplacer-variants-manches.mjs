@@ -57,6 +57,12 @@ const API_VERSION = ENV.SHOPIFY_API_VERSION || '2024-01';
 let JETON = null;
 
 async function obtenirJeton() {
+  /* Repli sans identifiants d'application : une boutique de développement ne
+     délivre qu'un jeton fixe (shpat_). Les identifiants restent prioritaires :
+     un ancien jeton de dev resté dans le .env renverrait 401 en production. */
+  if (!(ENV.SHOPIFY_CLIENT_ID && ENV.SHOPIFY_CLIENT_SECRET) && ENV.SHOPIFY_ACCESS_TOKEN) {
+    return ENV.SHOPIFY_ACCESS_TOKEN;
+  }
   const res = await fetch(`https://${STORE}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

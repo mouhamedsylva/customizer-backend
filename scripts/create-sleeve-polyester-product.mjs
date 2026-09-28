@@ -55,6 +55,12 @@ const POLY = TEXTILES.tshirt_polyester;
 let jeton = null;
 async function getJeton() {
   if (jeton) return jeton;
+  /* Repli sans identifiants d'application : une boutique de développement ne
+     délivre qu'un jeton fixe (shpat_). Les identifiants restent prioritaires :
+     un ancien jeton de dev resté dans le .env renverrait 401 en production. */
+  if (!(env.SHOPIFY_CLIENT_ID && env.SHOPIFY_CLIENT_SECRET) && env.SHOPIFY_ACCESS_TOKEN) {
+    return (jeton = env.SHOPIFY_ACCESS_TOKEN);
+  }
   const r = await fetch(`https://${STORE}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

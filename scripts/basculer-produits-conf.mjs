@@ -28,8 +28,36 @@
  */
 import { execute, boutique } from './pont-cli.mjs';
 
-/** Canal « Boutique en ligne » de 38cca3 — le seul que le storefront consulte. */
-const CANAL_BOUTIQUE = 'gid://shopify/Publication/191416369486';
+/** Canal « Boutique en ligne » de la boutique de PRODUCTION (38cca3). Ne sert
+ *  plus que de repli, et seulement sur cette boutique : codé en dur, il rendait
+ *  le script inutilisable sur une boutique de développement. */
+const CANAL_BOUTIQUE_38CCA3 = 'gid://shopify/Publication/191416369486';
+
+/** Nom du canal que /cart/add.js consulte, selon la langue de l'admin. */
+const NOMS_CANAL = ['Online Store', 'Boutique en ligne'];
+
+/**
+ * Canal « Boutique en ligne » de la boutique visée, résolu PAR SON NOM.
+ * Sans correspondance, on s'arrête plutôt que de viser le canal d'une autre
+ * boutique : publier sur un mauvais identifiant échouerait, ou pire.
+ */
+let canalResolu = null;
+async function canalBoutique() {
+  if (canalResolu) return canalResolu;
+  try {
+    const r = await execute(`query { publications(first: 25) { edges { node { id name } } } }`);
+    const canal = (r?.publications?.edges || [])
+      .map((e) => e.node)
+      .find((n) => NOMS_CANAL.includes(String(n?.name || '').trim()));
+    if (canal) return (canalResolu = canal.id);
+  } catch (e) {
+    console.log(`  (lecture des canaux impossible : ${e.message || e})`);
+  }
+  if (String(boutique()).includes('38cca3')) return (canalResolu = CANAL_BOUTIQUE_38CCA3);
+  throw new Error(
+    'Canal « Boutique en ligne » introuvable sur cette boutique (scope read_publications ?).',
+  );
+}
 
 /** Les 7 produits du configurateur portent ce fournisseur, et eux seuls. Filtrer
  *  par `vendor` évite de toucher aux 396 produits du client. */
@@ -80,7 +108,7 @@ async function activer(produits) {
     // 2) publication sur le canal que /cart/add.js consulte.
     const b = await execute(
       `mutation { publishablePublish(id: "${p.id}",
-         input: { publicationId: "${CANAL_BOUTIQUE}" }) {
+         input: { publicationId: "${await canalBoutique()}" }) {
          userErrors { field message } } }`,
       { mutation: true },
     );
@@ -100,7 +128,7 @@ async function remettreEnBrouillon(produits) {
     // au canal, état incohérent que Shopify accepte mais qui brouille l'audit.
     await execute(
       `mutation { publishableUnpublish(id: "${p.id}",
-         input: { publicationId: "${CANAL_BOUTIQUE}" }) {
+         input: { publicationId: "${await canalBoutique()}" }) {
          userErrors { field message } } }`,
       { mutation: true },
     );

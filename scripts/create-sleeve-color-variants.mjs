@@ -59,6 +59,13 @@ if (!STORE) { console.error('❌ SHOPIFY_STORE_URL absent du .env'); process.exi
 let jeton = null;
 async function getJeton() {
   if (jeton) return jeton;
+  const e = { ...process.env, ...env };
+  /* Repli sans identifiants d'application : une boutique de développement ne
+     délivre qu'un jeton fixe (shpat_). Les identifiants restent prioritaires :
+     un ancien jeton de dev resté dans le .env renverrait 401 en production. */
+  if (!(e.SHOPIFY_CLIENT_ID && e.SHOPIFY_CLIENT_SECRET) && e.SHOPIFY_ACCESS_TOKEN) {
+    return (jeton = e.SHOPIFY_ACCESS_TOKEN);
+  }
   const r = await fetch(`https://${STORE}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -73,6 +73,12 @@ if (!STORE) {
  * accordées à l'app — `write_products` est celle qu'il nous faut.
  */
 async function obtenirJeton() {
+  /* Repli sans identifiants d'application : une boutique de développement ne
+     délivre qu'un jeton fixe (shpat_). Les identifiants restent prioritaires :
+     un ancien jeton de dev resté dans le .env renverrait 401 en production. */
+  if (!(ENV.SHOPIFY_CLIENT_ID && ENV.SHOPIFY_CLIENT_SECRET) && ENV.SHOPIFY_ACCESS_TOKEN) {
+    return ENV.SHOPIFY_ACCESS_TOKEN;
+  }
   const { SHOPIFY_CLIENT_ID: id, SHOPIFY_CLIENT_SECRET: secret } = ENV;
   if (!id || !secret) {
     console.error('❌ SHOPIFY_CLIENT_ID et SHOPIFY_CLIENT_SECRET requis dans .env');
