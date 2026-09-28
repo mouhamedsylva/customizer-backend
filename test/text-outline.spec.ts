@@ -102,6 +102,40 @@ describe('genererSvgVectoriel', () => {
     expect(h).toBeLessThan(400);
   });
 
+  it('tout ou rien : un tracé invalide donne null, jamais une exception', async () => {
+    const s = service();
+    const errors: string[] = [];
+    (s as any).logger.error = (m: string) => errors.push(m);
+
+    // Coordonnée NaN dans le tracé : refusé, PNG seul.
+    const casse = new opentype.Path();
+    casse.moveTo(0, 0);
+    casse.lineTo(NaN, 10);
+    casse.lineTo(10, 10);
+    (s as any).disposer = () => ({ chemin: casse, avance: 10 });
+    await expect(s.genererSvgVectoriel([segment('Martin', 'Bungee')])).resolves.toBeNull();
+
+    // Erreur au tracé des lettres : même issue, sans faire échouer la requête.
+    (s as any).disposer = () => {
+      throw new Error('glyphe illisible');
+    };
+    await expect(s.genererSvgVectoriel([segment('Martin', 'Bungee')])).resolves.toBeNull();
+
+    expect(errors.length).toBe(2);
+    expect(errors[0]).toContain('« Martin » (Bungee, 20 px)');
+  });
+
+  it('non-régression de la revue : aucun NaN sur les polices les plus touchées', async () => {
+    const s = service();
+    for (const police of ['Pacifico', 'Lora', 'Dancing Script', 'Allura', 'Bungee'])
+      for (const texte of ['Martin', 'Team Alpha', 'Léa'])
+        for (let taille = 14; taille <= 28; taille += 2) {
+          const svg = await s.genererSvgVectoriel([segment(texte, police, taille)], { scale: 4, padding: 32 });
+          expect(svg).not.toBeNull();
+          expect(svg).not.toMatch(/NaN|Infinity|undefined/);
+        }
+  });
+
   it('vectorise « Bebas » (retirée du thème) avec Bebas Neue', async () => {
     expect(await service().genererSvgVectoriel([segment('PAUL', 'Bebas')])).not.toBeNull();
   });

@@ -112,11 +112,26 @@ C'est délibéré : un SVG partiellement vectorisé serait pire, l'atelier
 découperait une partie du texte sans s'apercevoir du reste. C'est tout ou rien
 par texte.
 
-## État actuel : 59 polices, toutes vérifiées
+## État actuel : 59 polices
 
 Les 57 polices du catalogue sont présentes, plus `Arial` et `Impact` copiées
-depuis Windows. **Les 59 produisent un SVG vectoriel valide** — testé une par
-une, tracés confirmés, aucun `<text>` ni `font-family` résiduel.
+depuis Windows.
+
+**Un SVG « avec des tracés » n'est pas un SVG valide.** L'ancien contrôle
+vérifiait la présence de `<path>` et l'absence de `<text>` : un fichier corrompu
+par des `NaN` passait les deux, alors qu'il perdait les lettres qui suivaient
+(≈ 10 % des textes, 35 polices sur 59, avant septembre 2026). La validité se
+contrôle désormais avec :
+
+```bash
+npm run build && npm run verif:polices
+npm run verif:polices -- "Team Alpha" "Pacifico,Lora" 14,16,18,20,22,24,26,28
+```
+
+qui cherche les `NaN`, le contour rogné, le remplissage et la graisse. En
+production, le service relit aussi chaque SVG avant de l'émettre : un tracé
+invalide est abandonné (texte en PNG seul) et journalisé avec sa police et sa
+taille.
 
 Deux points relevés à cette occasion :
 

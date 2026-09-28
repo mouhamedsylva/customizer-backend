@@ -21,7 +21,8 @@ export interface ArticleDevis {
 
 const LIGNE = /^\s*(\d+)\s*×\s*(.+?)\s*$/;
 
-function lire(lignes: unknown): ArticleDevis[] {
+/** Lignes « N× Produit — options » d'une liste brute ; le reste est ignoré. */
+export function lire(lignes: unknown): ArticleDevis[] {
   if (!Array.isArray(lignes)) return [];
   const out: ArticleDevis[] = [];
   for (const brut of lignes) {

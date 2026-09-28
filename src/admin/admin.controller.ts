@@ -26,6 +26,7 @@ import {
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { articlesDuDevis } from '../quotes/articles-devis';
+import { svgRegenere } from '../shared/zones-texte';
 import {
   loginPage,
   dashboardPage,
@@ -119,7 +120,7 @@ export class AdminController {
       sort: String(req.query.sort || 'date_desc'),
     };
 
-    const [orders, quotes, allQuotes, designs, me] = await Promise.all([
+    const [orders, quotes, allQuotes, designs, me, pricing] = await Promise.all([
       this.data.getOrders(filters),
       // Dashboard : un devis payé est devenu une commande, il n'a plus sa
       // place dans la liste des devis (il figure dans l'onglet Commandes).
@@ -129,6 +130,12 @@ export class AdminController {
       this.data.getQuotes(filters.period, true),
       this.data.getDesigns(),
       this.currentAdmin(req),
+      // Prix catalogue TTC : pré-remplissent la fenêtre de chiffrage des devis.
+      // Facultatifs — une lecture en échec laisse simplement les champs vides.
+      this.pricing.getPayload().catch((e) => {
+        this.logger.warn(`Prix catalogue indisponibles pour le chiffrage : ${e}`);
+        return undefined;
+      }),
     ]);
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') || 'https://example.com';
@@ -141,6 +148,7 @@ export class AdminController {
           me: me || undefined,
           allQuotes,
           nonce: nonceOf(req),
+          pricing,
           // Permet à la vue de signaler une liste tronquée : sans cela, les
           // commandes au-delà du plafond étaient inatteignables ET invisibles.
           limits: { orders: ORDERS_LIMIT, quotes: QUOTES_LIMIT },
@@ -732,6 +740,14 @@ export class AdminController {
         : [];
       props.forEach((p) => {
         if (typeof p.value !== 'string' || !/^https?:\/\//i.test(p.value)) return;
+        /* SVG de découpe corrompu (NaN, avant septembre 2026) : l'archive
+           livre sa version régénérée, pas l'original qui perd des lettres. */
+        const regenere = svgRegenere((order as any).typoRetrouvee?.[i], p.name);
+        if (regenere) {
+          const label = `${String(p.name || 'fichier').replace(/^_/, '')} regenere`;
+          files.push({ name: `${i + 1}-${label}`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.svg', url: regenere });
+          return;
+        }
         const label = String(p.name || 'fichier').replace(/^_/, '');
         const ext = (p.value.split('?')[0].match(/\.(\w{3,4})$/) || [
           '',

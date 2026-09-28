@@ -67,3 +67,24 @@ describe('TypoSvgService.identifier', () => {
     expect(await typo.identifier('<svg></svg>')).toBeNull();
   });
 });
+
+describe('régénération d’un SVG corrompu (NaN)', () => {
+  it('Lora « Martin » 20 px : ancien fichier corrompu → typo retrouvée → SVG propre', async () => {
+    const { TextOutlineService } = await import('../src/shared/text-outline.service');
+    const corrompu = await ancienSvg([seg('Martin', 'Lora', 20)]);
+    expect(corrompu).toMatch(/NaN/); // le défaut de la revue, reproduit
+
+    const t = (await typo.identifier(corrompu))!;
+    expect(t.texte).toBe('Martin');
+    expect(t.police).toBe('Lora');
+
+    const nouveau = new TextOutlineService();
+    (nouveau as any).logger = { log() {}, debug() {}, warn() {}, error() {} };
+    const propre = await nouveau.genererSvgVectoriel(
+      [{ text: t.texte, fontFamily: t.police, fontSize: t.taillePx, fontWeight: '400', color: t.couleur }],
+      { scale: 4, padding: 32 },
+    );
+    expect(propre).not.toBeNull();
+    expect(propre).not.toMatch(/NaN|Infinity|undefined/);
+  });
+});

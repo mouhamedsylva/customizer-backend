@@ -361,7 +361,17 @@ export class TextOutlineService {
   }
 
   /**
-   * Produit le SVG en tracés, ou `null` si une police manque.
+   * Produit le SVG en tracés, ou `null` si une police manque ou si le tracé
+   * n'est pas sûr.
+   *
+   * TOUT OU RIEN, SANS EXCEPTION. Un SVG invalide est pire que pas de SVG :
+   * un parseur abandonne le tracé à la première valeur invalide, et l'atelier
+   * découpe un texte amputé sans rien voir (les `NaN` d'opentype.js ont fait
+   * perdre des lettres à ~10 % des textes avant `enDonneesSvg`). Et une
+   * exception ne doit pas faire échouer toute la requête : le PNG serveur
+   * serait perdu avec. Tout échec, levé ou détecté par la relecture finale,
+   * donne donc `null` — le texte part en PNG seul — et un journal qui nomme
+   * la police et la taille.
    *
    * @param segments segments de texte, déjà normalisés par TextSvgService
    * @param options  `scale` : agrandissement minimal (tailles écran → sortie).
@@ -371,6 +381,31 @@ export class TextOutlineService {
    *                 petits textes.
    */
   async genererSvgVectoriel(
+    segments: TextSegmentData[],
+    options: RenderOptions = { scale: 1, padding: 32 },
+  ): Promise<string | null> {
+    const decrire = () =>
+      `« ${(segments || []).map((s) => s.text).join('')} » ` +
+      `(${segments?.[0]?.fontFamily}, ${segments?.[0]?.fontSize} px)`;
+    let svg: string | null;
+    try {
+      svg = await this.construireSvg(segments, options);
+    } catch (e) {
+      this.logger.error(
+        `Tracé invalide pour ${decrire()} : ${(e as Error).message}. SVG abandonné, PNG seul.`,
+      );
+      return null;
+    }
+    /* Relecture : aucun SVG de découpe ne quitte le service sans avoir été
+       contrôlé, quel que soit le chemin qui l'a produit. */
+    if (svg && /NaN|Infinity|undefined/.test(svg)) {
+      this.logger.error(`Tracé invalide pour ${decrire()} : SVG abandonné, PNG seul.`);
+      return null;
+    }
+    return svg;
+  }
+
+  private async construireSvg(
     segments: TextSegmentData[],
     options: RenderOptions = { scale: 1, padding: 32 },
   ): Promise<string | null> {

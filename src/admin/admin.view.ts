@@ -6,6 +6,13 @@ import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
 import { articlesDuDevis } from '../quotes/articles-devis';
+import {
+  prixArticles,
+  prixDevisSimple,
+  prixFamille,
+} from '../quotes/prix-catalogue';
+import type { PricingPayload } from './pricing.service';
+import { svgRegenere } from '../shared/zones-texte';
 
 /**
  * Échappement HTML.
@@ -2396,9 +2403,14 @@ function itemRow(li: any): string {
      page (d'où son exclusion d'isImg). Hôtes d'images autorisés seulement. */
   const dls = links
     .map((p) => {
-      const lien = `<a class="dl" href="${esc(p.value)}" target="_blank" rel="noopener">↓ ${esc(p.name.replace(/^_/, ''))}</a>`;
-      const svg = isSvgUrl(p.value)
-        ? `<a class="dl js-zoom" href="${esc(p.value)}" data-zoom="${esc(p.value)}" onclick="return false">👁 Voir le SVG</a>`
+      /* SVG corrompu (NaN, avant septembre 2026) remplacé par sa version
+         régénérée : l'atelier ne doit plus pouvoir télécharger l'original. */
+      const regenere = svgRegenere(li.__typoRetrouvee, p.name);
+      const url = regenere || p.value;
+      const nom = p.name.replace(/^_/, '') + (regenere ? ' — régénéré, gras/italique inconnus' : '');
+      const lien = `<a class="dl" href="${esc(url)}" target="_blank" rel="noopener">↓ ${esc(nom)}</a>`;
+      const svg = isSvgUrl(url)
+        ? `<a class="dl js-zoom" href="${esc(url)}" data-zoom="${esc(url)}" onclick="return false">👁 Voir le SVG</a>`
         : '';
       return lien + svg;
     })
@@ -3068,7 +3080,11 @@ function groupAggregate(rows: any[]): {
 }
 
 
-function quoteCard(q: Quote, shopDomain: string): string {
+function quoteCard(
+  q: Quote,
+  shopDomain: string,
+  pricing?: PricingPayload,
+): string {
   const d: any = q.quoteData || {};
   const c = d.customer || {};
   const coin = d.coin || {};
@@ -3216,7 +3232,18 @@ function quoteCard(q: Quote, shopDomain: string): string {
                      data-flock="${group ? groupRows.filter((r: any) => r.flock).reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : 0}"
                      ${
                        Array.isArray(coin.familles) && coin.familles.length
-                         ? `data-familles="${esc(JSON.stringify(coin.familles.map((f: any) => ({ libelle: String(f.libelle || ''), qty: Number(f.qty) || 0 }))))}"`
+                         ? `data-familles="${esc(
+                             JSON.stringify(
+                               coin.familles.map((f: any) => {
+                                 const prix = pricing ? prixFamille(f, pricing) : null;
+                                 return {
+                                   libelle: String(f.libelle || ''),
+                                   qty: Number(f.qty) || 0,
+                                   ...(prix != null ? { prixTtc: prix } : {}),
+                                 };
+                               }),
+                             ),
+                           )}"`
                          : ''
                      }
                      ${
@@ -3224,7 +3251,17 @@ function quoteCard(q: Quote, shopDomain: string): string {
                           disponible aussi pour les devis d'avant les familles. */
                        (() => {
                          const articles = group ? null : articlesDuDevis(q.quoteData);
-                         return articles ? `data-articles="${esc(JSON.stringify(articles))}"` : '';
+                         if (!articles) return '';
+                         const json = pricing ? prixArticles(articles, pricing) : articles;
+                         return `data-articles="${esc(JSON.stringify(json))}"`;
+                       })()
+                     }
+                     ${
+                       /* Prix catalogue TTC du mode à prix unique (un seul
+                          produit, ou commande de groupe). */
+                       (() => {
+                         const prix = pricing ? prixDevisSimple(q.quoteData, pricing) : null;
+                         return prix != null ? `data-prix-ttc="${prix}"` : '';
                        })()
                      }>
                    ✉ ${st.key === 'sent' ? 'Corriger le prix et renvoyer' : 'Chiffrer et envoyer la facture'}
@@ -3724,6 +3761,8 @@ export function dashboardPage(
     nonce?: string;
     /** Plafonds appliqués aux listes : sert à signaler une troncature. */
     limits?: { orders: number; quotes: number };
+    /** Prix catalogue TTC : pré-remplissent la fenêtre de chiffrage. */
+    pricing?: PricingPayload;
   } = {},
 ): string {
   const nonce = extra.nonce || '';
@@ -4102,7 +4141,7 @@ export function dashboardPage(
                  Tous <span class="count mono">${quotes.length}</span>
                </button>
              </div>
-             ${quotes.map((q) => quoteCard(q, shopDomain)).join('')}
+             ${quotes.map((q) => quoteCard(q, shopDomain, extra.pricing)).join('')}
              <div class="empty-state" id="quotes-none" style="display:none">
                <div class="ico">✓</div><p>Aucun devis dans cette catégorie.</p>
              </div>`
@@ -4147,7 +4186,7 @@ export function dashboardPage(
            base, qui ne portent pas de familles. -->
       <div class="price-row" id="inv-simple-block">
         <div>
-          <label class="lbl">Prix unitaire HT (€)</label>
+          <label class="lbl" id="inv-price-lbl">Prix unitaire HT (€)</label>
           <input type="number" id="inv-price" min="0.01" step="0.01" placeholder="0,00"
                  oninput="updateInvoiceTotal()" class="price-input mono">
         </div>
@@ -5900,7 +5939,8 @@ export function dashboardPage(
           inv.getAttribute('data-qty') || '1',
           inv.getAttribute('data-flock') || '0',
           inv.getAttribute('data-familles') || '',
-          inv.getAttribute('data-articles') || ''
+          inv.getAttribute('data-articles') || '',
+          inv.getAttribute('data-prix-ttc') || ''
         );
       }
     });
@@ -5966,6 +6006,24 @@ export function dashboardPage(
       return arrondi(unitHt * qty * (1 + tauxTva()));
     }
 
+    /* ── Prix CATALOGUE : déjà TTC, aucune TVA ne s'y ajoute ──
+
+       Sweatshirts, t-shirts, patchs et drapeaux arrivent pré-remplis avec le
+       prix public du configurateur, TAXES INCLUSES. Le client doit payer
+       exactement ce prix : on n'y ajoute rien.
+       - boutique TTC : ce prix part tel quel, Shopify en extrait la TVA ;
+       - boutique HT ou client exonéré : on envoie le HT correspondant
+         (TTC ÷ (1 + taux)), sur lequel Shopify ajoute — ou non — la TVA. */
+    function tauxCatalogue(){
+      return invTaxe.rate === null ? TVA_TAUX_DEFAUT : invTaxe.rate;
+    }
+    function htDepuisTtc(unitTtc){
+      return unitTtc / (1 + tauxCatalogue());
+    }
+    function envoyeDepuisTtc(unitTtc){
+      return envoiEnTtc() ? arrondi(unitTtc) : arrondi(htDepuisTtc(unitTtc));
+    }
+
     function tauxTexte(r){
       return String(Math.round(r * 1000) / 10).replace('.', ',');
     }
@@ -6028,10 +6086,22 @@ export function dashboardPage(
        deux partagent l'affichage ; seuls l'envoi et les libellés diffèrent. */
     var invParArticle = false;
 
-    function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson,articlesJson){
+    /* Prix catalogue TTC du mode à prix unique, ou null : le champ #inv-price
+       est alors saisi TTC, sans TVA ajoutée (voir envoyeDepuisTtc). */
+    var invPrixTtc = null;
+
+    /* Un prix catalogue exploitable, ou null. Il vient d'un attribut HTML :
+       on ne lui fait pas confiance au-delà d'un nombre positif. */
+    function prixCatalogue(v){
+      var n = Number(v);
+      return isFinite(n) && n > 0 ? arrondi(n) : null;
+    }
+
+    function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson,articlesJson,prixTtc){
       invQuoteId=id;
       invQty=Math.max(1,parseInt(qty,10)||1);
       invFlockCount=Math.max(0,parseInt(flockCount,10)||0);
+      invPrixTtc = prixCatalogue(prixTtc);
 
       invFamilles = [];
       invParArticle = false;
@@ -6043,7 +6113,8 @@ export function dashboardPage(
               return {
                 libelle: 'Article ' + (i + 1) + ' — ' + String(a.libelle || 'Article'),
                 options: String(a.options || ''),
-                qty: Number(a.qty) || 0
+                qty: Number(a.qty) || 0,
+                prixTtc: prixCatalogue(a.prixTtc)
               };
             });
             invParArticle = true;
@@ -6058,6 +6129,8 @@ export function dashboardPage(
           if (Array.isArray(lues)) {
             invFamilles = lues.filter(function(f){
               return f && f.libelle && (Number(f.qty) || 0) > 0;
+            }).map(function(f){
+              return { libelle: f.libelle, qty: f.qty, prixTtc: prixCatalogue(f.prixTtc) };
             });
           }
         } catch (e) {
@@ -6071,7 +6144,14 @@ export function dashboardPage(
       document.getElementById('inv-sub').textContent =
         email ? ('Destinataire : '+email) : 'Aucune adresse e-mail renseignée pour ce client.';
       document.getElementById('inv-qty').textContent = invQty;
-      document.getElementById('inv-price').value='';
+      /* Prix catalogue connu : pré-rempli, et saisi TTC. Sinon, saisie HT. */
+      document.getElementById('inv-price').value = invPrixTtc !== null ? invPrixTtc.toFixed(2) : '';
+      var lblPrix = document.getElementById('inv-price-lbl');
+      if (lblPrix) {
+        lblPrix.textContent = invPrixTtc !== null
+          ? 'Prix unitaire TTC catalogue (€)'
+          : 'Prix unitaire HT (€)';
+      }
       document.getElementById('inv-total').textContent='—';
       /* Remise à zéro : sans elle, la modale rouverte sur un AUTRE devis
          afficherait encore la TVA du précédent, sous un total vide. */
@@ -6089,6 +6169,9 @@ export function dashboardPage(
         if(fi) fi.textContent = invFlockCount+' pièce(s) à floquer';
         var bd=document.getElementById('inv-breakdown'); if(bd) bd.textContent='';
       }
+      /* Des prix catalogue ont pu être pré-remplis : le total s'affiche dès
+         l'ouverture, sans attendre une frappe. */
+      updateInvoiceTotal();
       /* Message provisoire, le temps que le serveur rende le vrai. Il évite un
          champ vide pendant la requête, et sert de repli si elle échoue. */
       document.getElementById('inv-msg').value =
@@ -6126,8 +6209,10 @@ export function dashboardPage(
       setTimeout(function(){
         /* Le premier champ à remplir, selon le mode : en multi-familles le
            champ de prix unique est masqué, le focus y serait invisible. */
+        /* Priorité au premier champ VIDE : les prix catalogue sont déjà là. */
         var premier = invFamilles.length
-          ? document.querySelector('#inv-familles input')
+          ? (document.querySelector('#inv-familles input:placeholder-shown')
+             || document.querySelector('#inv-familles input'))
           : document.getElementById('inv-price');
         if (premier) premier.focus();
       },60);
@@ -6154,9 +6239,14 @@ export function dashboardPage(
       liste.innerHTML = '';
       var titre = document.getElementById('inv-familles-lbl');
       if (titre) {
-        titre.textContent = invParArticle
-          ? 'Prix unitaire HT par article — total TTC de chaque ligne'
-          : 'Prix unitaire HT par type de produit';
+        var avecCatalogue = invFamilles.some(function(f){ return f.prixTtc !== null && f.prixTtc !== undefined; });
+        titre.textContent = avecCatalogue
+          ? (invParArticle
+              ? 'Prix unitaire par article — TTC catalogue pré-rempli, HT à saisir pour les autres'
+              : 'Prix unitaire par type de produit — TTC catalogue pré-rempli, HT à saisir pour les autres')
+          : (invParArticle
+              ? 'Prix unitaire HT par article — total TTC de chaque ligne'
+              : 'Prix unitaire HT par type de produit');
       }
       if (!multi) return;
 
@@ -6175,7 +6265,10 @@ export function dashboardPage(
           nom.appendChild(opts);
         }
         var qte = document.createElement('small');
-        qte.textContent = f.qty + ' pièce(s)';
+        var catalogue = f.prixTtc !== null && f.prixTtc !== undefined;
+        /* Ligne au prix catalogue : saisie TTC, aucune TVA ajoutée. Le prix
+           reste modifiable (geste commercial), il reste alors TTC. */
+        qte.textContent = f.qty + ' pièce(s)' + (catalogue ? ' · prix catalogue TTC' : ' · prix HT');
         nom.appendChild(qte);
 
         var champ = document.createElement('input');
@@ -6184,7 +6277,12 @@ export function dashboardPage(
         champ.step = '0.01';
         champ.placeholder = '0,00';
         champ.setAttribute('data-fam', String(i));
-        champ.setAttribute('aria-label', 'Prix unitaire HT — ' + f.libelle);
+        if (catalogue) {
+          champ.value = f.prixTtc.toFixed(2);
+          champ.setAttribute('data-ttc', '1');
+        }
+        champ.setAttribute('aria-label',
+          (catalogue ? 'Prix unitaire TTC catalogue — ' : 'Prix unitaire HT — ') + f.libelle);
         champ.addEventListener('input', updateInvoiceTotal);
 
         var total = document.createElement('div');
@@ -6214,18 +6312,30 @@ export function dashboardPage(
         var v = champ ? parseFloat(champ.value) : NaN;
         var cellule = document.querySelector('#inv-familles [data-fam-total="'+i+'"]');
         if (isFinite(v) && v > 0) {
-          tarifs[f.libelle] = prixUnitaireEnvoye(v);
+          var enTtc = !!(champ && champ.getAttribute('data-ttc') === '1');
+          var envoye, sousTotal, ttcL;
+          if (enTtc) {
+            /* Prix catalogue TTC : le client paie v × qté, sans TVA ajoutée.
+               Le HT n'en est qu'une lecture, pour le détail sous le total. */
+            envoye = envoyeDepuisTtc(v);
+            ttcL = envoiEnTtc() ? envoye * f.qty : ttcLigne(envoye, f.qty);
+            sousTotal = envoiEnTtc() ? htDepuisTtc(v) * f.qty : envoye * f.qty;
+          } else {
+            envoye = prixUnitaireEnvoye(v);
+            sousTotal = v * f.qty;
+            ttcL = ttcLigne(v, f.qty);
+          }
+          tarifs[f.libelle] = envoye;
           /* Par article : le prix à envoyer, dans l'ORDRE des articles — deux
              articles identiques peuvent porter deux prix différents. */
-          parIndex[i] = prixUnitaireEnvoye(v);
-          var sousTotal = v * f.qty;
-          var ttcL = ttcLigne(v, f.qty);
+          parIndex[i] = envoye;
           total += sousTotal;
           ttc += ttcL;
-          /* Famille : sous-total HT, il répond au prix HT saisi à côté.
+          /* Famille : sous-total HT, il répond au prix HT saisi à côté — ou
+             TTC pour une ligne au prix catalogue, saisie TTC.
              Article : total TTC de la ligne, qui s'additionne au total en tête. */
           if (cellule) {
-            cellule.textContent = invParArticle ? euro(ttcL) + ' TTC' : euro(sousTotal);
+            cellule.textContent = (invParArticle || enTtc) ? euro(ttcL) + ' TTC' : euro(sousTotal);
             cellule.className = 'inv-fam-total';
           }
         } else {
@@ -6251,7 +6361,11 @@ export function dashboardPage(
       }
 
       var p=parseFloat(document.getElementById('inv-price').value);
-      var base=(isFinite(p) && p>0) ? p*invQty : 0;
+      var saisi=(isFinite(p) && p>0) ? p*invQty : 0;   // dans l'unité du champ
+      /* Prix catalogue : le champ est TTC, la base HT n'en est qu'une lecture.
+         Sinon le champ est HT, comme toujours. */
+      var catalogue = invPrixTtc !== null;
+      var base = catalogue ? htDepuisTtc(saisi > 0 ? p : 0) * invQty : saisi;   // HT
 
       // Chiffrage assisté : ajoute (prix flocage × nb de pièces floquées).
       var flockTotal=0, flockUnit=0;
@@ -6266,6 +6380,9 @@ export function dashboardPage(
       /* Montant transmis à Shopify, réparti ensuite en prix unitaires au
          centime par le serveur : TTC en boutique TTC, HT sinon. */
       var envoye = envoiEnTtc() ? arrondi(grand*(1+tauxTva())) : grand;
+      /* Prix catalogue en boutique TTC : la base part TELLE QUELLE (déjà TTC),
+         seule la part flocage, saisie HT, prend la TVA. */
+      if (catalogue && envoiEnTtc()) envoye = arrondi(saisi + flockTotal*(1+tauxTva()));
       var ttc = envoiEnTtc() ? envoye : arrondi(grand*(1+tauxTva()));
 
       var totalEl=document.getElementById('inv-total');
@@ -6283,7 +6400,8 @@ export function dashboardPage(
           var unitRounded = Math.round(unitAvg*100)/100;
           var shopifyTotal = unitRounded*invQty;    // ce que Shopify facturera
           var diff = Math.round((shopifyTotal-envoye)*100)/100;
-          bd.innerHTML='Base : '+euro(p||0)+' × '+invQty+' = <strong>'+euro(base)+'</strong>'+
+          bd.innerHTML='Base : '+euro(p||0)+' × '+invQty+' = <strong>'+euro(catalogue ? saisi : base)+'</strong>'+
+            (catalogue ? ' (TTC catalogue)' : '')+
             (flockTotal>0 ? ' · Flocage : '+euro(flockUnit)+' × '+invFlockCount+' = <strong>'+euro(flockTotal)+'</strong>' : '')+
             ' → Prix unitaire facturé'+(envoiEnTtc()?' TTC':'')+' : <strong>'+euro(unitRounded)+'</strong>'+
             (Math.abs(diff)>=0.01 ? ' <span style="color:var(--warn)">(total facturé '+euro(shopifyTotal)+', soit '+(diff>0?'+':'')+euro(diff)+' d\\'arrondi)</span>' : '');

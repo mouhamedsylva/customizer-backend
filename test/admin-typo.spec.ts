@@ -153,3 +153,34 @@ describe('fiche de production — typo retrouvée', () => {
     expect(html).toContain('retrouvé depuis le SVG');
   });
 });
+
+describe('SVG régénéré à la place d’un SVG corrompu', () => {
+  const { svgRegenere, zoneDuSvg } = require('../src/shared/zones-texte');
+  const PROPRE = 'https://res.cloudinary.com/demo/raw/upload/v2/text_front_propre.svg';
+
+  it('repère la zone et le remplaçant', () => {
+    expect(zoneDuSvg('_Texte dos (SVG)')).toBe('b');
+    expect(zoneDuSvg('_Texte face')).toBeNull();
+    expect(svgRegenere({ f: { svgPropre: PROPRE } }, '_Texte face (SVG)')).toBe(PROPRE);
+    expect(svgRegenere({ f: { svgPropre: 'https://evil.example/x.svg' } }, '_Texte face (SVG)')).toBeNull();
+  });
+
+  it('le dashboard sert le SVG régénéré, plus l’original', () => {
+    const html = dashboardPage(
+      [
+        {
+          shopifyOrderId: '1', orderNumber: 1, totalPrice: '1',
+          lineItems: [{ title: 'T', quantity: 1, properties: [
+            { name: '_Texte face (SVG)', value: 'https://res.cloudinary.com/demo/raw/upload/v1/corrompu.svg' },
+          ] }],
+          typoRetrouvee: { 0: { f: { texte: 'Martin', police: 'Lora', taillePx: 20, couleur: '#000', svgPropre: PROPRE } } },
+          productionStatus: 'to_produce', financialStatus: 'paid', receivedAt: new Date(), shopifyCreatedAt: new Date(),
+        } as unknown as Order,
+      ],
+      [], [], 'https://exemple.fr', 'boutique', { limits: { orders: 300, quotes: 500 } },
+    );
+    expect(html).toContain(PROPRE);
+    expect(html).not.toContain('corrompu.svg');
+    expect(html).toContain('régénéré, gras/italique inconnus');
+  });
+});
