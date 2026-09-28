@@ -241,6 +241,9 @@ export class AdminController {
     /* Réglage Shopify supposé par la modale pour convertir les prix HT
        saisis : true = prix envoyés TTC. Vérifié avant l'envoi (étape 1.2). */
     @Body('taxesIncluses') taxesIncluses: unknown,
+    /* Total TTC AFFICHÉ à l'opérateur au moment de l'envoi : comparé au total
+       réel du brouillon (étape 1.3) avant que la facture ne parte. */
+    @Body('totalAffiche') totalAffiche: unknown,
     @Body('attachments') attachments: any[],
     @Res() res: Response,
   ): Promise<void> {
@@ -376,6 +379,44 @@ export class AdminController {
             `(prix ${taxes.taxesIncluded ? 'taxes incluses' : 'hors taxe'}) ne ` +
             'correspond pas à celui utilisé pour le calcul. Fermez et rouvrez ' +
             'la fenêtre de chiffrage pour recalculer, puis renvoyez.',
+        });
+        return;
+      }
+
+      /* 1.3) GARDE-FOU SUR LE MONTANT — le seul qui couvre tout.
+         Le contrôle ci-dessus ne compare que « TTC ou HT ? ». Il laissait
+         passer un TAUX différent : la fenêtre, faute de taxe calculée sur un
+         brouillon à 0 €, supposait 20 % et affichait 750 € TTC ; Shopify, sans
+         taxe à appliquer, facturait 625 €. On compare donc ce que l'opérateur a
+         VU à ce que le client PAIERA — taux, réglage, exonération et arrondis
+         compris. Écart > 2 centimes : rien n'est envoyé, et la réponse porte le
+         vrai taux pour que la fenêtre se recalcule avant un second envoi.
+         Absent (page chargée avant cette version) : seul le contrôle ci-dessus. */
+      const affiche = Number(totalAffiche);
+      const reel = Number(draft?.total_price);
+      /* Tolérance : l'ARRONDI, pas le taux. Shopify arrondit le prix unitaire
+         au centime et facture prix × quantité : au plus 1 centime par pièce
+         d'écart (déjà signalé à l'opérateur comme « écart d'arrondi »). Un
+         écart de taux se chiffre en euros et dépasse largement ce seuil. */
+      const pieces = (Array.isArray(draft?.line_items) ? draft.line_items : []).reduce(
+        (n: number, li: any) => n + Math.max(1, Number(li?.quantity) || 1),
+        0,
+      );
+      const tolerance = Math.max(0.02, 0.01 * pieces);
+      if (totalAffiche !== undefined && Number.isFinite(affiche) && Number.isFinite(reel) &&
+          Math.abs(affiche - reel) > tolerance) {
+        const euros = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+        res.status(409).json({
+          ok: false,
+          ecartTva: true,
+          error:
+            `Facture NON envoyée : Shopify facturera ${euros(reel)} ` +
+            `(TVA ${euros(Number(taxes.totalTax) || 0)}), la fenêtre affichait ${euros(affiche)}. ` +
+            'Le total vient d’être recalculé avec le vrai taux : vérifiez-le, puis renvoyez.',
+          total: String(draft?.total_price ?? ''),
+          rate: taxes.rate,
+          taxesIncluded: taxes.taxesIncluded,
+          taxExempt: taxes.taxExempt,
         });
         return;
       }

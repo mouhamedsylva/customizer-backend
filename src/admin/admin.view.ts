@@ -13,6 +13,7 @@ import {
 } from '../quotes/prix-catalogue';
 import type { PricingPayload } from './pricing.service';
 import { svgRegenere } from '../shared/zones-texte';
+import { scriptTva, TVA_TAUX_DEFAUT } from '../shared/tva';
 
 /**
  * Échappement HTML.
@@ -5967,7 +5968,7 @@ export function dashboardPage(
     /* Taux de REPLI, utilisé seulement tant que Shopify n'a pas répondu, ou
        s'il n'expose aucune ligne de taxe (brouillon encore à 0 €). Le détail
        est alors marqué « taux estimé ». */
-    var TVA_TAUX_DEFAUT = 0.20;
+    var TVA_TAUX_DEFAUT = ${TVA_TAUX_DEFAUT};
 
     /* Réglages de TVA du brouillon, lus UNE fois à l'ouverture de la modale
        (GET /quotes/:id/tax) : le recalcul à chaque frappe reste local.
@@ -5977,34 +5978,25 @@ export function dashboardPage(
        - taxExempt     : client exonéré, aucune TVA facturée */
     var invTaxe = { rate: null, taxesIncluded: null, taxExempt: false };
 
-    function tauxTva(){
-      if (invTaxe.taxExempt) return 0;
-      return invTaxe.rate === null ? TVA_TAUX_DEFAUT : invTaxe.rate;
-    }
+    /* Total TTC AFFICHÉ à l'opérateur, tenu à jour par updateInvoiceTotal et
+       envoyé avec la facture : le serveur le compare au total que Shopify
+       facturera réellement, et refuse l'envoi s'ils diffèrent. */
+    var invTtcAffiche = null;
 
-    /* Vrai quand Shopify attend des prix TTC : il faut alors convertir le HT
-       saisi avant l'envoi. Faux pour une boutique en HT ou un client exonéré. */
-    function envoiEnTtc(){
-      return !invTaxe.taxExempt && invTaxe.taxesIncluded !== false;
-    }
+    /* CALCUL DE TVA : src/shared/tva.ts, injecté tel quel — le code exécuté
+       ici est exactement celui que test/tva.spec.ts vérifie. Les fonctions
+       ci-dessous ne font que lui passer les réglages du devis ouvert. */
+    var TVA = (function(){
+      ${scriptTva()}
+      return { tauxTva: tauxTva, envoiEnTtc: envoiEnTtc, arrondi: arrondiTva,
+               prixUnitaireEnvoye: prixUnitaireEnvoye, ttcLigne: ttcLigne };
+    })();
 
-    function arrondi(n){ return Math.round(n * 100) / 100; }
-
-    /* Prix UNITAIRE transmis à Shopify pour un prix unitaire HT saisi.
-       Arrondi au centime, car Shopify n'accepte qu'un prix au centime par
-       ligne et facture prix × quantité : c'est ce prix arrondi qui fixe le
-       total réellement payé. */
-    function prixUnitaireEnvoye(unitHt){
-      return envoiEnTtc() ? arrondi(unitHt * (1 + tauxTva())) : unitHt;
-    }
-
-    /* Total TTC que paiera le client pour un prix unitaire HT × quantité.
-       En boutique TTC, il découle du prix unitaire ARRONDI envoyé : c'est
-       exactement ce que Shopify facturera, au centime près. */
-    function ttcLigne(unitHt, qty){
-      if (envoiEnTtc()) return prixUnitaireEnvoye(unitHt) * qty;
-      return arrondi(unitHt * qty * (1 + tauxTva()));
-    }
+    function tauxTva(){ return TVA.tauxTva(invTaxe); }
+    function envoiEnTtc(){ return TVA.envoiEnTtc(invTaxe); }
+    function arrondi(n){ return TVA.arrondi(n); }
+    function prixUnitaireEnvoye(unitHt){ return TVA.prixUnitaireEnvoye(unitHt, invTaxe); }
+    function ttcLigne(unitHt, qty){ return TVA.ttcLigne(unitHt, qty, invTaxe); }
 
     /* ── Prix CATALOGUE : déjà TTC, aucune TVA ne s'y ajoute ──
 
@@ -6045,7 +6037,13 @@ export function dashboardPage(
       el.innerHTML =
         'HT : ' + euro(ht) + ' + TVA ' + tauxTexte(tauxTva()) + ' % : <strong>' +
         euro(ttc - ht) + '</strong>' +
-        (estime ? ' <em>(taux estimé)</em>' : '');
+        /* Taux SUPPOSÉ (brouillon encore à 0 € : Shopify n'a rien calculé).
+           Dit clairement : le total affiché peut différer du montant facturé,
+           que le serveur vérifie avant tout envoi. */
+        (estime
+          ? '<br><span style="color:var(--warn)">TVA supposée ' + tauxTexte(tauxTva()) +
+            ' % : le montant exact sera vérifié par Shopify avant l\\'envoi.</span>'
+          : '');
       el.style.display = '';
     }
 
@@ -6357,6 +6355,7 @@ export function dashboardPage(
         // En tête : le TTC, c'est-à-dire ce que le client paiera.
         if (grandEl) grandEl.textContent = lu.total > 0 ? euro(lu.ttc) : '—';
         afficherTva(lu.total, lu.ttc);
+        invTtcAffiche = lu.total > 0 ? lu.ttc : null;
         return;
       }
 
@@ -6387,6 +6386,7 @@ export function dashboardPage(
 
       var totalEl=document.getElementById('inv-total');
       totalEl.textContent = base>0 ? euro(ttc) : '—';
+      invTtcAffiche = base>0 ? ttc : null;
 
       /* Le flocage est compris dans le total soumis à la TVA : c'est une
          prestation facturée au même titre que l'article. */
@@ -6680,6 +6680,9 @@ export function dashboardPage(
              s'est fondée. Le serveur refuse l'envoi s'il a changé entre-temps :
              le client paierait alors un autre montant que celui affiché. */
           taxesIncluses: invTaxe.taxesIncluded !== false,
+          /* Le TTC que l'opérateur a sous les yeux : le serveur refuse
+             l'envoi si Shopify facturerait autre chose (taux différent). */
+          totalAffiche: (updateInvoiceTotal(), invTtcAffiche === null ? undefined : invTtcAffiche),
           message:document.getElementById('inv-msg').value,
           attachments: window.invoiceAttachments || []
         })
@@ -6695,6 +6698,19 @@ export function dashboardPage(
             (res.body.totalTax?(' dont TVA '+String(res.body.totalTax).replace('.',',')+' €'):'')+'.';
           btn.textContent='Envoyée';
           setTimeout(function(){closeInvoice();location.reload();},1800);
+        }else if(res.body && res.body.ecartTva){
+          /* ÉCART DE TVA : rien n'est parti. Le serveur renvoie le vrai taux
+             du brouillon chiffré ; on recalcule avec lui pour que l'opérateur
+             voie enfin le montant réel avant de renvoyer. */
+          invTaxe = {
+            rate: typeof res.body.rate === 'number' ? res.body.rate : invTaxe.rate,
+            taxesIncluded: typeof res.body.taxesIncluded === 'boolean' ? res.body.taxesIncluded : invTaxe.taxesIncluded,
+            taxExempt: res.body.taxExempt === true
+          };
+          updateInvoiceTotal();
+          st.className='hint err';
+          st.textContent=res.body.error;
+          btn.disabled=false; btn.textContent='Vérifier et renvoyer';
         }else{
           st.className='hint err';
           st.textContent=(res.body && res.body.error) || "L'envoi a échoué.";

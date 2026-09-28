@@ -341,6 +341,15 @@ export class ShopifyService {
         if (rate !== null) break;
       }
     }
+    /* « AUCUNE TAXE » N'EST PAS « TAUX INCONNU ».
+       Brouillon encore à 0 € : Shopify n'a rien calculé, le taux est inconnu
+       (null) et la fenêtre suppose 20 %. Mais un brouillon CHIFFRÉ sans aucune
+       ligne de taxe dit quelque chose : il n'y a pas de TVA (boutique sans
+       taxe, client hors UE…). Le confondre avec l'inconnu faisait afficher
+       750 € TTC à l'opérateur pour une facture de 625 €. */
+    if (rate === null && Number(draft.subtotal_price) > 0 && Number(draft.total_tax ?? 0) === 0) {
+      rate = 0;
+    }
 
     return {
       taxesIncluded:
