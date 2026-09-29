@@ -6905,7 +6905,10 @@ export function dashboardPage(
                la facture, pas l'estimation affichée pendant la saisie. */
             (res.body.totalTax?(' dont TVA '+String(res.body.totalTax).replace('.',',')+' €'):'')+'.';
           btn.textContent='Envoyée';
-          setTimeout(function(){closeInvoice();location.reload();},1800);
+          /* Rechargement pour afficher le nouveau statut — en revenant sur CE
+             devis, dans l'onglet et à la page où l'admin se trouvait. */
+          var idCarte='quote-'+invQuoteId;
+          setTimeout(function(){closeInvoice();memoriserVue(idCarte);location.reload();},1800);
         }else if(res.body && res.body.ecartTva){
           /* ÉCART DE TVA : rien n'est parti. Le serveur renvoie le vrai taux
              du brouillon chiffré ; on recalcule avec lui pour que l'opérateur
@@ -6978,7 +6981,98 @@ export function dashboardPage(
       window.addEventListener('pageshow', function(){ typed=false; clear(); });
     })();
 
-    filterCards(true);
+    /* ── Rester où l'on était après un rechargement ──────────────────────
+       Envoyer une facture, cliquer « Actualiser » ou changer la période
+       rechargent la page. L'onglet, les filtres, la page de la liste et les
+       cartes ouvertes ne vivaient qu'en mémoire : on repartait sur
+       « Commandes », page 1, et il fallait retrouver le devis à traiter.
+
+       La vue est mémorisée au départ de la page (pagehide) dans
+       sessionStorage — propre à cet onglet du navigateur — et restaurée au
+       chargement SUIVANT uniquement : elle est effacée aussitôt lue. */
+    var CLE_VUE='admin-vue';
+
+    /* @param mettreEnAvant id d'une carte à remontrer (devis tout juste traité) */
+    function memoriserVue(mettreEnAvant){
+      try{
+        var onglet=document.querySelector('.tab[data-tab].active');
+        var ouvertes=[];
+        document.querySelectorAll('.card.open[id]').forEach(function(c){ ouvertes.push(c.id); });
+        var prec=null;
+        try{ prec=JSON.parse(sessionStorage.getItem(CLE_VUE)||'null'); }catch(e){}
+        sessionStorage.setItem(CLE_VUE, JSON.stringify({
+          onglet: onglet ? onglet.getAttribute('data-tab') : null,
+          quoteFilter: quoteFilter,
+          orderFilter: orderFilter,
+          pages: pageByPanel,
+          ouvertes: ouvertes,
+          scrollY: window.scrollY || 0,
+          // pagehide suit l'appel explicite : on ne perd pas la carte à remontrer.
+          enAvant: mettreEnAvant || (prec && prec.enAvant) || null
+        }));
+      }catch(e){ /* stockage indisponible (navigation privée) : vue par défaut */ }
+    }
+    window.addEventListener('pagehide', function(){ memoriserVue(); });
+
+    function restaurerVue(){
+      var v=null;
+      try{
+        v=JSON.parse(sessionStorage.getItem(CLE_VUE)||'null');
+        sessionStorage.removeItem(CLE_VUE);
+      }catch(e){}
+      if(!v){ filterCards(true); return; }
+
+      var onglet=v.onglet && document.querySelector('.tab[data-tab="'+v.onglet+'"]');
+      if(onglet) onglet.click();
+
+      if(v.quoteFilter){
+        var chip=document.querySelector('#quote-filters .chip-filter[data-qf="'+v.quoteFilter+'"]');
+        if(chip){ quoteFilter=v.quoteFilter; chip.parentNode.querySelectorAll('.chip-filter')
+          .forEach(function(b){ b.classList.toggle('active', b===chip); }); }
+      }
+      if(v.orderFilter && v.orderFilter!=='all'){
+        var opt=document.querySelector('.dd[data-onpick="filterOrders"] .dd-item[data-value="'+v.orderFilter+'"]');
+        if(opt) ddPick(opt);
+      }
+      if(v.pages && typeof v.pages==='object'){
+        Object.keys(pageByPanel).forEach(function(k){
+          var p=parseInt(v.pages[k],10);
+          if(p>=1) pageByPanel[k]=p;
+        });
+      }
+      filterCards(false);   // false : on garde la page mémorisée
+
+      (v.ouvertes||[]).forEach(function(id){
+        var c=document.getElementById(id);
+        if(c) c.classList.add('open');
+      });
+
+      var cible=v.enAvant && document.getElementById(v.enAvant);
+      if(cible){
+        /* La carte traitée peut être sur une autre page de la liste. */
+        var panel=cible.closest('.panel');
+        if(cible.style.display==='none' && panel && panel.classList.contains('active') && panel.id in pageByPanel){
+          /* On parcourt les pages de la liste filtrée depuis la 1re ;
+             filterCards borne la page au maximum, d'où l'arrêt quand elle
+             n'avance plus. */
+          pageByPanel[panel.id]=1;
+          filterCards(false);
+          for(var essai=0; essai<200 && cible.style.display==='none'; essai++){
+            var avant=pageByPanel[panel.id];
+            pageByPanel[panel.id]=avant+1;
+            filterCards(false);
+            if(pageByPanel[panel.id]===avant) break;
+          }
+        }
+        cible.classList.add('open');
+        cible.scrollIntoView({block:'center'});
+        cible.classList.remove('flash'); void cible.offsetWidth; cible.classList.add('flash');
+      } else if(v.scrollY){
+        window.scrollTo(0, v.scrollY);
+      }
+    }
+
+    restaurerVue();
 
     /* ── Messages clients ───────────────────────────────────────────────
        Un modèle par type, édité sur place. Remplace douze fonctions et trois

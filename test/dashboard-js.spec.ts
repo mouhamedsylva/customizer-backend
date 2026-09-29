@@ -90,3 +90,20 @@ describe('JavaScript embarqué — page de connexion', () => {
     }
   });
 });
+
+describe('dashboard — vue conservée après rechargement', () => {
+  const { dashboardPage } = require('../src/admin/admin.view');
+  const html: string = dashboardPage([], [], [], 'https://exemple.fr', 'boutique', {
+    limits: { orders: 300, quotes: 500 },
+  });
+
+  it('mémorise la vue au départ de la page et la restaure au chargement', () => {
+    expect(html).toContain('function memoriserVue');
+    expect(html).toContain("window.addEventListener('pagehide'");
+    expect(html).toContain('restaurerVue();');
+  });
+
+  it('revient sur le devis traité après l’envoi de sa facture', () => {
+    expect(html).toContain("memoriserVue(idCarte);location.reload()");
+  });
+});
