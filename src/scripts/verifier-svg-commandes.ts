@@ -84,7 +84,13 @@ async function main(): Promise<void> {
   });
   const nuage = new CloudinaryService({ get: (k: string) => process.env[k] } as any);
 
-  const commandes = await depot.find(numero ? { where: { orderNumber: numero } } : {});
+  /* Le numéro est stocké « #20544 » (payload.name de Shopify) : on accepte
+     « 20544 », « #20544 » ou l'id Shopify de la commande. */
+  const commandes = await depot.find(
+    numero
+      ? { where: [{ orderNumber: `#${numero}` }, { orderNumber: numero }, { shopifyOrderId: numero }] }
+      : {},
+  );
   let sains = 0, corrompus = 0, regeneres = 0, aRefaire = 0, dejaFaits = 0, illisibles = 0;
 
   for (const o of commandes) {
@@ -99,7 +105,7 @@ async function main(): Promise<void> {
       for (const p of props) {
         const zone = zoneDuSvg(p.name);
         if (!zone) continue;
-        const ref = `#${o.orderNumber ?? o.shopifyOrderId} ligne ${i + 1} ${String(p.name).replace(/^_/, '')}`;
+        const ref = `${o.orderNumber ?? '#' + o.shopifyOrderId} ligne ${i + 1} ${String(p.name).replace(/^_/, '')}`;
         if (svgRegenere(resultat[i], p.name)) {
           dejaFaits++;
           continue;

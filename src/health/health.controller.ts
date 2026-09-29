@@ -1,4 +1,5 @@
-import { Controller, Get, Logger, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpException, HttpStatus, Logger, UseGuards } from '@nestjs/common';
+import { FICHIER_RATTRAPAGE, SchemaCheckService } from './schema-check.service';
 import { ConfigService } from '@nestjs/config';
 import { ShopifyService } from '../shared/shopify.service';
 import { AdminSessionGuard } from '../admin/admin-session.guard';
@@ -27,16 +28,34 @@ export class HealthController {
     private readonly config: ConfigService,
     private readonly shopify: ShopifyService,
     private readonly webhooks: WebhooksService,
+    private readonly schema: SchemaCheckService,
   ) {}
 
-  /** GET /api/health */
+  /**
+   * GET /api/health
+   *
+   * 503 tant qu'il manque une table ou une colonne en base : le service
+   * répondait « ok » pendant que le dashboard tombait sur « Unknown column ».
+   * La vérification est rejouée à chaque appel tant qu'il manque quelque
+   * chose : une fois le .sql de rattrapage appliqué, l'état redevient « ok »
+   * sans redémarrage.
+   */
   @Get()
-  check(): { status: string; timestamp: string; environment: string } {
-    return {
-      status: 'ok',
+  async check(): Promise<{ status: string; timestamp: string; environment: string }> {
+    let { manquants } = this.schema.etat();
+    if (manquants.length) manquants = await this.schema.verifier();
+    const corps = {
+      status: manquants.length ? 'schema_incomplet' : 'ok',
       timestamp: new Date().toISOString(),
       environment: this.config.get<string>('NODE_ENV') || 'development',
     };
+    if (manquants.length) {
+      throw new HttpException(
+        { ...corps, manquants, correctif: FICHIER_RATTRAPAGE },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    return corps;
   }
 
   /**

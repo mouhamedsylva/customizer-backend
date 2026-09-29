@@ -5,7 +5,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, IsNull, LessThan } from 'typeorm';
+import { Repository, Not, IsNull, LessThan, MoreThan, Between, FindOptionsWhere } from 'typeorm';
 import { randomUUID } from 'crypto';
 import {
   CreateDraftOrderPayload,
@@ -28,6 +28,9 @@ const SYNC_BATCH = 200;
 
 /** Même plafond pour le rattrapage des devis orphelins. */
 const ORPHAN_BATCH = 25;
+
+/** Essais de création de brouillon avant abandon (par processus). */
+const MAX_ESSAIS_ORPHELIN = 5;
 
 /** Plafond de la liste servie par `GET /api/quotes`. */
 const LIST_LIMIT = 500;
@@ -52,6 +55,18 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
    * puisent dans le même quota et sont lancées ensemble par le même timer.
    */
   private syncing = false;
+
+  /* ROTATION DES LOTS. Chaque passe reprenait « les N plus anciens » : les
+     devis qui ne sortent jamais de la sélection (facture impayée, brouillon
+     supprimé dans Shopify, orphelin en échec permanent) occupaient tout le lot
+     et les devis récents n'étaient plus jamais traités. Chaque passe reprend
+     désormais APRÈS le dernier devis vu, et repart du début une fois la liste
+     parcourue. En mémoire : après un redémarrage, on repart du début. */
+  private curseurSynchro: Date | null = null;
+  private curseurOrphelins: Date | null = null;
+
+  /** Échecs de création de brouillon par devis orphelin (en mémoire). */
+  private readonly echecsOrphelins = new Map<string, number>();
 
   constructor(
     private readonly shopify: ShopifyService,
@@ -114,19 +129,28 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
   private async runSync(reason: string): Promise<{ updated: number }> {
     let quotes: Quote[] = [];
     try {
+      /* Les devis finalisés ne changent plus : les écarter en SQL évite de
+         charger leur colonne JSON pour les sauter aussitôt en mémoire.
+         `draftStatus IS NULL` EXPLICITE : `Not('completed')` devient
+         `!= 'completed'` en SQL, qui exclut NULL — c'est-à-dire tous les
+         devis tout juste créés, jamais synchronisés tant que l'équipe
+         n'envoyait pas la facture elle-même. */
+      const apres = this.curseurSynchro ? { createdAt: MoreThan(this.curseurSynchro) } : {};
+      const where: FindOptionsWhere<Quote>[] = [
+        { draftOrderId: Not(IsNull()), draftStatus: IsNull(), ...apres },
+        { draftOrderId: Not(IsNull()), draftStatus: Not('completed'), ...apres },
+      ];
       quotes = await this.quotes.find({
-        // Les devis finalisés ne changent plus : les écarter en SQL évite de
-        // charger leur colonne JSON (le devis complet, aperçus compris) pour
-        // les sauter aussitôt en mémoire.
-        where: { draftOrderId: Not(IsNull()), draftStatus: Not('completed') },
+        where,
         // Plafond : sans lui, toute la table passait en mémoire à chaque
-        // passe. Les devis au-delà sont traités au tour suivant — la synchro
-        // est idempotente, elle rattrape naturellement son retard.
+        // passe. Les devis au-delà sont traités au tour suivant (rotation).
         take: SYNC_BATCH,
-        // Les plus anciens d'abord : sans ordre explicite, MySQL peut renvoyer
-        // toujours les mêmes lignes et laisser la queue jamais synchronisée.
+        // Ordre explicite : sans lui, MySQL peut renvoyer toujours les mêmes
+        // lignes. Le curseur fait avancer la fenêtre d'une passe à l'autre.
         order: { createdAt: 'ASC' },
       });
+      this.curseurSynchro =
+        quotes.length === SYNC_BATCH ? quotes[quotes.length - 1].createdAt : null;
     } catch (e) {
       this.logger.warn(`Lecture des devis impossible : ${(e as Error).message}`);
       return { updated: 0 };
@@ -280,10 +304,17 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
     let orphans: Quote[] = [];
     try {
       orphans = await this.quotes.find({
-        where: { draftOrderId: IsNull(), createdAt: LessThan(cutoff) },
+        where: {
+          draftOrderId: IsNull(),
+          createdAt: this.curseurOrphelins
+            ? Between(this.curseurOrphelins, cutoff)
+            : LessThan(cutoff),
+        },
         take: ORPHAN_BATCH, // borne : on rattrape par lots, pas tout d'un coup
-        order: { createdAt: 'ASC' }, // les plus anciens d'abord
+        order: { createdAt: 'ASC' }, // rotation : voir `curseurOrphelins`
       });
+      this.curseurOrphelins =
+        orphans.length === ORPHAN_BATCH ? orphans[orphans.length - 1].createdAt : null;
     } catch (e) {
       this.logger.warn(
         `Lecture des devis orphelins impossible : ${(e as Error).message}`,
@@ -293,6 +324,11 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
 
     let retried = 0;
     for (const q of orphans) {
+      /* Échec PERMANENT (quantité décimale, téléphone refusé par Shopify…) :
+         au-delà de 5 essais, on cesse de renvoyer ce devis à Shopify toutes
+         les 10 minutes. Il reste visible au dashboard, sans brouillon. */
+      const echecs = this.echecsOrphelins.get(q.id) || 0;
+      if (echecs >= MAX_ESSAIS_ORPHELIN) continue;
       try {
         const dto = q.quoteData as unknown as CreateQuoteDto;
         const draftOrder = await this.shopify.createDraftOrder(
@@ -307,9 +343,16 @@ export class QuotesService implements OnModuleInit, OnModuleDestroy {
           `Devis orphelin ${q.id} rattrapé -> draft order #${draftOrder.id}`,
         );
         retried++;
+        this.echecsOrphelins.delete(q.id);
       } catch (e) {
-        this.logger.warn(
-          `Devis orphelin ${q.id} : nouvel échec de création, réessai plus tard : ${(e as Error).message}`,
+        const n = echecs + 1;
+        this.echecsOrphelins.set(q.id, n);
+        const abandon = n >= MAX_ESSAIS_ORPHELIN;
+        (abandon ? this.logger.error : this.logger.warn).call(
+          this.logger,
+          `Devis orphelin ${q.id} : échec de création n°${n}` +
+            (abandon ? ' — abandon des essais automatiques, brouillon à créer à la main' : ', réessai plus tard') +
+            ` : ${(e as Error).message}`,
         );
       }
     }

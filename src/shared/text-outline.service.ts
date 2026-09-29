@@ -110,6 +110,10 @@ const ALIAS_POLICES: Readonly<Record<string, string>> = {
  */
 const TAILLE_MIN_SORTIE = 200;
 
+/** Corps maximal en sortie, et largeur maximale estimée (unités SVG = px). */
+const TAILLE_MAX_SORTIE = 400;
+const LARGEUR_MAX = 20000;
+
 /** Marge autour du contour, en fraction du corps de texte. */
 const MARGE_RELATIVE = 0.12;
 
@@ -419,7 +423,15 @@ export class TextOutlineService {
     }
 
     const tailleMax = Math.max(...segments.map((s) => s.fontSize));
-    const echelle = Math.max(options.scale || 1, TAILLE_MIN_SORTIE / tailleMax);
+    /* PLAFONDS (route publique) : 20 segments × 100 caractères à 300 px et
+       échelle 8 donnaient un rendu de près d'1 Go, et le PNG est tiré de ce
+       SVG. Corps plafonné à TAILLE_MAX_SORTIE, largeur estimée à LARGEUR_MAX. */
+    const caracteres = segments.reduce((n, s) => n + String(s.text || '').length, 0) || 1;
+    const echelle = Math.min(
+      Math.max(options.scale || 1, TAILLE_MIN_SORTIE / tailleMax),
+      TAILLE_MAX_SORTIE / tailleMax,
+      LARGEUR_MAX / (caracteres * tailleMax * 0.6),
+    );
 
     /* Mise en page sur une ligne de base à y = 0. Les segments s'enchaînent
        selon leur AVANCE (c'est ainsi que le navigateur les place), mais le

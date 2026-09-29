@@ -435,14 +435,35 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
 
       if (devis.draftStatus === 'completed' && devis.paidOrderId) return;
 
+      /* PREUVE DE PAIEMENT : la commande doit ÊTRE celle du brouillon du devis.
+         « Référence devis » est une propriété de ligne, que le client écrit
+         lui-même (/cart/add.js) : un patch à 3,50 € portant l'UUID d'un devis
+         de 500 sweats le faisait passer payé, relances arrêtées, atelier
+         trompé. Seul Shopify fait foi : le brouillon converti porte l'id de la
+         commande qu'il a produite (`order_id`). Brouillon illisible : on ne
+         marque rien, la synchro périodique (qui lit ce même order_id)
+         rattrapera. */
+      if (!devis.draftOrderId) return;
+      const draft = await this.shopify.getDraftOrder(devis.draftOrderId);
+      if (String(draft?.order_id ?? '') !== String(shopifyOrderId)) {
+        this.logger.warn(
+          `Commande ${shopifyOrderId} : elle porte la référence du devis ${quoteId}, ` +
+            `mais ne provient pas de son brouillon (${devis.draftOrderId}). ` +
+            'Devis NON marqué payé.',
+        );
+        return;
+      }
+
       /* Même prudence qu'ailleurs : on n'écrit un champ que renseigné, pour ne
-         jamais effacer une valeur acquise. */
+         jamais effacer une valeur acquise. Le total est celui du brouillon, la
+         source de vérité, pas celui du payload. */
       const patch: {
         draftStatus: string;
         paidOrderId: string;
         totalPrice?: string;
       } = { draftStatus: 'completed', paidOrderId: shopifyOrderId };
-      if (payload.total_price) patch.totalPrice = String(payload.total_price);
+      const total = draft?.total_price ?? payload.total_price;
+      if (total) patch.totalPrice = String(total);
 
       await this.quotes.update(quoteId, patch);
       this.logger.log(

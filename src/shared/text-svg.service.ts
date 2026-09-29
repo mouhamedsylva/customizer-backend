@@ -146,7 +146,9 @@ export class TextSvgService {
       /* Le SVG vectoriel n'a pas de fond (découpe vinyle) : on l'ajoute ici
          si l'appelant en demande un. Sans effet sur l'ancien SVG, qui dessine
          déjà son rectangle de fond. */
-      let rendu = sharp(svgBuffer);
+      /* Dernier filet : au-delà de 60 Mpx, sharp refuse au lieu d'allouer
+         des centaines de Mo (le défaut, ~268 Mpx, en autorise ~1 Go). */
+      let rendu = sharp(svgBuffer, { limitInputPixels: 60_000_000 });
       const fond = options.backgroundColor;
       if (fond && fond !== 'transparent') rendu = rendu.flatten({ background: fond });
 

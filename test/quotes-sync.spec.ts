@@ -126,7 +126,11 @@ describe('QuotesService.syncStatuses — plafond', () => {
     expect(vu?.take).toBeLessThanOrEqual(200);
     // Le filtre « non finalisé » doit être en base, pas en mémoire : sinon on
     // charge la colonne JSON de chaque devis payé pour la jeter aussitôt.
-    expect(vu?.where).toHaveProperty('draftStatus');
+    // Deux branches (OR) : statut NULL (devis tout juste créé) OU différent de
+    // « completed » — `!= 'completed'` seul excluait les NULL en SQL.
+    const branches = Array.isArray(vu?.where) ? vu?.where : [vu?.where];
+    expect(branches.length).toBeGreaterThan(0);
+    for (const b of branches as any[]) expect(b).toHaveProperty('draftStatus');
     // Ordre explicite : sans lui, MySQL peut renvoyer toujours les mêmes
     // lignes et laisser la queue jamais synchronisée.
     expect(vu?.order).toBeDefined();

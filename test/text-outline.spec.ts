@@ -136,6 +136,14 @@ describe('genererSvgVectoriel', () => {
         }
   });
 
+  it('plafonne la taille de sortie d’un texte énorme (route publique)', async () => {
+    const long = 'M'.repeat(100);
+    const segs = Array.from({ length: 20 }, () => segment(long, 'Bungee', 300));
+    const svg = (await service().genererSvgVectoriel(segs, { scale: 8, padding: 32 }))!;
+    const [, w, h] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)!.map(Number);
+    expect(w * h).toBeLessThan(60_000_000); // sous la limite de pixels de sharp
+  });
+
   it('vectorise « Bebas » (retirée du thème) avec Bebas Neue', async () => {
     expect(await service().genererSvgVectoriel([segment('PAUL', 'Bebas')])).not.toBeNull();
   });

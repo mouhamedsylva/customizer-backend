@@ -1,3 +1,4 @@
+import type { MessageTemplateService } from '../src/admin/message-template.service';
 import { RemindersService } from '../src/quotes/reminders.service';
 import type { Repository } from 'typeorm';
 import type { Quote } from '../src/database/entities/quote.entity';
@@ -44,7 +45,15 @@ function build(opts: {
     update: async () => ({ affected: 1 }),
   } as unknown as Repository<Quote>;
 
-  return { service: new RemindersService(shopify, settings, repo), envois };
+  /* 4e dépendance ajoutée au service (modèles de message) : le test la
+     passait pas, `this.quotes` valait undefined et chaque cas « passait »
+     sans rien vérifier. Modèle absent → message de repli du service. */
+  const messageTemplates = {
+    getDefaultTemplate: async () => null,
+    replaceVariables: (t: string) => t,
+  } as unknown as MessageTemplateService;
+
+  return { service: new RemindersService(shopify, settings, messageTemplates, repo), envois };
 }
 
 function devis(p: Partial<Quote>): Partial<Quote> {

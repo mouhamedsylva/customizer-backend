@@ -120,14 +120,14 @@ export class AdminController {
       sort: String(req.query.sort || 'date_desc'),
     };
 
-    const [orders, quotes, allQuotes, designs, me, pricing] = await Promise.all([
+    const [orders, { nonPayes: quotes, tous: allQuotes }, designs, me, pricing] = await Promise.all([
       this.data.getOrders(filters),
-      // Dashboard : un devis payé est devenu une commande, il n'a plus sa
-      // place dans la liste des devis (il figure dans l'onglet Commandes).
-      this.data.getQuotes(filters.period, false),
-      // Tous les devis, payés compris : sert à rattacher une commande de groupe
-      // à son devis d'origine (liste des personnes) sur la carte commande.
-      this.data.getQuotes(filters.period, true),
+      /* Deux listes, une seule lecture des lignes (getQuotesDashboard) :
+         - non payés : un devis payé est devenu une commande, il n'a plus sa
+           place dans la liste des devis (il figure dans l'onglet Commandes) ;
+         - tous, payés compris : sert à rattacher une commande de groupe à son
+           devis d'origine (liste des personnes) sur la carte commande. */
+      this.data.getQuotesDashboard(filters.period),
       this.data.getDesigns(),
       this.currentAdmin(req),
       // Prix catalogue TTC : pré-remplissent la fenêtre de chiffrage des devis.
@@ -353,6 +353,25 @@ export class AdminController {
     }
 
     try {
+      /* 0) Lignes du brouillon AVANT chiffrage, pour pouvoir l'annuler si un
+         garde-fou (TVA, montant) refuse l'envoi : le lien de paiement que le
+         client a peut-être déjà ne doit jamais afficher un prix refusé. */
+      const avant = await this.shopify.getDraftOrder(quote.draftOrderId);
+      const lignesAvant: Array<Record<string, any>> = Array.isArray(avant?.line_items)
+        ? avant.line_items
+        : [];
+      const annulerChiffrage = async (): Promise<void> => {
+        if (!lignesAvant.length) return;
+        try {
+          await this.shopify.restaurerLignes(quote.draftOrderId as string, lignesAvant);
+        } catch (e) {
+          this.logger.error(
+            `Devis ${quoteId} : chiffrage refusé mais brouillon NON restauré ` +
+              `(${(e as Error).message}). Vérifiez son prix dans Shopify.`,
+          );
+        }
+      };
+
       // 1) Applique le prix au brouillon (total recalculé par Shopify).
       const draft = prixArticles && articles
         ? await this.shopify.setDraftOrderArticles(quote.draftOrderId, articles, prixArticles)
@@ -365,13 +384,15 @@ export class AdminController {
          Si le réglage réel diffère — modifié entre-temps, ou pas encore lu —
          le client paierait un autre montant que le TTC affiché : 20 % de moins
          si Shopify extrait la TVA d'un prix HT, 20 % de plus s'il l'ajoute à
-         un prix TTC. Le prix est déjà posé sur le brouillon, mais rien n'est
-         envoyé : rouvrir la modale relit le réglage et recalcule.
+         un prix TTC. Le prix déjà posé est ANNULÉ (brouillon remis à son état
+         d'avant) et rien n'est envoyé : rouvrir la modale relit le réglage et
+         recalcule.
          Absent (page chargée avant cette version), on retient l'hypothèse
          historique : boutique en prix taxes incluses. */
       const taxes = ShopifyService.lireTaxes(draft || {});
       const suppose = taxesIncluses === undefined ? true : taxesIncluses === true;
       if (taxes.taxesIncluded !== null && taxes.taxesIncluded !== suppose) {
+        await annulerChiffrage();
         res.status(409).json({
           ok: false,
           error:
@@ -406,6 +427,7 @@ export class AdminController {
       if (totalAffiche !== undefined && Number.isFinite(affiche) && Number.isFinite(reel) &&
           Math.abs(affiche - reel) > tolerance) {
         const euros = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+        await annulerChiffrage();
         res.status(409).json({
           ok: false,
           ecartTva: true,

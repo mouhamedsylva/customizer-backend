@@ -16,6 +16,9 @@ import { PreviewImageDto } from './dto/preview-image.dto';
 import { PreviewMultiDto } from './dto/preview-multi.dto';
 import { CloudinaryService } from '../shared/cloudinary.service';
 
+/** Taille maximale d'un design partagé, sérialisé (caractères). */
+const TAILLE_MAX_DESIGN = 1_000_000;
+
 @Controller('export')
 export class ExportController {
   constructor(
@@ -23,11 +26,26 @@ export class ExportController {
     private readonly cloudinary: CloudinaryService,
   ) {}
 
-  /** POST /api/export/share */
+  /**
+   * POST /api/export/share
+   *
+   * Route PUBLIQUE qui écrit en base : plafonnée en débit et en taille. Sans
+   * limite propre, le `designData` (JSON libre) pouvait peser jusqu'à la borne
+   * globale du corps (25 Mo) ; quelques centaines d'envois remplissaient la
+   * table. Un design sérialisé pèse quelques Ko — les images y sont des URL
+   * Cloudinary, pas des données brutes.
+   */
   @Post('share')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   async createShare(
     @Body() dto: ShareDesignDto,
   ): Promise<{ shareId: string; shareUrl: string }> {
+    if (JSON.stringify(dto.designData ?? {}).length > TAILLE_MAX_DESIGN) {
+      throw new HttpException(
+        'Design trop volumineux pour être partagé.',
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
     return this.exportService.createShare(dto.designData);
   }
 

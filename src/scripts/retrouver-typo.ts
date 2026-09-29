@@ -76,7 +76,13 @@ async function main(): Promise<void> {
   const depot = base.getRepository(Order);
   const typo = new TypoSvgService();
 
-  const commandes = await depot.find(numero ? { where: { orderNumber: numero } } : {});
+  /* Le numéro est stocké « #20544 » (payload.name de Shopify) : on accepte
+     « 20544 », « #20544 » ou l'id Shopify de la commande. */
+  const commandes = await depot.find(
+    numero
+      ? { where: [{ orderNumber: `#${numero}` }, { orderNumber: numero }, { shopifyOrderId: numero }] }
+      : {},
+  );
   let trouvees = 0, echecs = 0, ignorees = 0;
 
   for (const o of commandes) {
@@ -99,7 +105,7 @@ async function main(): Promise<void> {
         }
         const svg = await telecharger(String(p.value));
         const r = svg ? await typo.identifier(svg) : null;
-        const ref = `#${o.orderNumber ?? o.shopifyOrderId} ligne ${i + 1} ${p.name}`;
+        const ref = `${o.orderNumber ?? '#' + o.shopifyOrderId} ligne ${i + 1} ${p.name}`;
         if (!r) {
           echecs++;
           console.log(`  ✗ ${ref} : ${svg ? 'non identifiable' : 'SVG inaccessible'}`);

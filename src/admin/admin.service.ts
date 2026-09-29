@@ -376,6 +376,36 @@ export class AdminService implements OnModuleInit {
     return this.reorder(rows, ids.map((r) => r.id), (q) => q.id);
   }
 
+  /**
+   * Les deux listes de devis du dashboard (non payés / tous) en UNE lecture
+   * des lignes : les mêmes devis — colonne JSON et aperçus compris, jusqu'à
+   * plusieurs Mo chacun — étaient chargés deux fois à chaque affichage.
+   * Mêmes résultats que deux appels à `getQuotes`.
+   */
+  async getQuotesDashboard(
+    period?: string,
+    limit = QUOTES_LIMIT,
+  ): Promise<{ nonPayes: Quote[]; tous: Quote[] }> {
+    const since = periodStart(period);
+    const idsDe = async (includePaid: boolean): Promise<string[]> => {
+      const qb = this.quotes.createQueryBuilder('q').select('q.id', 'id');
+      if (since) qb.andWhere('q.createdAt >= :since', { since });
+      if (!includePaid) {
+        qb.andWhere('(q.draftStatus IS NULL OR q.draftStatus <> :done)', { done: 'completed' });
+      }
+      const r = await qb.orderBy('q.createdAt', 'DESC').limit(limit).getRawMany<{ id: string }>();
+      return r.map((x) => x.id);
+    };
+    const [idsNonPayes, idsTous] = await Promise.all([idsDe(false), idsDe(true)]);
+    const union = [...new Set([...idsNonPayes, ...idsTous])];
+    if (!union.length) return { nonPayes: [], tous: [] };
+    const rows = await this.quotes.find({ where: { id: In(union) } });
+    return {
+      nonPayes: this.reorder(rows, idsNonPayes, (q) => q.id),
+      tous: this.reorder(rows, idsTous, (q) => q.id),
+    };
+  }
+
   /** Un devis par son id (pour l'envoi de facture). */
   async getQuote(id: string): Promise<Quote | null> {
     return this.quotes.findOne({ where: { id } });
@@ -494,7 +524,12 @@ export class AdminService implements OnModuleInit {
       .limit(300)
       .getRawMany<{ id: string }>();
     if (!ids.length) return [];
+    /* SANS `designData` : le dashboard n'affiche que l'id, le type et la date.
+       Ce JSON est libre et public (POST /export/share) : 300 designs de
+       plusieurs Mo, chargés à CHAQUE affichage du dashboard, suffisaient à
+       faire tomber le processus en mémoire. */
     const rows = await this.designs.find({
+      select: { id: true, productType: true, createdAt: true, shopifyOrderId: true },
       where: { id: In(ids.map((r) => r.id)) },
     });
     return this.reorder(rows, ids.map((r) => r.id), (d) => d.id);

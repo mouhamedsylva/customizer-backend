@@ -120,12 +120,17 @@ describe('POST /api/admin/quotes/:id/invoice — garde-fou sur le montant', () =
     expect(r.body.ecartTva).toBe(true);
     expect(r.body.error).toContain('750,00 €');
     expect(h.shopify.callsTo('sendDraftOrderInvoice')).toHaveLength(0);
+    // Le prix refusé ne reste pas sur le brouillon : lignes d'avant remises.
+    const restaure = h.shopify.callsTo('restaurerLignes');
+    expect(restaure).toHaveLength(1);
+    expect(restaure[0].args[1]).toEqual([{ id: 1, variant_id: 42, quantity: 2, properties: [] }]);
   });
 
   it('envoie quand le montant affiché est bien celui facturé', async () => {
     const r = await envoyer(12.5);
     expect(r.body.ok).toBe(true);
     expect(h.shopify.callsTo('sendDraftOrderInvoice')).toHaveLength(1);
+    expect(h.shopify.callsTo('restaurerLignes')).toHaveLength(0);
   });
 
   it('ancienne page (sans totalAffiche) : comportement d’avant', async () => {

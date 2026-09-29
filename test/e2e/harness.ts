@@ -147,6 +147,11 @@ export class FakeShopify {
     };
   }
 
+  async restaurerLignes(id: unknown, lignes: unknown) {
+    this.record('restaurerLignes', [id, lignes]);
+    return { id, line_items: lignes };
+  }
+
   async updateDraftOrderLineItems(id: unknown, items: unknown) {
     this.record('updateDraftOrderLineItems', [id, items]);
     return { id, line_items: items };
@@ -246,6 +251,14 @@ export class FakeCloudinary {
     return {
       secure_url: 'https://res.cloudinary.com/demo/image/upload/v1/preview.png',
       public_id: 'test/preview123',
+    };
+  }
+
+  async uploadPieceJointe(...args: unknown[]) {
+    this.record('uploadPieceJointe', args);
+    return {
+      secure_url: 'https://res.cloudinary.com/demo/image/upload/v1/piece.pdf',
+      public_id: 'test/piece123',
     };
   }
 

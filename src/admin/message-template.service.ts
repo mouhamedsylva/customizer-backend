@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MessageTemplate } from '../database/entities/message-template.entity';
@@ -51,14 +51,28 @@ L'équipe Massacre Officiel`,
 
 @Injectable()
 export class MessageTemplateService implements OnModuleInit {
+  private readonly logger = new Logger(MessageTemplateService.name);
+
   constructor(
     @InjectRepository(MessageTemplate)
     private readonly templates: Repository<MessageTemplate>,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // Initialise les templates par défaut au démarrage
-    await this.initializeDefaultTemplates();
+    /* Initialise les templates par défaut au démarrage — SANS pouvoir faire
+       échouer ce démarrage : si la table `message_templates` manque, l'erreur
+       remontait jusqu'à Nest, l'application ne démarrait plus et Docker la
+       relançait en boucle (configurateur, webhooks et dashboard hors
+       service). Les factures partent alors avec le message de repli, et
+       SchemaCheckService signale la table manquante. */
+    try {
+      await this.initializeDefaultTemplates();
+    } catch (e) {
+      this.logger.error(
+        `Modèles de message indisponibles (${(e as Error).message}) : ` +
+          'messages de repli utilisés. Voir le contrôle du schéma au démarrage.',
+      );
+    }
   }
 
   /**

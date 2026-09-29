@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { AdminModule } from '../admin/admin.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
+import { SchemaCheckService } from './schema-check.service';
 
 @Module({
   /* AdminModule fournit AdminSessionGuard, qui protège GET /api/health/variants
@@ -13,5 +14,6 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
      n'importe pas ce module : pas de cycle non plus. */
   imports: [AdminModule, WebhooksModule],
   controllers: [HealthController],
+  providers: [SchemaCheckService],
 })
 export class HealthModule {}

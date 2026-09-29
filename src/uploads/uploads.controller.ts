@@ -22,6 +22,13 @@ import { TextSvgService } from '../shared/text-svg.service';
 import { TextOutlineService } from '../shared/text-outline.service';
 import { AdminSessionGuard } from '../admin/admin-session.guard';
 import { UploadTextSvgDto } from './dto/upload-text-svg.dto';
+import {
+  TYPES_DOCUMENTS_DEVIS,
+  TYPES_IMAGES,
+  TYPES_PIECE_JOINTE,
+  contenuConforme,
+  filtreTypes,
+} from './type-fichier';
 
 // Type minimal du fichier multer (evite la dependance forte a @types/multer dans la signature).
 interface UploadedMulterFile {
@@ -54,11 +61,12 @@ export class UploadsController {
    * Optimise (2000x2000, PNG q90) et upload sur Cloudinary.
    */
   @Post('logo')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_IMAGES) }))
   async uploadLogo(
     @UploadedFile() file: UploadedMulterFile,
   ): Promise<UploadResult> {
     this.assertFile(file);
+    this.assertContenu(file);
     try {
       return await this.cloudinary.uploadLogo(file.buffer);
     } catch (error) {
@@ -74,11 +82,12 @@ export class UploadsController {
    * Optimise (1200x1200, JPEG q85) et upload dans le dossier previews.
    */
   @Post('preview')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_IMAGES) }))
   async uploadPreview(
     @UploadedFile() file: UploadedMulterFile,
   ): Promise<UploadResult> {
     this.assertFile(file);
+    this.assertContenu(file);
     try {
       return await this.cloudinary.uploadPreview(file.buffer);
     } catch (error) {
@@ -98,7 +107,7 @@ export class UploadsController {
    * devis n'est pas authentifié.
    */
   @Post('piece-jointe')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_PIECE_JOINTE) }))
   async uploadPieceJointe(
     @UploadedFile() file: UploadedMulterFile,
   ): Promise<UploadResult> {
@@ -108,12 +117,8 @@ export class UploadsController {
        validation y est purement cliente. Ici on l'ajoute côté serveur : cette
        route accepte le PDF, donc la liste des types autorisés doit être fermée
        explicitement plutôt que laissée ouverte à n'importe quel binaire. */
-    const TYPES_AUTORISES = [
-      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
-      'application/pdf',
-    ];
     const type = String(file.mimetype || '').toLowerCase();
-    if (!TYPES_AUTORISES.includes(type)) {
+    if (!TYPES_PIECE_JOINTE.includes(type) || !contenuConforme(file.buffer, type)) {
       throw new HttpException(
         `Type de fichier non accepté (${type || 'inconnu'}). ` +
           'Formats acceptés : JPG, PNG, WEBP, GIF, SVG, PDF.',
@@ -259,6 +264,15 @@ export class UploadsController {
     }
   }
 
+  /** Le contenu doit être le type déclaré (signature des premiers octets). */
+  private assertContenu(file: UploadedMulterFile): void {
+    if (!contenuConforme(file.buffer, file.mimetype)) {
+      throw new BadRequestException(
+        `Le contenu du fichier ne correspond pas à son type (${file.mimetype}).`,
+      );
+    }
+  }
+
   /** Validation basique du fichier recu (presence + taille). */
   private assertFile(file: UploadedMulterFile): void {
     if (!file || !file.buffer) {
@@ -278,25 +292,15 @@ export class UploadsController {
    */
   @Post('quote-attachment')
   @UseGuards(AdminSessionGuard) // Seuls les admins peuvent uploader
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_DOCUMENTS_DEVIS) }))
   async uploadQuoteAttachment(
     @UploadedFile() file: UploadedMulterFile,
   ): Promise<UploadResult & { name: string; type: string; size: number }> {
     this.assertFile(file);
 
     // Types de fichiers autorisés pour les pièces jointes
-    const TYPES_AUTORISES = [
-      'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain'
-    ];
-    
     const type = String(file.mimetype || '').toLowerCase();
-    if (!TYPES_AUTORISES.includes(type)) {
+    if (!TYPES_DOCUMENTS_DEVIS.includes(type) || !contenuConforme(file.buffer, type)) {
       throw new HttpException(
         `Type de fichier non accepté (${type || 'inconnu'}). ` +
           'Formats acceptés : JPG, PNG, WEBP, GIF, PDF, DOC, DOCX, XLS, XLSX, TXT.',

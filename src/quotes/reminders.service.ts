@@ -5,7 +5,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, IsNull } from 'typeorm';
+import { Repository, Not, IsNull, LessThan } from 'typeorm';
 import { Quote } from '../database/entities/quote.entity';
 import { ShopifyService } from '../shared/shopify.service';
 import { SettingsService } from '../admin/settings.service';
@@ -91,7 +91,14 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
     let candidates: Quote[] = [];
     try {
       candidates = await this.quotes.find({
-        where: { draftStatus: 'invoice_sent', invoiceSentAt: Not(IsNull()) },
+        /* Relances ÉPUISÉES exclues : ces devis restent `invoice_sent` pour
+           toujours, et, pris « les plus anciens d'abord », ils occupaient tout
+           le lot — au-delà de 200, aucun devis récent n'était plus relancé. */
+        where: {
+          draftStatus: 'invoice_sent',
+          invoiceSentAt: Not(IsNull()),
+          remindersSent: LessThan(cfg.reminderDays.length),
+        },
         // Plafond : chaque relance déclenche un appel Shopify ET un e-mail
         // RÉEL au client. Un lot borné limite autant la pression sur l'API que
         // le risque d'une rafale de messages si un défaut de données rendait

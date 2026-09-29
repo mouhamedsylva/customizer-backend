@@ -830,6 +830,38 @@ export class ShopifyService {
   }
 
   /**
+   * Remet les lignes d'un brouillon telles qu'elles étaient (lues avant une
+   * modification), pour ANNULER un chiffrage refusé par un garde-fou.
+   *
+   * Sans elle, un 409 (TVA, montant) laissait le prix refusé sur le brouillon :
+   * le client qui avait déjà le lien de paiement — il ne change pas d'un envoi
+   * à l'autre — voyait et pouvait payer ce prix-là.
+   */
+  async restaurerLignes(
+    draftOrderId: string | number,
+    lignes: Array<Record<string, any>>,
+  ): Promise<Record<string, any>> {
+    const propres: ShopifyLineItem[] = lignes.map((li) => {
+      const commun = {
+        price: li.price != null ? String(li.price) : undefined,
+        quantity: Math.max(1, Number(li.quantity) || 1),
+        properties: Array.isArray(li.properties) ? li.properties : [],
+        ...(li.applied_discount ? { applied_discount: li.applied_discount } : {}),
+      };
+      return li.variant_id
+        ? { variant_id: li.variant_id, ...commun }
+        : {
+            title: String(li.title || 'Article'),
+            custom: true,
+            ...commun,
+            ...(li.taxable !== undefined ? { taxable: li.taxable } : {}),
+            ...(li.requires_shipping !== undefined ? { requires_shipping: li.requires_shipping } : {}),
+          };
+    });
+    return this.updateDraftOrderLineItems(draftOrderId, propres);
+  }
+
+  /**
    * Chiffre un devis multi-articles LIGNE PAR LIGNE : les lignes du brouillon
    * sont REMPLACÉES par une ligne personnalisée par article, chacune à son prix.
    *
