@@ -134,3 +134,46 @@ describe('dashboard — bouton de chiffrage', () => {
     expect(articles).toHaveLength(3);
   });
 });
+
+describe('appliquerQuantites', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { appliquerQuantites } = require('../src/quotes/articles-devis');
+  const date = new Date('2026-09-29T10:00:00Z');
+
+  it('réécrit les lignes, le résumé, le total et garde l’historique', () => {
+    const d = appliquerQuantites(GUILLERMAIN, [30, 10, 50], 'patron@test.fr', date);
+    expect(d.coin.qty).toBe(90);
+    expect(d.coin.qtyDemandee).toBe(70);
+    expect(d.coin.details[0]).toContain('90 pièce(s)');
+    expect(d.coin.details[1]).toMatch(/^30× Patch personnalisé/);
+    expect(d.coin.details[3]).toMatch(/^50× Coin métal/);
+    expect(d.historique).toEqual([
+      { date: date.toISOString(), admin: 'patron@test.fr', action: 'quantites', avant: [10, 10, 50], apres: [30, 10, 50] },
+    ]);
+    expect(articlesDuDevis(d)!.map((a) => a.qty)).toEqual([30, 10, 50]); // toujours cohérent
+    expect(GUILLERMAIN.coin.qty).toBe(70); // l'original n'est pas touché
+  });
+
+  it('corrige un devis à produit unique et ses familles', () => {
+    const devis = {
+      coin: {
+        name: 'Patch personnalisé', qty: 50, details: ['50× Patch personnalisé — Rond'],
+        familles: [{ cle: 'patch', libelle: 'Patchs', qty: 50, lignes: ['50× Patch personnalisé — Rond'] }],
+      },
+    };
+    const d = appliquerQuantites(devis, [30], 'a@b.fr', date);
+    expect(d.coin.qty).toBe(30);
+    expect(d.coin.details).toEqual(['30× Patch personnalisé — Rond']);
+    expect(d.coin.familles[0]).toMatchObject({ qty: 30, lignes: ['30× Patch personnalisé — Rond'] });
+    // Deuxième correction : la quantité demandée reste celle d'origine.
+    expect(appliquerQuantites(d, [40], 'a@b.fr', date).coin.qtyDemandee).toBe(50);
+  });
+
+  it('ne change rien si les quantités sont identiques, refuse les valeurs invalides', () => {
+    expect(appliquerQuantites(GUILLERMAIN, [10, 10, 50], 'a', date)).toBeNull();
+    expect(() => appliquerQuantites(GUILLERMAIN, [10, 0, 50], 'a', date)).toThrow();
+    expect(() => appliquerQuantites(GUILLERMAIN, [10, 2.5, 50], 'a', date)).toThrow();
+    expect(() => appliquerQuantites(GUILLERMAIN, [10, 50], 'a', date)).toThrow();
+    expect(() => appliquerQuantites({ ...GUILLERMAIN, group: { rows: [{ qty: 1 }] } }, [1], 'a', date)).toThrow();
+  });
+});

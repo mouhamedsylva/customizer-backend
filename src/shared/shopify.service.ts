@@ -705,13 +705,23 @@ export class ShopifyService {
      * les lignes, avec sa répartition en centiemes. C'est le chemin des devis
      * mono-produit et de tous les devis antérieurs — il ne doit pas bouger. */
     prixParTitre?: Record<string, number>,
+    /* NOUVELLE QUANTITÉ (correction du devis par l'admin), pour un brouillon
+       à ligne UNIQUE. Sur plusieurs lignes, on ne saurait pas laquelle
+       corriger : c'est le rôle de setDraftOrderArticles. */
+    quantiteImposee?: number,
   ): Promise<Record<string, any>> {
     const draft = await this.getDraftOrder(draftOrderId);
-    const items: Array<Record<string, any>> = Array.isArray(draft.line_items)
+    let items: Array<Record<string, any>> = Array.isArray(draft.line_items)
       ? draft.line_items
       : [];
     if (!items.length) {
       throw new Error('Ce brouillon ne contient aucune ligne.');
+    }
+    if (quantiteImposee !== undefined) {
+      if (items.length !== 1) {
+        throw new Error('Quantité imposée impossible : le brouillon compte plusieurs lignes.');
+      }
+      items = [{ ...items[0], quantity: quantiteImposee }];
     }
 
     // Le prix unitaire saisi par l'équipe s'applique à TOUTES les lignes.

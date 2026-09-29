@@ -209,3 +209,20 @@ describe('dashboard — attributs du bouton de chiffrage', () => {
     expect(html).toContain('&quot;prixTtc&quot;:53.9');
   });
 });
+
+describe('palier recalculé dans la fenêtre (correction de quantité)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { grilleDe, palierDepuisGrille, prixPalier } = require('../src/quotes/prix-catalogue');
+
+  it('la fonction injectée dans la page donne les mêmes prix que le serveur', () => {
+    const enPage = new Function(`${String(palierDepuisGrille)}; return palierDepuisGrille;`)();
+    for (const cle of ['patches', 'sweatshirt', 'tshirt', 'drapeaux', 'coins'])
+      for (const qty of [1, 10, 20, 49, 50, 99, 100, 250]) {
+        expect(enPage(qty, grilleDe(cle, PAYLOAD))).toBe(prixPalier(cle, qty, PAYLOAD));
+      }
+  });
+
+  it('patchs : prix « sur demande » (aucun) à partir de 100', () => {
+    expect(palierDepuisGrille(100, grilleDe('patches', PAYLOAD))).toBeNull();
+  });
+});

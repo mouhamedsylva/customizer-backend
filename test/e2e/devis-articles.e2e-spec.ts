@@ -138,3 +138,75 @@ describe('POST /api/admin/quotes/:id/invoice — garde-fou sur le montant', () =
     expect(r.body.ok).toBe(true);
   });
 });
+
+describe('POST /api/admin/quotes/:id/invoice — correction de quantité', () => {
+  let h: Harness;
+  let cookie = '';
+  const ID = '77777777-2222-3333-4444-555555555555';
+  const repo = () => h.app.get(DataSource).getRepository(Quote);
+
+  beforeAll(async () => {
+    h = await createHarness();
+  }, 60000);
+  afterAll(async () => {
+    await h?.close();
+  });
+  beforeEach(async () => {
+    await h.resetDb();
+    h.shopify.reset();
+    const r = await request(h.app.getHttpServer())
+      .post('/api/admin/login')
+      .set('X-Forwarded-For', freshIp())
+      .send({ email: 'patron@test.fr', password: 'MotDePasseTest123' });
+    const set = r.headers['set-cookie'];
+    cookie = (Array.isArray(set) ? set : [set]).map((c: string) => c.split(';')[0]).join('; ');
+    await repo().save({
+      id: ID,
+      draftOrderId: '1',
+      draftStatus: 'invoice_sent',
+      quoteData: {
+        customer: { nom: 'Client', email: 'c@exemple.fr' },
+        coin: {
+          name: 'Commande sur devis (2 articles)',
+          qty: 60,
+          details: ['10× Patch personnalisé — Rond', '50× Coin métal — Recto verso'],
+        },
+      },
+    } as Partial<Quote>);
+  });
+
+  const envoyer = (corps: Record<string, unknown>) =>
+    request(h.app.getHttpServer())
+      .post(`/api/admin/quotes/${ID}/invoice`)
+      .set('Cookie', cookie)
+      .send({ unitPrice: 10, message: 'Bonjour', taxesIncluses: true, ...corps });
+
+  it('enregistre les nouvelles quantités et refait le brouillon avec elles', async () => {
+    const r = await envoyer({ quantites: [30, 50], prixParArticle: [4, 12] });
+    expect(r.body.ok).toBe(true);
+    const q = await repo().findOneByOrFail({ id: ID });
+    const coin = (q.quoteData as any).coin;
+    expect(coin.qty).toBe(80);
+    expect(coin.qtyDemandee).toBe(60);
+    expect(coin.details[0]).toMatch(/^30× Patch/);
+    expect((q.quoteData as any).historique[0]).toMatchObject({ admin: 'patron@test.fr', avant: [10, 50], apres: [30, 50] });
+    const [, articles] = h.shopify.callsTo('setDraftOrderArticles')[0].args as [unknown, Array<{ qty: number }>];
+    expect(articles.map((a) => a.qty)).toEqual([30, 50]);
+  });
+
+  it('refuse une quantité nulle ou décimale, sans rien modifier', async () => {
+    for (const quantites of [[0, 50], [2.5, 50]]) {
+      const r = await envoyer({ quantites, prixParArticle: [4, 12] });
+      expect(r.status).toBe(400);
+    }
+    expect(((await repo().findOneByOrFail({ id: ID })).quoteData as any).coin.qty).toBe(60);
+    expect(h.shopify.callsTo('setDraftOrderArticles')).toHaveLength(0);
+  });
+
+  it('restaure les quantités si le garde-fou sur le montant bloque l’envoi', async () => {
+    const r = await envoyer({ quantites: [30, 50], prixParArticle: [4, 12], totalAffiche: 1 });
+    expect(r.status).toBe(409);
+    expect(((await repo().findOneByOrFail({ id: ID })).quoteData as any).coin.qty).toBe(60);
+    expect(h.shopify.callsTo('sendDraftOrderInvoice')).toHaveLength(0);
+  });
+});

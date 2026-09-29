@@ -25,7 +25,7 @@ import {
   QUOTE_ONLY_KEYS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
-import { articlesDuDevis } from '../quotes/articles-devis';
+import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
 import { svgRegenere } from '../shared/zones-texte';
 import {
   loginPage,
@@ -244,6 +244,10 @@ export class AdminController {
     /* Total TTC AFFICHÉ à l'opérateur au moment de l'envoi : comparé au total
        réel du brouillon (étape 1.3) avant que la facture ne parte. */
     @Body('totalAffiche') totalAffiche: unknown,
+    /* CORRECTION DE QUANTITÉ par l'admin (le client s'est trompé) : une par
+       article (ordre de articlesDuDevis), ou une seule pour un devis à produit
+       unique. Absent : quantités inchangées. */
+    @Body('quantites') quantites: unknown,
     @Body('attachments') attachments: any[],
     @Res() res: Response,
   ): Promise<void> {
@@ -320,7 +324,30 @@ export class AdminController {
       return;
     }
 
-    const data = (quote.quoteData || {}) as Record<string, any>;
+    const dataOriginal = (quote.quoteData || {}) as Record<string, any>;
+
+    /* CORRECTION DE QUANTITÉ : appliquée à une COPIE du devis, enregistrée
+       juste avant le chiffrage, et annulée si l'envoi échoue ou est refusé —
+       le devis et son brouillon Shopify doivent toujours dire la même chose. */
+    let dataModifiee: Record<string, any> | null = null;
+    if (quantites !== undefined && quantites !== null) {
+      if (!Array.isArray(quantites)) {
+        res.status(400).json({ ok: false, error: 'Quantités illisibles.' });
+        return;
+      }
+      try {
+        const admin = await this.currentAdmin(req);
+        dataModifiee = appliquerQuantites(
+          dataOriginal,
+          quantites.map((q) => Number(q)),
+          String((admin as any)?.email || 'admin'),
+        );
+      } catch (e) {
+        res.status(400).json({ ok: false, error: (e as Error).message });
+        return;
+      }
+    }
+    const data = dataModifiee ?? dataOriginal;
     const customer = data.customer || {};
     const productName = data.coin?.name || 'votre commande personnalisée';
 
@@ -352,6 +379,12 @@ export class AdminController {
       }
     }
 
+    /* Annulation en cas d'échec : le devis (quantités) et le brouillon (prix,
+       quantités) reviennent à leur état d'avant tant que la facture n'est pas
+       partie. Voir `annulerChiffrage`. */
+    let brouillonModifie = false;
+    let factureEnvoyee = false;
+    let annuler: (() => Promise<void>) | null = null;
     try {
       /* 0) Lignes du brouillon AVANT chiffrage, pour pouvoir l'annuler si un
          garde-fou (TVA, montant) refuse l'envoi : le lien de paiement que le
@@ -361,7 +394,16 @@ export class AdminController {
         ? avant.line_items
         : [];
       const annulerChiffrage = async (): Promise<void> => {
-        if (!lignesAvant.length) return;
+        if (dataModifiee) {
+          try {
+            await this.data.updateQuoteData(quoteId, dataOriginal);
+          } catch (e) {
+            this.logger.error(
+              `Devis ${quoteId} : quantités NON restaurées (${(e as Error).message}).`,
+            );
+          }
+        }
+        if (!lignesAvant.length || !brouillonModifie) return;
         try {
           await this.shopify.restaurerLignes(quote.draftOrderId as string, lignesAvant);
         } catch (e) {
@@ -371,11 +413,22 @@ export class AdminController {
           );
         }
       };
+      annuler = annulerChiffrage;
+
+      // 0.5) Quantités corrigées : enregistrées AVANT de toucher au brouillon.
+      if (dataModifiee) await this.data.updateQuoteData(quoteId, dataModifiee);
 
       // 1) Applique le prix au brouillon (total recalculé par Shopify).
+      brouillonModifie = true;
       const draft = prixArticles && articles
         ? await this.shopify.setDraftOrderArticles(quote.draftOrderId, articles, prixArticles)
-        : await this.shopify.setDraftOrderPrice(quote.draftOrderId, price, tarifs);
+        : await this.shopify.setDraftOrderPrice(
+            quote.draftOrderId,
+            price,
+            tarifs,
+            // Produit unique à quantité corrigée : la ligne prend la nouvelle.
+            dataModifiee && !articles ? Number(dataModifiee.coin?.qty) : undefined,
+          );
 
       /* 1.2) GARDE-FOU TVA — avant que quoi que ce soit ne parte au client.
          L'opérateur saisit des prix HT ; la modale les convertit selon le
@@ -486,6 +539,7 @@ export class AdminController {
         subject: `Votre devis — ${productName}`,
         custom_message: finalMessage,
       });
+      factureEnvoyee = true; // plus rien à défaire : le client a son devis
 
       // 4) Reflète immédiatement l'état « facture envoyée » dans le dashboard.
       //    invoiceSentAt sert de point de départ aux relances automatiques ;
@@ -548,6 +602,10 @@ export class AdminController {
         ...(statutEcrit ? {} : { avertissement: 'statut-non-enregistre' }),
       });
     } catch (err) {
+      /* Échec avant l'envoi de la facture (Shopify indisponible, brouillon à
+         plusieurs lignes pour une quantité unique…) : on défait, pour que le
+         devis et le brouillon ne divergent pas. */
+      if (!factureEnvoyee && annuler) await annuler();
       res.status(502).json({ ok: false, error: (err as Error).message });
     }
   }

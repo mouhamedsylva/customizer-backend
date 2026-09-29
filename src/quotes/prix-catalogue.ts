@@ -55,16 +55,58 @@ export function prixPalier(
   qty: number,
   payload: PricingPayload,
 ): number | null {
-  if (QUOTE_ONLY_KEYS.includes(key)) return null;
-  if (key === 'patches' && qty >= SEUIL_PATCHS_SUR_DEMANDE) return null;
-  const grille = payload.tiers?.[key];
-  if (Array.isArray(grille)) {
-    for (const t of grille) {
-      if (t && t.min <= qty && t.price > 0) return t.price;
-    }
-  }
+  return palierDepuisGrille(qty, grilleDe(key, payload));
+}
+
+/**
+ * Grille de prix d'un produit, sous une forme AUTONOME : tout ce qu'il faut
+ * pour calculer un palier, sans le payload ni les constantes du module.
+ * Servie telle quelle à la fenêtre de chiffrage (recalcul quand l'admin
+ * corrige une quantité).
+ */
+export interface GrillePrix {
+  /** Paliers triés par `min` décroissant (comme le payload). */
+  tiers: Array<{ min: number; price: number }>;
+  /** Prix de base TTC, ou 0. */
+  base: number;
+  /** Produit vendu sur devis : jamais de prix catalogue. */
+  surDevis: boolean;
+  /** À partir de cette quantité, prix « sur demande » (patchs : 100), ou 0. */
+  surDemandeDes: number;
+}
+
+export function grilleDe(key: ProductKey, payload: PricingPayload): GrillePrix {
+  const tiers = payload.tiers?.[key];
   const base = Number(payload.prices?.[key]);
-  return Number.isFinite(base) && base > 0 ? base : null;
+  return {
+    tiers: Array.isArray(tiers) ? tiers.filter((t) => t && t.price > 0) : [],
+    base: Number.isFinite(base) && base > 0 ? base : 0,
+    surDevis: QUOTE_ONLY_KEYS.includes(key),
+    surDemandeDes: key === 'patches' ? SEUIL_PATCHS_SUR_DEMANDE : 0,
+  };
+}
+
+/**
+ * Prix unitaire TTC pour `qty` pièces d'après une grille : premier palier
+ * atteint, sinon le prix de base ; null quand aucun prix n'a de sens.
+ *
+ * ⚠ Fonction AUTONOME, injectée telle quelle dans la page (String(fonction)) :
+ * aucune variable du module, pas de gabarit `${…}` ni d'accent grave.
+ */
+export function palierDepuisGrille(qty: number, grille: GrillePrix | null | undefined): number | null {
+  if (!grille || grille.surDevis) return null;
+  if (grille.surDemandeDes && qty >= grille.surDemandeDes) return null;
+  for (const t of grille.tiers || []) {
+    if (t.min <= qty && t.price > 0) return t.price;
+  }
+  return grille.base > 0 ? grille.base : null;
+}
+
+/** Clé catalogue d'un devis à produit unique (même règle que prixDevisSimple). */
+export function cleDevisSimple(quoteData: any): ProductKey | null {
+  const coin = quoteData?.coin;
+  if (!coin || quoteData?.group) return null;
+  return cleUnique(lire(coin.details)) ?? cleCatalogue(coin.name);
 }
 
 export type ArticlePrixe = ArticleDevis & { prixTtc?: number };

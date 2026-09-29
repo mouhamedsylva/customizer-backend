@@ -449,6 +449,11 @@ export class AdminService implements OnModuleInit {
     });
   }
 
+  /** Remplace les données d'un devis (correction de quantité, ou annulation). */
+  async updateQuoteData(id: string, quoteData: Record<string, unknown>): Promise<void> {
+    await this.quotes.update(id, { quoteData: quoteData as any });
+  }
+
   /** Une commande par son id Shopify. */
   async getOrder(shopifyOrderId: string): Promise<Order | null> {
     return this.orders.findOne({ where: { shopifyOrderId } });

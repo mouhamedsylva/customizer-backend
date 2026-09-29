@@ -57,3 +57,99 @@ export function articlesDuDevis(quoteData: any): ArticleDevis[] | null {
   }
   return null;
 }
+
+/** Une quantité acceptable : entier de 1 à 100 000. */
+export function quantiteValide(n: unknown): n is number {
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 100000;
+}
+
+/** Réécrit les quantités des lignes « N× … » d'une liste, dans l'ordre. */
+function reecrire(lignes: unknown, qtes: number[]): { lignes: unknown; ok: boolean } {
+  if (!Array.isArray(lignes)) return { lignes, ok: false };
+  let k = 0;
+  const out = lignes.map((brut) => {
+    const s = String(brut ?? '');
+    const m = LIGNE.exec(s);
+    if (!m || k >= qtes.length) return brut;
+    return s.replace(/^\s*\d+\s*×/, `${qtes[k++]}×`);
+  });
+  return { lignes: out, ok: k === qtes.length };
+}
+
+/**
+ * Applique de NOUVELLES QUANTITÉS à un devis (correction par l'admin, le
+ * client s'étant trompé), et renvoie le devis modifié — sans toucher à
+ * l'original.
+ *
+ * - `quantites` : une par article (ordre de `articlesDuDevis`), ou une seule
+ *   pour un devis à produit unique ;
+ * - réécrit les « N× » de `details` et des `familles`, recalcule
+ *   `familles[].qty` et `coin.qty` ;
+ * - garde la quantité DEMANDÉE à l'origine (`coin.qtyDemandee`, posée une
+ *   seule fois) et ajoute une entrée à `historique`.
+ *
+ * null si rien ne change ; lève une Error si les quantités ne correspondent
+ * pas au devis (nombre, valeurs, commande de groupe).
+ */
+export function appliquerQuantites(
+  quoteData: any,
+  quantites: number[],
+  admin: string,
+  maintenant: Date = new Date(),
+): any | null {
+  const coin = quoteData?.coin;
+  if (!coin || quoteData?.group?.rows?.length) {
+    throw new Error('La quantité d’une commande de groupe se corrige ligne par ligne, pas ici.');
+  }
+  if (!quantites.length || !quantites.every(quantiteValide)) {
+    throw new Error('Chaque quantité doit être un nombre entier entre 1 et 100 000.');
+  }
+
+  const articles = articlesDuDevis(quoteData);
+  const avant = articles ? articles.map((a) => a.qty) : [Number(coin.qty) || 0];
+  if (avant.length !== quantites.length) {
+    throw new Error('La liste des articles du devis a changé : rechargez la page.');
+  }
+  if (avant.every((q, i) => q === quantites[i])) return null;
+
+  const copie = JSON.parse(JSON.stringify(quoteData));
+  const c = copie.coin;
+
+  // `details` : réécrit s'il porte exactement ces lignes « N× ».
+  const nbDetails = lire(c.details).length;
+  if (nbDetails === quantites.length) c.details = reecrire(c.details, quantites).lignes;
+
+  // `familles` : lignes dans l'ordre aplati, puis total par famille.
+  if (Array.isArray(c.familles)) {
+    const nbFam = c.familles.reduce((n: number, f: any) => n + lire(f?.lignes).length, 0);
+    if (nbFam === quantites.length) {
+      let k = 0;
+      for (const f of c.familles) {
+        const n = lire(f?.lignes).length;
+        const qs = quantites.slice(k, k + n);
+        f.lignes = reecrire(f.lignes, qs).lignes;
+        if (n) f.qty = qs.reduce((s, q) => s + q, 0);
+        k += n;
+      }
+    } else if (c.familles.length === 1 && quantites.length === 1) {
+      c.familles[0].qty = quantites[0];
+      if (lire(c.familles[0].lignes).length === 1) c.familles[0].lignes = reecrire(c.familles[0].lignes, quantites).lignes;
+    }
+  }
+
+  const total = quantites.reduce((s, q) => s + q, 0);
+  // Pastille résumé « Commande sur devis : … 70 pièce(s). » : total à jour.
+  if (Array.isArray(c.details)) {
+    c.details = c.details.map((d: unknown) =>
+      typeof d === 'string' && !LIGNE.test(d) ? d.replace(/\b\d+(\s*pièce\(s\))/, `${total}$1`) : d,
+    );
+  }
+  if (c.qtyDemandee === undefined) c.qtyDemandee = Number(coin.qty) || total;
+  c.qty = total;
+
+  copie.historique = [
+    ...(Array.isArray(copie.historique) ? copie.historique : []),
+    { date: maintenant.toISOString(), admin, action: 'quantites', avant, apres: [...quantites] },
+  ];
+  return copie;
+}

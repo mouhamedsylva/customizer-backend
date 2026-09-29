@@ -7,6 +7,10 @@ import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
 import { articlesDuDevis } from '../quotes/articles-devis';
 import {
+  cleCatalogue,
+  cleDevisSimple,
+  grilleDe,
+  palierDepuisGrille,
   prixArticles,
   prixDevisSimple,
   prixFamille,
@@ -3145,7 +3149,11 @@ function quoteCard(
         <div class="sub">${esc(c.nom || 'Client')}${c.email ? ' · ' + esc(c.email) : ''} · ${
           group
             ? `${group.pieces || 0} pièce(s) · ${groupRows.length} ligne(s)`
-            : 'Qté ' + esc(coin.qty || '')
+            : 'Qté ' + esc(coin.qty || '') +
+              /* Quantité corrigée par l'admin : on garde la trace de la demande. */
+              (coin.qtyDemandee !== undefined && Number(coin.qtyDemandee) !== Number(coin.qty)
+                ? ` <span class="spec" title="Corrigée depuis le dashboard">modifiée · demandé : ${esc(coin.qtyDemandee)}</span>`
+                : '')
         }</div>
       </div>
       <div class="right">
@@ -3253,7 +3261,13 @@ function quoteCard(
                        (() => {
                          const articles = group ? null : articlesDuDevis(q.quoteData);
                          if (!articles) return '';
-                         const json = pricing ? prixArticles(articles, pricing) : articles;
+                         const prixes = pricing ? prixArticles(articles, pricing) : articles;
+                         /* + clé et grille du produit : la fenêtre recalcule le
+                            palier quand l'admin corrige une quantité. */
+                         const json = prixes.map((a) => {
+                           const cle = cleCatalogue(a.libelle);
+                           return { ...a, ...(cle ? { cle } : {}), ...(cle && pricing ? { grille: grilleDe(cle, pricing) } : {}) };
+                         });
                          return `data-articles="${esc(JSON.stringify(json))}"`;
                        })()
                      }
@@ -3263,6 +3277,18 @@ function quoteCard(
                        (() => {
                          const prix = pricing ? prixDevisSimple(q.quoteData, pricing) : null;
                          return prix != null ? `data-prix-ttc="${prix}"` : '';
+                       })()
+                     }
+                     ${
+                       /* CORRECTION DE QUANTITÉ (hors commande de groupe) :
+                          quantité demandée à l'origine, et grille du produit
+                          unique pour recalculer son palier. */
+                       (() => {
+                         if (group) return '';
+                         const cle = cleDevisSimple(q.quoteData);
+                         const grille = cle && pricing ? grilleDe(cle, pricing) : null;
+                         return `data-qte-modifiable="1" data-qty-demandee="${Number(coin.qtyDemandee ?? coin.qty) || 1}"` +
+                           (grille ? ` data-grille="${esc(JSON.stringify(grille))}"` : '');
                        })()
                      }>
                    ✉ ${st.key === 'sent' ? 'Corriger le prix et renvoyer' : 'Chiffrer et envoyer la facture'}
@@ -4186,10 +4212,18 @@ export function dashboardPage(
            le chemin des devis de patch, de coin, et de TOUS les devis déjà en
            base, qui ne portent pas de familles. -->
       <div class="price-row" id="inv-simple-block">
+        <!-- Quantité corrigeable (le client s'est trompé) : hors commande de
+             groupe. Le prix du palier suit, sauf s'il a été saisi à la main. -->
+        <div id="inv-qte-bloc" style="display:none">
+          <label class="lbl" for="inv-qte">Quantité</label>
+          <input type="number" id="inv-qte" min="1" max="100000" step="1"
+                 oninput="changerQuantiteSimple()" class="price-input mono" style="max-width:110px">
+          <small id="inv-qte-note" class="hint" style="display:block"></small>
+        </div>
         <div>
           <label class="lbl" id="inv-price-lbl">Prix unitaire HT (€)</label>
           <input type="number" id="inv-price" min="0.01" step="0.01" placeholder="0,00"
-                 oninput="updateInvoiceTotal()" class="price-input mono">
+                 oninput="invPrixManuel=true;updateInvoiceTotal()" class="price-input mono">
         </div>
         <div class="price-total">
           <span class="lbl">Total (<span id="inv-qty" class="mono">1</span> unités) <small class="inv-ttc">TTC</small></span>
@@ -5941,7 +5975,12 @@ export function dashboardPage(
           inv.getAttribute('data-flock') || '0',
           inv.getAttribute('data-familles') || '',
           inv.getAttribute('data-articles') || '',
-          inv.getAttribute('data-prix-ttc') || ''
+          inv.getAttribute('data-prix-ttc') || '',
+          {
+            modifiable: inv.getAttribute('data-qte-modifiable') === '1',
+            demandee: parseInt(inv.getAttribute('data-qty-demandee') || '', 10) || null,
+            grille: inv.getAttribute('data-grille') || ''
+          }
         );
       }
     });
@@ -6088,6 +6127,26 @@ export function dashboardPage(
        est alors saisi TTC, sans TVA ajoutée (voir envoyeDepuisTtc). */
     var invPrixTtc = null;
 
+    /* CORRECTION DE QUANTITÉ (le client s'est trompé), hors commande de groupe.
+       - invQteModifiable : le devis l'autorise (pas une commande de groupe) ;
+       - invQtyDemandee   : quantité demandée à l'origine, rappelée à l'admin ;
+       - invQtyOuverture  : quantité(s) à l'ouverture, pour n'envoyer que si
+                            quelque chose a changé ;
+       - invGrille        : grille du produit unique, pour recalculer le palier ;
+       - invPrixManuel    : prix saisi à la main — jamais écrasé par le palier. */
+    var invQteModifiable = false, invQtyDemandee = null, invGrille = null;
+    var invPrixManuel = false, invQtyOuverture = null;
+
+    /* Palier de prix : src/quotes/prix-catalogue.ts (palierDepuisGrille),
+       injecté tel quel — même règle que le serveur et le configurateur. */
+    ${String(palierDepuisGrille)}
+
+    function lireGrille(v){
+      if (!v) return null;
+      if (typeof v === 'object') return v;
+      try { return JSON.parse(v); } catch (e) { return null; }
+    }
+
     /* Un prix catalogue exploitable, ou null. Il vient d'un attribut HTML :
        on ne lui fait pas confiance au-delà d'un nombre positif. */
     function prixCatalogue(v){
@@ -6095,11 +6154,16 @@ export function dashboardPage(
       return isFinite(n) && n > 0 ? arrondi(n) : null;
     }
 
-    function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson,articlesJson,prixTtc){
+    function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson,articlesJson,prixTtc,qte){
       invQuoteId=id;
       invQty=Math.max(1,parseInt(qty,10)||1);
       invFlockCount=Math.max(0,parseInt(flockCount,10)||0);
       invPrixTtc = prixCatalogue(prixTtc);
+      qte = qte || {};
+      invQteModifiable = !!qte.modifiable;
+      invQtyDemandee = qte.demandee || null;
+      invGrille = lireGrille(qte.grille);
+      invPrixManuel = false;
 
       invFamilles = [];
       invParArticle = false;
@@ -6112,7 +6176,13 @@ export function dashboardPage(
                 libelle: 'Article ' + (i + 1) + ' — ' + String(a.libelle || 'Article'),
                 options: String(a.options || ''),
                 qty: Number(a.qty) || 0,
-                prixTtc: prixCatalogue(a.prixTtc)
+                qtyInitiale: Number(a.qty) || 0,
+                prixTtc: prixCatalogue(a.prixTtc),
+                // Palier : clé et grille du produit (plusieurs lignes d'un même
+                // produit se cumulent, comme dans le configurateur).
+                cle: a.cle ? String(a.cle) : null,
+                grille: lireGrille(a.grille),
+                prixManuel: false
               };
             });
             invParArticle = true;
@@ -6151,6 +6221,20 @@ export function dashboardPage(
           : 'Prix unitaire HT (€)';
       }
       document.getElementById('inv-total').textContent='—';
+
+      /* Quantité corrigeable, en mode prix unique. */
+      invQtyOuverture = invParArticle
+        ? invFamilles.map(function(f){ return f.qty; })
+        : [invQty];
+      var blocQte = document.getElementById('inv-qte-bloc');
+      if (blocQte) {
+        var qteSimple = invQteModifiable && !invFamilles.length;
+        blocQte.style.display = qteSimple ? '' : 'none';
+        var champQte = document.getElementById('inv-qte');
+        if (champQte) champQte.value = String(invQty);
+        noteQuantite(invQty);
+      }
+
       /* Remise à zéro : sans elle, la modale rouverte sur un AUTRE devis
          afficherait encore la TVA du précédent, sous un total vide. */
       chargerTaxes(invQuoteId);
@@ -6216,6 +6300,81 @@ export function dashboardPage(
       },60);
     }
 
+    /* Rappel de la quantité demandée à l'origine, sous le champ. */
+    function noteQuantite(q){
+      var note = document.getElementById('inv-qte-note');
+      if (!note) return;
+      note.textContent = invQtyDemandee && q !== invQtyDemandee
+        ? 'demandé : ' + invQtyDemandee
+        : '';
+    }
+
+    /* Mode prix unique : l'admin corrige la quantité. Le prix catalogue du
+       nouveau palier est proposé — sauf si l'admin a saisi le prix lui-même. */
+    function changerQuantiteSimple(){
+      var champ = document.getElementById('inv-qte');
+      var q = champ ? parseInt(champ.value, 10) : NaN;
+      if (!(q >= 1 && q <= 100000)) return; // saisie en cours : on attend
+      invQty = q;
+      document.getElementById('inv-qty').textContent = invQty;
+      noteQuantite(q);
+      if (invGrille && !invPrixManuel) {
+        var p = palierDepuisGrille(q, invGrille);
+        var prix = document.getElementById('inv-price');
+        var lbl = document.getElementById('inv-price-lbl');
+        if (p !== null) {
+          invPrixTtc = p;
+          if (prix) prix.value = p.toFixed(2);
+          if (lbl) lbl.textContent = 'Prix unitaire TTC catalogue (€)';
+        } else {
+          // Au-delà du dernier palier (patchs ≥ 100 : « sur demande ») : à saisir.
+          invPrixTtc = null;
+          if (prix) prix.value = '';
+          if (lbl) lbl.textContent = 'Prix unitaire HT (€) — sur demande à cette quantité';
+        }
+      }
+      updateInvoiceTotal();
+    }
+
+    /* Mode par article : l'admin corrige la quantité d'une ligne. Le palier se
+       lit sur la quantité TOTALE du produit dans le devis (deux lignes de 10
+       patchs = 20 patchs) : toutes les lignes du même produit sont revues,
+       sauf celles dont l'admin a saisi le prix à la main. */
+    function changerQuantiteArticle(i, valeur){
+      var q = parseInt(valeur, 10);
+      if (!(q >= 1 && q <= 100000)) return;
+      invFamilles[i].qty = q;
+      var pieces = document.querySelector('#inv-familles [data-fam-pieces="' + i + '"]');
+      if (pieces) pieces.textContent = pieces.textContent.replace(/^\\d+/, String(q));
+      var note = document.querySelector('#inv-familles [data-fam-note="' + i + '"]');
+      if (note) {
+        var f0 = invFamilles[i];
+        note.textContent = q !== f0.qtyInitiale ? 'avant : ' + f0.qtyInitiale : '';
+      }
+      var cle = invFamilles[i].cle;
+      if (cle) {
+        var total = 0;
+        invFamilles.forEach(function(f){ if (f.cle === cle) total += f.qty; });
+        invFamilles.forEach(function(f, j){
+          if (f.cle !== cle || f.prixManuel || !f.grille) return;
+          var p = palierDepuisGrille(total, f.grille);
+          var champ = document.querySelector('#inv-familles [data-fam="' + j + '"]');
+          if (!champ) return;
+          if (p !== null) {
+            f.prixTtc = p;
+            champ.value = p.toFixed(2);
+            champ.setAttribute('data-ttc', '1');
+          } else if (f.prixTtc !== null) {
+            f.prixTtc = null;
+            champ.value = '';
+            champ.removeAttribute('data-ttc');
+            champ.placeholder = 'sur demande';
+          }
+        });
+      }
+      updateInvoiceTotal();
+    }
+
     /**
      * Construit les lignes de prix par famille, ou bascule en mode simple.
      *
@@ -6267,6 +6426,7 @@ export function dashboardPage(
         /* Ligne au prix catalogue : saisie TTC, aucune TVA ajoutée. Le prix
            reste modifiable (geste commercial), il reste alors TTC. */
         qte.textContent = f.qty + ' pièce(s)' + (catalogue ? ' · prix catalogue TTC' : ' · prix HT');
+        qte.setAttribute('data-fam-pieces', String(i));
         nom.appendChild(qte);
 
         var champ = document.createElement('input');
@@ -6281,7 +6441,10 @@ export function dashboardPage(
         }
         champ.setAttribute('aria-label',
           (catalogue ? 'Prix unitaire TTC catalogue — ' : 'Prix unitaire HT — ') + f.libelle);
-        champ.addEventListener('input', updateInvoiceTotal);
+        champ.addEventListener('input', function(){
+          f.prixManuel = true; // saisi à la main : le palier ne l'écrase plus
+          updateInvoiceTotal();
+        });
 
         var total = document.createElement('div');
         total.className = 'inv-fam-total is-empty';
@@ -6289,6 +6452,27 @@ export function dashboardPage(
         total.textContent = '—';
 
         ligne.appendChild(nom);
+        /* Quantité corrigeable, par article (hors commande de groupe). */
+        if (invParArticle && invQteModifiable) {
+          var boiteQte = document.createElement('div');
+          boiteQte.className = 'inv-fam-qte';
+          var champQte = document.createElement('input');
+          champQte.type = 'number';
+          champQte.min = '1';
+          champQte.max = '100000';
+          champQte.step = '1';
+          champQte.value = String(f.qty);
+          champQte.style.maxWidth = '72px';
+          champQte.setAttribute('data-fam-qty', String(i));
+          champQte.setAttribute('aria-label', 'Quantité — ' + f.libelle);
+          champQte.addEventListener('input', function(){ changerQuantiteArticle(i, champQte.value); });
+          var noteQte = document.createElement('small');
+          noteQte.setAttribute('data-fam-note', String(i));
+          noteQte.style.display = 'block';
+          boiteQte.appendChild(champQte);
+          boiteQte.appendChild(noteQte);
+          ligne.appendChild(boiteQte);
+        }
         ligne.appendChild(champ);
         ligne.appendChild(total);
         liste.appendChild(ligne);
@@ -6641,7 +6825,30 @@ export function dashboardPage(
         /* Le prix unique part quand même : il sert de repli serveur si une
            ligne du brouillon ne correspond à aucune famille (devis retouché
            dans Shopify). On envoie la moyenne, cohérente avec le total. */
-        price = (envoiEnTtc() ? lu.ttc : lu.total) / Math.max(1, invQty);
+        var piecesTotal = invFamilles.reduce(function(s, f){ return s + (Number(f.qty) || 0); }, 0);
+        price = (envoiEnTtc() ? lu.ttc : lu.total) / Math.max(1, piecesTotal || invQty);
+      }
+
+      /* QUANTITÉS CORRIGÉES : envoyées seulement si l'admin en a changé une.
+         Le serveur les applique au devis ET au brouillon, puis renvoie la
+         facture — ou défait tout si un garde-fou bloque l'envoi. */
+      var quantites;
+      if (invQteModifiable) {
+        if (!invFamilles.length) {
+          var qSaisie = parseInt((document.getElementById('inv-qte') || {}).value, 10);
+          if (!(qSaisie >= 1 && qSaisie <= 100000)) {
+            st.className='hint err';
+            st.textContent='Indiquez une quantité entière entre 1 et 100 000.';
+            return;
+          }
+        }
+        var actuelles = invParArticle
+          ? invFamilles.map(function(f){ return f.qty; })
+          : (invFamilles.length ? null : [invQty]);
+        if (actuelles && invQtyOuverture &&
+            actuelles.some(function(q, i){ return q !== invQtyOuverture[i]; })) {
+          quantites = actuelles;
+        }
       }
 
       if(!isFinite(price) || price<=0){
@@ -6676,6 +6883,7 @@ export function dashboardPage(
           /* Un prix par article, apparié PAR POSITION : le serveur recalcule
              la liste des articles et refuse un décalage. */
           prixParArticle: prixArticles || undefined,
+          quantites: quantites,
           /* Le réglage Shopify sur lequel la conversion HT → prix envoyé
              s'est fondée. Le serveur refuse l'envoi s'il a changé entre-temps :
              le client paierait alors un autre montant que celui affiché. */
