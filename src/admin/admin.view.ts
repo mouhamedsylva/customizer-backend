@@ -9,7 +9,9 @@ import { articlesDuDevis } from '../quotes/articles-devis';
 import {
   cleCatalogue,
   cleDevisSimple,
+  cleFamille,
   grilleDe,
+  prixEnHt,
   palierDepuisGrille,
   prixArticles,
   prixDevisSimple,
@@ -3248,7 +3250,9 @@ function quoteCard(
                                  return {
                                    libelle: String(f.libelle || ''),
                                    qty: Number(f.qty) || 0,
-                                   ...(prix != null ? { prixTtc: prix } : {}),
+                                   ...(prix != null
+                                     ? (prixEnHt(cleFamille(f)) ? { prixHt: prix } : { prixTtc: prix })
+                                     : {}),
                                  };
                                }),
                              ),
@@ -3264,9 +3268,14 @@ function quoteCard(
                          const prixes = pricing ? prixArticles(articles, pricing) : articles;
                          /* + clé et grille du produit : la fenêtre recalcule le
                             palier quand l'admin corrige une quantité. */
-                         const json = prixes.map((a) => {
+                         const json = prixes.map((a: any) => {
                            const cle = cleCatalogue(a.libelle);
-                           return { ...a, ...(cle ? { cle } : {}), ...(cle && pricing ? { grille: grilleDe(cle, pricing) } : {}) };
+                           /* Patchs : prix catalogue HT (TVA à ajouter), pas TTC. */
+                           const { prixTtc, ...reste } = a;
+                           const prix = prixTtc != null
+                             ? (prixEnHt(cle) ? { prixHt: prixTtc } : { prixTtc })
+                             : {};
+                           return { ...reste, ...prix, ...(cle ? { cle } : {}), ...(cle && pricing ? { grille: grilleDe(cle, pricing) } : {}) };
                          });
                          return `data-articles="${esc(JSON.stringify(json))}"`;
                        })()
@@ -3276,7 +3285,9 @@ function quoteCard(
                           produit, ou commande de groupe). */
                        (() => {
                          const prix = pricing ? prixDevisSimple(q.quoteData, pricing) : null;
-                         return prix != null ? `data-prix-ttc="${prix}"` : '';
+                         if (prix == null) return '';
+                         // Patchs : prix catalogue HT (TVA ajoutée par la fenêtre).
+                         return prixEnHt(cleDevisSimple(q.quoteData)) ? `data-prix-ht="${prix}"` : `data-prix-ttc="${prix}"`;
                        })()
                      }
                      ${
@@ -5979,6 +5990,7 @@ export function dashboardPage(
           {
             modifiable: inv.getAttribute('data-qte-modifiable') === '1',
             demandee: parseInt(inv.getAttribute('data-qty-demandee') || '', 10) || null,
+            prixHt: inv.getAttribute('data-prix-ht') || '',
             grille: inv.getAttribute('data-grille') || ''
           }
         );
@@ -6178,6 +6190,7 @@ export function dashboardPage(
                 qty: Number(a.qty) || 0,
                 qtyInitiale: Number(a.qty) || 0,
                 prixTtc: prixCatalogue(a.prixTtc),
+                prixHt: prixCatalogue(a.prixHt),   // patchs : catalogue HT
                 // Palier : clé et grille du produit (plusieurs lignes d'un même
                 // produit se cumulent, comme dans le configurateur).
                 cle: a.cle ? String(a.cle) : null,
@@ -6198,7 +6211,7 @@ export function dashboardPage(
             invFamilles = lues.filter(function(f){
               return f && f.libelle && (Number(f.qty) || 0) > 0;
             }).map(function(f){
-              return { libelle: f.libelle, qty: f.qty, prixTtc: prixCatalogue(f.prixTtc) };
+              return { libelle: f.libelle, qty: f.qty, prixTtc: prixCatalogue(f.prixTtc), prixHt: prixCatalogue(f.prixHt) };
             });
           }
         } catch (e) {
@@ -6212,13 +6225,18 @@ export function dashboardPage(
       document.getElementById('inv-sub').textContent =
         email ? ('Destinataire : '+email) : 'Aucune adresse e-mail renseignée pour ce client.';
       document.getElementById('inv-qty').textContent = invQty;
-      /* Prix catalogue connu : pré-rempli, et saisi TTC. Sinon, saisie HT. */
-      document.getElementById('inv-price').value = invPrixTtc !== null ? invPrixTtc.toFixed(2) : '';
+      /* Prix catalogue connu : pré-rempli, et saisi TTC. Sinon, saisie HT.
+         Exception, les PATCHS : leur prix catalogue est HT (affiché HT dans
+         le configurateur) — pré-rempli dans le champ HT, TVA ajoutée. */
+      var prixHtSimple = invPrixTtc === null ? prixCatalogue(qte.prixHt) : null;
+      document.getElementById('inv-price').value = invPrixTtc !== null
+        ? invPrixTtc.toFixed(2)
+        : (prixHtSimple !== null ? prixHtSimple.toFixed(2) : '');
       var lblPrix = document.getElementById('inv-price-lbl');
       if (lblPrix) {
         lblPrix.textContent = invPrixTtc !== null
           ? 'Prix unitaire TTC catalogue (€)'
-          : 'Prix unitaire HT (€)';
+          : (prixHtSimple !== null ? 'Prix unitaire HT catalogue (€)' : 'Prix unitaire HT (€)');
       }
       document.getElementById('inv-total').textContent='—';
 
@@ -6322,7 +6340,12 @@ export function dashboardPage(
         var p = palierDepuisGrille(q, invGrille);
         var prix = document.getElementById('inv-price');
         var lbl = document.getElementById('inv-price-lbl');
-        if (p !== null) {
+        if (p !== null && invGrille.enHt) {
+          // Patchs : prix catalogue HT, TVA ajoutée (champ en HT).
+          invPrixTtc = null;
+          if (prix) prix.value = p.toFixed(2);
+          if (lbl) lbl.textContent = 'Prix unitaire HT catalogue (€)';
+        } else if (p !== null) {
           invPrixTtc = p;
           if (prix) prix.value = p.toFixed(2);
           if (lbl) lbl.textContent = 'Prix unitaire TTC catalogue (€)';
@@ -6360,12 +6383,17 @@ export function dashboardPage(
           var p = palierDepuisGrille(total, f.grille);
           var champ = document.querySelector('#inv-familles [data-fam="' + j + '"]');
           if (!champ) return;
-          if (p !== null) {
+          if (p !== null && f.grille.enHt) {
+            // Patchs : prix catalogue HT, TVA ajoutée.
+            f.prixHt = p; f.prixTtc = null;
+            champ.value = p.toFixed(2);
+            champ.removeAttribute('data-ttc');
+          } else if (p !== null) {
             f.prixTtc = p;
             champ.value = p.toFixed(2);
             champ.setAttribute('data-ttc', '1');
-          } else if (f.prixTtc !== null) {
-            f.prixTtc = null;
+          } else if (f.prixTtc !== null || f.prixHt !== null) {
+            f.prixTtc = null; f.prixHt = null;
             champ.value = '';
             champ.removeAttribute('data-ttc');
             champ.placeholder = 'sur demande';
@@ -6396,7 +6424,9 @@ export function dashboardPage(
       liste.innerHTML = '';
       var titre = document.getElementById('inv-familles-lbl');
       if (titre) {
-        var avecCatalogue = invFamilles.some(function(f){ return f.prixTtc !== null && f.prixTtc !== undefined; });
+        var avecCatalogue = invFamilles.some(function(f){
+          return (f.prixTtc !== null && f.prixTtc !== undefined) || (f.prixHt !== null && f.prixHt !== undefined);
+        });
         titre.textContent = avecCatalogue
           ? (invParArticle
               ? 'Prix unitaire par article — TTC catalogue pré-rempli, HT à saisir pour les autres'
@@ -6425,7 +6455,9 @@ export function dashboardPage(
         var catalogue = f.prixTtc !== null && f.prixTtc !== undefined;
         /* Ligne au prix catalogue : saisie TTC, aucune TVA ajoutée. Le prix
            reste modifiable (geste commercial), il reste alors TTC. */
-        qte.textContent = f.qty + ' pièce(s)' + (catalogue ? ' · prix catalogue TTC' : ' · prix HT');
+        var catalogueHt = !catalogue && f.prixHt !== null && f.prixHt !== undefined;
+        qte.textContent = f.qty + ' pièce(s)' +
+          (catalogue ? ' · prix catalogue TTC' : (catalogueHt ? ' · prix catalogue HT' : ' · prix HT'));
         qte.setAttribute('data-fam-pieces', String(i));
         nom.appendChild(qte);
 
@@ -6438,6 +6470,9 @@ export function dashboardPage(
         if (catalogue) {
           champ.value = f.prixTtc.toFixed(2);
           champ.setAttribute('data-ttc', '1');
+        } else if (catalogueHt) {
+          // Patchs : prix catalogue HT, saisie HT — la TVA s'ajoute.
+          champ.value = f.prixHt.toFixed(2);
         }
         champ.setAttribute('aria-label',
           (catalogue ? 'Prix unitaire TTC catalogue — ' : 'Prix unitaire HT — ') + f.libelle);

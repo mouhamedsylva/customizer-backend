@@ -1,6 +1,7 @@
 import {
   PricingPayload,
   ProductKey,
+  PRIX_HT_KEYS,
   QUOTE_ONLY_KEYS,
 } from '../admin/pricing.service';
 import { ArticleDevis, lire } from './articles-devis';
@@ -39,11 +40,12 @@ export function cleCatalogue(texte: unknown): ProductKey | null {
 }
 
 /**
- * À partir de ce nombre de patchs, le prix est « sur demande » (même seuil
- * que `patchQtyInCart() >= 100` dans conf-cart-quote.js) : aucun prix n'est
- * pré-rempli, l'admin le saisit lui-même.
+ * À partir de ce nombre de patchs, le prix est « sur demande » : aucun prix
+ * n'est pré-rempli, l'admin le saisit lui-même. AU-DELÀ de 100 : à 100 pile,
+ * le palier (3,50 € HT) s'applique — même seuil que `patchQtyInCart() > 100`
+ * dans conf-cart-quote.js.
  */
-export const SEUIL_PATCHS_SUR_DEMANDE = 100;
+export const SEUIL_PATCHS_SUR_DEMANDE = 101;
 
 /**
  * Prix unitaire TTC pour `qty` pièces : premier palier atteint de la grille
@@ -73,6 +75,9 @@ export interface GrillePrix {
   surDevis: boolean;
   /** À partir de cette quantité, prix « sur demande » (patchs : 100), ou 0. */
   surDemandeDes: number;
+  /** Prix HORS TAXE (patchs) : la fenêtre ajoute la TVA, au lieu de le
+      prendre pour un prix TTC catalogue. */
+  enHt: boolean;
 }
 
 export function grilleDe(key: ProductKey, payload: PricingPayload): GrillePrix {
@@ -83,6 +88,7 @@ export function grilleDe(key: ProductKey, payload: PricingPayload): GrillePrix {
     base: Number.isFinite(base) && base > 0 ? base : 0,
     surDevis: QUOTE_ONLY_KEYS.includes(key),
     surDemandeDes: key === 'patches' ? SEUIL_PATCHS_SUR_DEMANDE : 0,
+    enHt: prixEnHt(key),
   };
 }
 
@@ -153,19 +159,30 @@ export function prixFamille(f: any, payload: PricingPayload): number | null {
   if (!f) return null;
   const qty = Number(f.qty) || 0;
   if (qty <= 0) return null;
+  const key = cleFamille(f);
+  return key ? prixPalier(key, qty, payload) : null;
+}
+
+/** Les prix catalogue de ce produit sont-ils HT (patchs) plutôt que TTC ? */
+export function prixEnHt(key: ProductKey | null | undefined): boolean {
+  return !!key && PRIX_HT_KEYS.includes(key);
+}
+
+/** Clé catalogue d'une FAMILLE du devis, ou null (voir prixFamille). */
+export function cleFamille(f: any): ProductKey | null {
+  if (!f) return null;
   const parLignes = cleUnique(lire(f.lignes));
   const parCle: Record<string, ProductKey> = {
     sweatshirt: 'sweatshirt',
     drapeau: 'drapeaux',
     patch: 'patches',
   };
-  const key = parLignes ?? parCle[String(f.cle || '')] ?? null;
   // Les lignes contredisent la clé (famille « patch » contenant autre chose) :
   // on s'abstient plutôt que de deviner.
   if (parLignes && parCle[String(f.cle || '')] && parCle[String(f.cle)] !== parLignes) {
     return null;
   }
-  return key ? prixPalier(key, qty, payload) : null;
+  return parLignes ?? parCle[String(f.cle || '')] ?? null;
 }
 
 /**

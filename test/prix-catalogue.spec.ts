@@ -42,7 +42,7 @@ const PAYLOAD: PricingPayload = {
       { min: 100, price: 3.5 },
       { min: 50, price: 5 },
       { min: 30, price: 9 },
-      { min: 20, price: 12.5 },
+      { min: 11, price: 12.5 },
       { min: 10, price: 20 },
     ],
     coins: [],
@@ -82,9 +82,13 @@ describe('prixPalier', () => {
     expect(prixPalier('patches', qty, PAYLOAD)).toBe(prix);
   });
 
-  it('100 patchs ou plus : prix sur demande, rien de pré-rempli', () => {
-    expect(prixPalier('patches', 100, PAYLOAD)).toBeNull();
-    expect(prixPalier('patches', 250, PAYLOAD)).toBeNull();
+  it('patchs : grille officielle HT, 3,50 € à 100 pile, sur demande au-delà', () => {
+    // 1-10 → 20 · 11-29 → 12,50 · 30-49 → 9 · 50-99 → 5 · 100 → 3,50 € HT.
+    const attendu: Array<[number, number | null]> = [
+      [10, 20], [11, 12.5], [19, 12.5], [29, 12.5], [30, 9], [49, 9],
+      [50, 5], [99, 5], [100, 3.5], [101, null], [250, null],
+    ];
+    for (const [qty, prix] of attendu) expect(prixPalier('patches', qty, PAYLOAD)).toBe(prix);
   });
 
   it('drapeaux : prix de base, pas de grille', () => {
@@ -205,7 +209,9 @@ describe('dashboard — attributs du bouton de chiffrage', () => {
     const html = dashboardPage([], [q], [], 'https://exemple.fr', 'boutique', {
       pricing: PAYLOAD,
     });
-    expect(html).toContain('&quot;prixTtc&quot;:20');
+    // Patchs : prix catalogue HT (TVA ajoutée par la fenêtre), pas TTC.
+    expect(html).toContain('&quot;prixHt&quot;:20');
+    expect(html).not.toContain('&quot;prixTtc&quot;:20');
     expect(html).toContain('&quot;prixTtc&quot;:53.9');
   });
 });
@@ -222,7 +228,11 @@ describe('palier recalculé dans la fenêtre (correction de quantité)', () => {
       }
   });
 
-  it('patchs : prix « sur demande » (aucun) à partir de 100', () => {
-    expect(palierDepuisGrille(100, grilleDe('patches', PAYLOAD))).toBeNull();
+  it('patchs : 3,50 € HT à 100, sur demande au-delà, grille marquée HT', () => {
+    const g = grilleDe('patches', PAYLOAD);
+    expect(palierDepuisGrille(100, g)).toBe(3.5);
+    expect(palierDepuisGrille(101, g)).toBeNull();
+    expect(g.enHt).toBe(true);
+    expect(grilleDe('sweatshirt', PAYLOAD).enHt).toBe(false);
   });
 });

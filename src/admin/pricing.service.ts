@@ -21,9 +21,9 @@ import { Setting } from '../database/entities/setting.entity';
  *                    écran visible « Patchs » du configurateur
  *                    vendus SUR DEVIS : pas de synchronisation Shopify
  *
- * Preuve : la grille `patches` reproduit à l'identique les 5 paliers du PDF
- * « TARIFS PATCHS 2026 » fourni par le commerçant (20 / 12,50 / 9 / 5 / 3,50 €),
- * et `prices.patches = 20 €` correspond à son premier palier.
+ * Preuve : la grille `patches` reprend les 5 paliers HT de la grille
+ * « patchs » du commerçant (20 / 12,50 / 9 / 5 / 3,50 €), et
+ * `prices.patches` son premier palier.
  *
  * Renommer ces clés casserait la correspondance avec le frontend ET les
  * réglages déjà enregistrés en base (préfixe `KEY_PREFIX + key`).
@@ -56,7 +56,7 @@ export const PRODUCT_LABELS: Record<ProductKey, string> = {
   tshirt_polyester: 'T-shirt polyester',
   coins: 'Coins métal (sur devis)',
   drapeaux: 'Drapeaux',
-  patches: 'Patchs',
+  patches: 'Patchs (prix HT)', // exception : saisis HT, cf. PRIX_HT_KEYS
   manche: 'Personnalisation manche',
 };
 
@@ -103,10 +103,9 @@ const DEFAULTS: Pricing = {
      pour un article qu'aucune commande en ligne n'honore. */
   coins: 0,
   drapeaux: 19.9,
-  /* PATCHS (clé `patches`) : 20 € = premier palier de leur grille atelier, à
-     10 pièces, qui est le minimum de commande. Toute valeur inférieure
-     contredirait la grille — le configurateur annoncerait un prix puis
-     facturerait celui du palier atteint. */
+  /* PATCHS (clé `patches`) : 20 € HT = premier palier de leur grille, à
+     10 pièces, qui est le minimum de commande. Montant HT : voir
+     PRIX_HT_KEYS. */
   patches: 20,
   /* Prix du variant Shopify `personnalisation-manche` au moment du câblage.
      Cette valeur ne sert que tant que l'admin n'a rien enregistré ; dès le
@@ -159,14 +158,27 @@ const DEFAULT_TIERS: Tiers = {
      avec cette grille. Constaté à l'écran : un coin affichait 5,00 €/u à 50
      pièces et 12,50 €/u à 24 — les paliers exacts de cette grille — alors qu'un
      coin se chiffre à la main sur devis. */
+  /* EXCEPTION : montants HORS TAXE. Les patchs sont affichés HT dans le
+     configurateur, sans TVA ajoutée (choix du commerçant, septembre 2026) ;
+     la fenêtre de chiffrage les traite donc comme HT (PRIX_HT_KEYS).
+     Le 2e palier commence à 11 pièces, pas à 20 : de 11 à 19 pièces, le
+     client payait le palier de 10 (20 € au lieu de 12,50 €). */
   patches: [
     { min: 100, price: 3.5 },
     { min: 50, price: 5.0 },
     { min: 30, price: 9.0 },
-    { min: 20, price: 12.5 },
+    { min: 11, price: 12.5 },
     { min: 10, price: 20.0 },
   ],
 };
+
+/**
+ * Produits dont les prix (base et grille) sont HORS TAXE, par exception à la
+ * table, qui est en TTC. Les patchs sont affichés HT dans le configurateur,
+ * sans TVA ajoutée : la fenêtre de chiffrage doit alors AJOUTER la TVA à leur
+ * prix pré-rempli, au lieu de le prendre pour un TTC.
+ */
+export const PRIX_HT_KEYS: ProductKey[] = ['patches'];
 
 /** Préfixe des clés dans la table `settings` (ex. `price_patches`). */
 const KEY_PREFIX = 'price_';
