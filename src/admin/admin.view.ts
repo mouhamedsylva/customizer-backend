@@ -4223,18 +4223,21 @@ export function dashboardPage(
            le chemin des devis de patch, de coin, et de TOUS les devis déjà en
            base, qui ne portent pas de familles. -->
       <div class="price-row" id="inv-simple-block">
-        <!-- Quantité corrigeable (le client s'est trompé) : hors commande de
-             groupe. Le prix du palier suit, sauf s'il a été saisi à la main. -->
-        <div id="inv-qte-bloc" style="display:none">
-          <label class="lbl" for="inv-qte">Quantité</label>
-          <input type="number" id="inv-qte" min="1" max="100000" step="1"
-                 oninput="changerQuantiteSimple()" class="price-input mono" style="max-width:110px">
-          <small id="inv-qte-note" class="hint" style="display:block"></small>
-        </div>
         <div>
           <label class="lbl" id="inv-price-lbl">Prix unitaire HT (€)</label>
           <input type="number" id="inv-price" min="0.01" step="0.01" placeholder="0,00"
                  oninput="invPrixManuel=true;updateInvoiceTotal()" class="price-input mono">
+          <!-- Quantité corrigeable (le client s'est trompé), SOUS le prix
+               unitaire : placée à côté, dans la même rangée que le total, elle
+               était trop étroite et coupait les nombres (100 lu « 10 »).
+               Hors commande de groupe. Le prix du palier suit, sauf s'il a été
+               saisi à la main. -->
+          <div id="inv-qte-bloc" style="display:none;margin-top:10px">
+            <label class="lbl" for="inv-qte">Quantité</label>
+            <input type="number" id="inv-qte" min="1" max="100000" step="1"
+                   oninput="changerQuantiteSimple()" class="price-input mono">
+            <small id="inv-qte-note" class="hint" style="display:block"></small>
+          </div>
         </div>
         <div class="price-total">
           <span class="lbl">Total (<span id="inv-qty" class="mono">1</span> unités) <small class="inv-ttc">TTC</small></span>
@@ -6487,6 +6490,15 @@ export function dashboardPage(
         total.textContent = '—';
 
         ligne.appendChild(nom);
+        /* Prix unitaire, et SOUS lui la quantité de la ligne : même colonne,
+           pour que les deux champs gardent une largeur lisible. */
+        var colonne = document.createElement('div');
+        colonne.className = 'inv-fam-saisie';
+        colonne.style.display = 'flex';
+        colonne.style.flexDirection = 'column';
+        colonne.style.gap = '4px';
+        colonne.style.flex = 'none';
+        colonne.appendChild(champ);
         /* Quantité corrigeable, par article (hors commande de groupe). */
         if (invParArticle && invQteModifiable) {
           var boiteQte = document.createElement('div');
@@ -6497,18 +6509,22 @@ export function dashboardPage(
           champQte.max = '100000';
           champQte.step = '1';
           champQte.value = String(f.qty);
-          champQte.style.maxWidth = '72px';
+          champQte.style.width = '100%';   // même largeur que le prix, au-dessus
           champQte.setAttribute('data-fam-qty', String(i));
           champQte.setAttribute('aria-label', 'Quantité — ' + f.libelle);
           champQte.addEventListener('input', function(){ changerQuantiteArticle(i, champQte.value); });
+          var lblQte = document.createElement('small');
+          lblQte.textContent = 'Quantité';
+          lblQte.style.display = 'block';
           var noteQte = document.createElement('small');
           noteQte.setAttribute('data-fam-note', String(i));
           noteQte.style.display = 'block';
+          boiteQte.appendChild(lblQte);
           boiteQte.appendChild(champQte);
           boiteQte.appendChild(noteQte);
-          ligne.appendChild(boiteQte);
+          colonne.appendChild(boiteQte);
         }
-        ligne.appendChild(champ);
+        ligne.appendChild(colonne);
         ligne.appendChild(total);
         liste.appendChild(ligne);
       });
