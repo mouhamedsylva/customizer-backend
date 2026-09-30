@@ -1604,6 +1604,8 @@ body{
   margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn.primary:hover{background:#a83809;border-color:#a83809;color:#fff}
+.btn.danger{background:var(--danger);color:#fff;border-color:var(--danger);text-decoration:none}
+.btn.danger:hover{filter:brightness(.9);color:#fff}
 .btn:disabled{opacity:.55;cursor:not-allowed}
 .hint{font-size:12px;color:var(--muted)}
 .hint.ok{color:var(--ok);font-weight:600}
@@ -4027,7 +4029,7 @@ export function dashboardPage(
           </button>
         </div>
       </div>
-      <a class="logout" href="/api/admin/logout" title="Se déconnecter">
+      <a class="logout" href="/api/admin/logout" title="Se déconnecter" onclick="return openLogout(event)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
         Déconnexion
       </a>
@@ -4616,6 +4618,21 @@ export function dashboardPage(
     </div>
   </div>
 
+  <!-- Modale : confirmer la déconnexion (un clic égaré sur le bouton rouge de
+       l'en-tête fermait la session sans prévenir). -->
+  <div class="modal" id="logout-modal" onclick="if(event.target===this)closeLogout()">
+    <div class="modal-box" style="max-width:420px" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+      <h3 id="logout-title">Se déconnecter ?</h3>
+      <p class="sub">
+        Vous devrez saisir à nouveau vos identifiants pour accéder au tableau de bord.
+      </p>
+      <div class="modal-actions">
+        <button class="btn" id="logout-cancel" onclick="closeLogout()">Annuler</button>
+        <a class="btn danger" href="/api/admin/logout">Se déconnecter</a>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script${nonce ? ` nonce="${nonce}"` : ''}>
@@ -4841,6 +4858,22 @@ export function dashboardPage(
       }
       doProdStatus(orderId,status,btn,null);
     }
+
+    /* Déconnexion confirmée. Le lien de l'en-tête garde son href : sans JS,
+       il déconnecte directement ; avec JS, on demande d'abord confirmation. */
+    function openLogout(e){
+      if(e && (e.ctrlKey || e.metaKey || e.shiftKey)) return true;
+      if(e) e.preventDefault();
+      document.getElementById('logout-modal').classList.add('open');
+      var b=document.getElementById('logout-cancel'); if(b) b.focus();
+      return false;
+    }
+    function closeLogout(){
+      document.getElementById('logout-modal').classList.remove('open');
+    }
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape') closeLogout();
+    });
 
     function closeShip(){
       document.getElementById('ship-modal').classList.remove('open');
