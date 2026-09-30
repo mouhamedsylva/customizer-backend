@@ -78,6 +78,13 @@ async function bootstrap(): Promise<void> {
           // Les retirer au profit d'écouteurs délégués permettrait de repasser
           // cette directive à `'none'` : c'est le vrai palier suivant.
           scriptSrcAttr: ["'unsafe-inline'"],
+          // MÊME PIÈGE pour les attributs `style="…"` : le nonce de `styleSrc`
+          // y fait ignorer `'unsafe-inline'`, et le navigateur les rejetait
+          // tous. Visible dans la fenêtre de chiffrage : le bouton natif
+          // « Sélect. fichiers » (masqué par style="display:none") apparaissait
+          // et la zone de dépôt perdait sa mise en forme. Les balises <style>
+          // restent, elles, soumises au nonce.
+          styleSrcAttr: ["'unsafe-inline'"],
           styleSrc: [
             "'self'",
             (req) => `'nonce-${(req as Request & { cspNonce?: string }).cspNonce}'`,

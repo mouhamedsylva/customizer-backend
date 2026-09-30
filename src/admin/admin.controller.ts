@@ -26,6 +26,7 @@ import {
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
+import { avecPiecesJointes } from '../quotes/pieces-jointes';
 import { svgRegenere } from '../shared/zones-texte';
 import {
   loginPage,
@@ -515,8 +516,16 @@ export class AdminController {
             if (att.type) attachmentProperties[`_PièceJointe_${index + 1}_Type`] = att.type;
           });
 
-          // Mise à jour du draft order avec les propriétés
-          await this.shopify.updateDraftOrderProperties(quote.draftOrderId, attachmentProperties);
+          // Mise à jour du draft order avec les propriétés. Simple trace pour
+          // l'admin Shopify (le préfixe `_` les masque au client) : son échec
+          // ne doit pas bloquer l'envoi de la facture.
+          try {
+            await this.shopify.updateDraftOrderProperties(quote.draftOrderId, attachmentProperties);
+          } catch (e) {
+            this.logger.warn(
+              `Pièces jointes non reportées sur le brouillon ${quote.draftOrderId} : ${(e as Error).message}`,
+            );
+          }
         }
       }
 
@@ -533,11 +542,12 @@ export class AdminController {
         });
       }
 
-      // 3) Envoie la facture au client.
+      // 3) Envoie la facture au client. Shopify ne joint aucun fichier :
+      //    les pièces jointes partent en liens dans le message (pieces-jointes.ts).
       await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
         to: customer.email,
         subject: `Votre devis — ${productName}`,
-        custom_message: finalMessage,
+        custom_message: avecPiecesJointes(finalMessage, attachments),
       });
       factureEnvoyee = true; // plus rien à défaire : le client a son devis
 
@@ -1027,7 +1037,9 @@ export class AdminController {
       await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
         to: customer.email,
         subject: `Relance — votre devis ${productName}`,
-        custom_message: customMessage,
+        // Les liens des pièces jointes de la facture, pour que le client
+        // relancé y ait toujours accès.
+        custom_message: avecPiecesJointes(customMessage, quote.tempAttachments),
       });
 
       // Compte la relance manuelle comme une relance à part entière.

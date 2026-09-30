@@ -10,6 +10,7 @@ import { Quote } from '../database/entities/quote.entity';
 import { ShopifyService } from '../shared/shopify.service';
 import { SettingsService } from '../admin/settings.service';
 import { MessageTemplateService } from '../admin/message-template.service';
+import { avecPiecesJointes } from './pieces-jointes';
 
 /**
  * Devis examinés par passe de relance.
@@ -271,7 +272,8 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
     await this.shopify.sendDraftOrderInvoice(q.draftOrderId as string, {
       to: customer.email,
       subject: `Relance — votre devis ${productName}`,
-      custom_message: customMessage,
+      // Liens des pièces jointes de la facture (pieces-jointes.ts).
+      custom_message: avecPiecesJointes(customMessage, q.tempAttachments),
     });
   }
 }
