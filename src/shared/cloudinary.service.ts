@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import sharp from 'sharp';
+import { optionsPieceJointe, TypeRessource } from './piece-jointe-cloudinary';
 // Depuis sharp 0.35, le namespace de types n'est plus exposé via l'import par
 // défaut : `sharp.OverlayOptions` ne résout plus. Le type est importé nommément.
 import type { OverlayOptions } from 'sharp';
@@ -780,19 +781,18 @@ export class CloudinaryService implements OnModuleInit {
   async uploadQuoteAttachment(
     fileBuffer: Buffer,
     nomOriginal = 'attachment',
+    mimetype = '',
   ): Promise<UploadResult> {
-    /* Nom d'origine sécurisé pour l'URL */
-    const base = String(nomOriginal)
-      .replace(/\.[^.]+$/, '')
-      .replace(/[^a-zA-Z0-9_-]+/g, '-')
-      .slice(0, 60) || 'attachment';
+    /* Image → `image` ; PDF, DOC, XLS… → `raw` AVEC extension, servi tel quel
+       (voir piece-jointe-cloudinary.ts). */
+    const { resourceType, publicId } = optionsPieceJointe(nomOriginal, mimetype);
 
     return new Promise<UploadResult>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: 'customizer/temp-attachments',
-          public_id: `${base}_${Date.now()}`,
-          resource_type: 'auto',
+          public_id: publicId,
+          resource_type: resourceType,
           // TTL de 24h pour nettoyage automatique
           invalidate: true,
           overwrite: true,
@@ -823,9 +823,9 @@ export class CloudinaryService implements OnModuleInit {
    * Supprime une ressource de Cloudinary par son public_id.
    * Utilisé pour le nettoyage des pièces jointes temporaires.
    */
-  async deleteResource(publicId: string): Promise<void> {
+  async deleteResource(publicId: string, resourceType: TypeRessource = 'image'): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      cloudinary.uploader.destroy(publicId, (error, result) => {
+      cloudinary.uploader.destroy(publicId, { resource_type: resourceType }, (error, result) => {
         if (error) {
           reject(error);
           return;

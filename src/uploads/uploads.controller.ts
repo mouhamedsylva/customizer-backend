@@ -28,6 +28,7 @@ import {
   TYPES_PIECE_JOINTE,
   contenuConforme,
   filtreTypes,
+  nomFichierUtf8,
 } from './type-fichier';
 
 // Type minimal du fichier multer (evite la dependance forte a @types/multer dans la signature).
@@ -129,7 +130,7 @@ export class UploadsController {
     try {
       return await this.cloudinary.uploadPieceJointe(
         file.buffer,
-        file.originalname,
+        nomFichierUtf8(file.originalname),
       );
     } catch (error) {
       throw new HttpException(
@@ -318,10 +319,14 @@ export class UploadsController {
 
     try {
       // Upload vers Cloudinary dans un dossier temporaire
-      const result = await this.cloudinary.uploadQuoteAttachment(file.buffer, file.originalname);
+      const result = await this.cloudinary.uploadQuoteAttachment(
+        file.buffer,
+        nomFichierUtf8(file.originalname),
+        type,
+      );
       return {
         ...result,
-        name: file.originalname,
+        name: nomFichierUtf8(file.originalname),
         type: file.mimetype,
         size: file.size
       };

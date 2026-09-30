@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { Quote } from '../database/entities/quote.entity';
 import { CloudinaryService } from './cloudinary.service';
+import { ressourceDepuisUrl } from './piece-jointe-cloudinary';
 
 /**
  * Service de nettoyage automatique des pièces jointes temporaires.
@@ -101,11 +102,13 @@ export class CleanupService implements OnModuleInit {
           try {
             if (attachment.url) {
               // Extrait le public_id de l'URL Cloudinary
-              const publicId = this.extractPublicId(attachment.url);
-              if (publicId) {
-                await this.cloudinary.deleteResource(publicId);
+              // image OU raw (PDF, DOC, XLS) : sans le bon type, destroy()
+              // répond « not found » et le fichier raw resterait en ligne.
+              const ressource = ressourceDepuisUrl(attachment.url);
+              if (ressource) {
+                await this.cloudinary.deleteResource(ressource.publicId, ressource.resourceType);
                 cleaned++;
-                this.logger.debug(`Fichier supprimé: ${attachment.name} (${publicId})`);
+                this.logger.debug(`Fichier supprimé: ${attachment.name} (${ressource.publicId})`);
               }
             }
           } catch (error) {
@@ -144,15 +147,6 @@ export class CleanupService implements OnModuleInit {
    * Extrait le public_id d'une URL Cloudinary.
    * Exemple: https://res.cloudinary.com/cloud/image/upload/v123/folder/file.ext -> folder/file
    */
-  private extractPublicId(url: string): string | null {
-    try {
-      const match = url.match(/\/upload\/(?:v\d+\/)?(.+)\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|txt)$/i);
-      return match ? match[1] : null;
-    } catch {
-      return null;
-    }
-  }
-
   /**
    * Force le nettoyage immédiat (pour les tests ou la maintenance).
    */

@@ -10,6 +10,8 @@
  * On ajoute donc au message un lien de téléchargement par fichier.
  */
 
+import { nomFichierUtf8 } from '../uploads/type-fichier';
+
 /** Hôte des fichiers uploadés (cloudinary.service.ts, uploadQuoteAttachment). */
 const HOTE_PIECES_JOINTES = 'res.cloudinary.com';
 const MAX_PIECES = 5;
@@ -33,9 +35,10 @@ function urlSure(url: unknown): string | null {
   }
 }
 
-/** Nom affiché : sur une ligne, borné. */
+/** Nom affiché : remis en UTF-8 (anciens devis enregistrés avec un nom
+    abîmé, voir nomFichierUtf8), sur une ligne, borné. */
 function nomPropre(name: unknown): string {
-  const n = String(name ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const n = nomFichierUtf8(String(name ?? '')).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
   return (n.length > MAX_NOM ? n.slice(0, MAX_NOM - 1) + '…' : n) || 'Document';
 }
 

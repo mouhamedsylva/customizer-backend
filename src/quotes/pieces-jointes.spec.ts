@@ -37,6 +37,14 @@ describe('pièces jointes dans l’e-mail de facture', () => {
     expect(piecesValides(dix)).toHaveLength(5);
   });
 
+  it('répare un nom enregistré abîmé (lu en latin1)', () => {
+    // Tel que busboy le livre (octets UTF-8 lus en latin1) ; s'affiche « SynthÃ¨se … â□□ ».
+    const abime = Buffer.from('Synthèse du projet — X.pdf', 'utf8').toString('latin1');
+    expect(piecesValides([{ name: abime, url: CLD }])[0].name).toBe(
+      'Synthèse du projet — X.pdf',
+    );
+  });
+
   it('met le nom sur une seule ligne', () => {
     expect(piecesValides([{ name: 'a\r\nb\tc.pdf', url: CLD }])[0].name).toBe('a b c.pdf');
     expect(piecesValides([{ name: '', url: CLD }])[0].name).toBe('Document');

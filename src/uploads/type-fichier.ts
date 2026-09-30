@@ -71,3 +71,24 @@ export function contenuConforme(buffer: Buffer, mimetype: string): boolean {
       return false;
   }
 }
+
+/**
+ * Nom de fichier reçu en multipart, remis en UTF-8.
+ *
+ * Multer 2 lit le formulaire avec busboy SANS lui passer d'encodage : busboy
+ * décode alors le nom en latin1 (`defParamCharset` par défaut). Un nom UTF-8
+ * arrivait donc abîmé — « Synthèse du projet — X.pdf » devenait
+ * « SynthÃ¨se du projet â€” X.pdf » — dans le dashboard, puis dans l'e-mail
+ * du client.
+ *
+ * On relit les octets en UTF-8, et on ne garde le résultat que s'il est valide :
+ * un nom ASCII, un vrai nom latin1 (« é » seul n'est pas de l'UTF-8) ou un nom
+ * déjà corrigé (caractères > U+00FF) ressortent inchangés.
+ */
+export function nomFichierUtf8(nom: string): string {
+  const s = String(nom ?? '');
+  // eslint-disable-next-line no-control-regex
+  if (!s || !/[\u0080-ÿ]/.test(s) || /[^\u0000-ÿ]/.test(s)) return s;
+  const relu = Buffer.from(s, 'latin1').toString('utf8');
+  return relu.includes('�') ? s : relu;
+}
