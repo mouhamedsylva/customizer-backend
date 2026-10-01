@@ -20,6 +20,7 @@ const MAX_NOM = 120;
 export interface PieceJointe {
   name?: unknown;
   url?: unknown;
+  type?: unknown;
 }
 
 /** URL acceptée dans un e-mail client : https, hôte Cloudinary uniquement.
@@ -43,13 +44,16 @@ function nomPropre(name: unknown): string {
 }
 
 /** Pièces valides (5 au plus), dans l'ordre reçu. */
-export function piecesValides(pieces: unknown): Array<{ name: string; url: string }> {
+export function piecesValides(
+  pieces: unknown,
+): Array<{ name: string; url: string; type?: string }> {
   if (!Array.isArray(pieces)) return [];
-  const out: Array<{ name: string; url: string }> = [];
+  const out: Array<{ name: string; url: string; type?: string }> = [];
   for (const p of pieces as PieceJointe[]) {
     const url = p && urlSure(p.url);
     if (!url) continue;
-    out.push({ name: nomPropre(p.name), url });
+    const type = typeof p.type === 'string' ? p.type.slice(0, 120) : undefined;
+    out.push({ name: nomPropre(p.name), url, ...(type ? { type } : {}) });
     if (out.length >= MAX_PIECES) break;
   }
   return out;

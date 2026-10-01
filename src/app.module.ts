@@ -29,7 +29,11 @@ import { MessageTemplate } from './database/entities/message-template.entity';
     // Rate limiting global : plafond généreux par IP sur toutes les routes.
     // Les routes sensibles (login) posent un plafond plus strict via @Throttle.
     // Empêche le bruteforce et le spam de devis/uploads (endpoints publics).
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60000, limit: 120 }],
+      // Affiché tel quel au client par le configurateur : en français.
+      errorMessage: 'Trop de demandes en peu de temps : patientez une minute puis réessayez.',
+    }),
 
     // Connexion MySQL (Railway fournit la variable MYSQL_URL).
     // Si MYSQL_URL est absente (dev local sans BDD), la connexion échoue au

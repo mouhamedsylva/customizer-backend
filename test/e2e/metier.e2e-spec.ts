@@ -113,9 +113,33 @@ describe('Routes métier', () => {
 
   // ──────────────────────────────── Panier ────────────────────────────────
 
+  /* Session admin : les routes /api/cart y sont désormais réservées. */
+  let cookie = '';
+  const postA = (u: string) => post(u).set('Cookie', cookie);
+  const getA = (u: string) => get(u).set('Cookie', cookie);
+  const delA = (u: string) => del(u).set('Cookie', cookie);
+  beforeEach(async () => {
+    const r = await request(srv())
+      .post('/api/admin/login')
+      .set('X-Forwarded-For', freshIp())
+      .send({ email: 'patron@test.fr', password: 'MotDePasseTest123' });
+    const set = r.headers['set-cookie'];
+    const liste: string[] = Array.isArray(set) ? set : set ? [set] : [];
+    cookie = liste.map((c) => c.split(';')[0]).join('; ');
+  });
+
   describe('POST /api/cart/add', () => {
+    /* Routes FERMÉES au public : le thème n'utilise pas ce panier (panier
+       natif Shopify), et ouvertes elles laissaient créer des brouillons à
+       volonté. Les cas ci-dessous tournent avec une session admin. */
+    it('refuse sans session admin', async () => {
+      const r = await post('/api/cart/add').send({ variantId: '1', quantity: 1 });
+      expect(r.status).toBe(401);
+      expect(h.shopify.callsTo('createDraftOrder')).toHaveLength(0);
+    });
+
     it('crée un brouillon Shopify et renvoie un jeton de panier', async () => {
-      const r = await post('/api/cart/add').send({
+      const r = await postA('/api/cart/add').send({
         variantId: '12345',
         quantity: 2,
       });
@@ -128,13 +152,13 @@ describe('Routes métier', () => {
 
     it('refuse une quantité nulle ou négative', async () => {
       for (const quantity of [0, -3]) {
-        const r = await post('/api/cart/add').send({ variantId: '1', quantity });
+        const r = await postA('/api/cart/add').send({ variantId: '1', quantity });
         expect(r.status).toBe(400);
       }
     });
 
     it('refuse un variantId manquant', async () => {
-      const r = await post('/api/cart/add').send({ quantity: 1 });
+      const r = await postA('/api/cart/add').send({ quantity: 1 });
       expect(r.status).toBe(400);
     });
 
@@ -144,7 +168,7 @@ describe('Routes métier', () => {
       // d'Express, et le test mesurerait ce plafond au lieu de la validation.
       const properties: Record<string, string> = {};
       for (let i = 0; i < 60; i++) properties['cle' + i] = 'v';
-      const r = await post('/api/cart/add').send({
+      const r = await postA('/api/cart/add').send({
         variantId: '1',
         quantity: 1,
         properties,
@@ -154,7 +178,7 @@ describe('Routes métier', () => {
     });
 
     it('refuse une clé de propriété anormalement longue', async () => {
-      const r = await post('/api/cart/add').send({
+      const r = await postA('/api/cart/add').send({
         variantId: '1',
         quantity: 1,
         properties: { ['k'.repeat(200)]: 'v' },
@@ -164,7 +188,7 @@ describe('Routes métier', () => {
 
     it('accepte les propriétés d’un panier configurateur réel', async () => {
       // Contre-épreuve : les bornes ne doivent pas rejeter l'usage normal.
-      const r = await post('/api/cart/add').send({
+      const r = await postA('/api/cart/add').send({
         variantId: '1',
         quantity: 2,
         properties: {
@@ -179,38 +203,38 @@ describe('Routes métier', () => {
 
   describe('GET /api/cart/:draftOrderId', () => {
     it('REFUSE sans jeton de possession', async () => {
-      const r = await get('/api/cart/999001');
+      const r = await getA('/api/cart/999001');
       expect([401, 403]).toContain(r.status);
       // Rien ne doit partir vers Shopify avant la vérification du jeton.
       expect(h.shopify.callsTo('getDraftOrder')).toHaveLength(0);
     });
 
     it('refuse un jeton appartenant à un AUTRE panier', async () => {
-      const cree = await post('/api/cart/add').send({
+      const cree = await postA('/api/cart/add').send({
         variantId: '1',
         quantity: 1,
       });
       // Jeton valide, mais présenté pour un panier voisin.
-      const r = await get('/api/cart/999002').query({
+      const r = await getA('/api/cart/999002').query({
         token: cree.body.cartToken,
       });
       expect([401, 403]).toContain(r.status);
     });
 
     it('accepte le jeton du bon panier', async () => {
-      const cree = await post('/api/cart/add').send({
+      const cree = await postA('/api/cart/add').send({
         variantId: '1',
         quantity: 1,
       });
       const id = cree.body.draftOrderId;
-      const r = await get(`/api/cart/${id}`).query({ token: cree.body.cartToken });
+      const r = await getA(`/api/cart/${id}`).query({ token: cree.body.cartToken });
       expect(r.status).toBe(200);
     });
   });
 
   describe('DELETE /api/cart/:id/item/:lineId', () => {
     it('refuse sans jeton valide', async () => {
-      const r = await del('/api/cart/999001/item/1');
+      const r = await delA('/api/cart/999001/item/1');
       expect([401, 403]).toContain(r.status);
       expect(h.shopify.callsTo('deleteDraftOrderLine')).toHaveLength(0);
     });

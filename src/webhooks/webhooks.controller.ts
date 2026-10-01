@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -55,7 +56,7 @@ export class WebhooksController {
 
     // Le corps a déjà été parsé par Nest ; on l'utilise directement.
     const payload = (req.body || {}) as Record<string, any>;
-    await this.webhooks.saveOrder(payload);
+    await this.webhooks.saveOrder(payload, true);
 
     // Shopify attend un 200 rapide, sinon il retente.
     return { ok: true };
@@ -80,10 +81,16 @@ export class WebhooksController {
     this.webhooks.verifierBoutique(shop);
 
     const payload = (req.body || {}) as Record<string, any>;
-    await this.webhooks.saveOrder(payload);
+    await this.webhooks.saveOrder(payload, true);
     // Puis on aligne le suivi sur l'état réel (« en préparation » n'est pas
-    // dans le payload : il faut le lire sur les fulfillment orders).
-    await this.webhooks.alignOne(String(payload.id));
+    // dans le payload : il faut le lire sur les fulfillment orders). APRÈS la
+    // réponse : cet appel Shopify (jusqu'à ~80 s avec réessais) dépassait le
+    // délai de ~5 s du webhook. La synchro de 2 min reste le filet.
+    setImmediate(() => {
+      this.webhooks.alignOne(String(payload.id)).catch((e) =>
+        Logger.warn(`Alignement de la commande ${payload.id} échoué : ${(e as Error).message}`, 'Webhooks'),
+      );
+    });
 
     return { ok: true };
   }

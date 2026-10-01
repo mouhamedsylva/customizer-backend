@@ -31,7 +31,8 @@ describe('Routes publiques', () => {
   });
 
   describe('GET /api/health', () => {
-    it('répond sans toucher à la base ni aux services externes', async () => {
+    // La base est interrogée (SELECT 1) : une base tombée doit rendre la sonde rouge.
+    it('répond ok quand la base répond, sans appeler Shopify', async () => {
       const r = await get('/api/health');
       expect(r.status).toBe(200);
       expect(r.body).toMatchObject({ status: 'ok' });

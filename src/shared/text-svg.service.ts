@@ -111,7 +111,7 @@ export class TextSvgService {
     // Construction du SVG complet
     const backgroundColor = options.backgroundColor || 'transparent';
     const backgroundRect = backgroundColor !== 'transparent' 
-      ? `<rect width="100%" height="100%" fill="${backgroundColor}"/>` 
+      ? `<rect width="100%" height="100%" fill="${this.escapeXml(backgroundColor)}"/>`
       : '';
 
     const svgContent = `

@@ -26,7 +26,11 @@ import {
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
-import { avecPiecesJointes } from '../quotes/pieces-jointes';
+import { avecPiecesJointes, piecesValides } from '../quotes/pieces-jointes';
+import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
+import { celluleCsv, periodeFichier } from './csv';
+import { dateBoutique } from './periodes';
+import { lireCorpsBorne } from '../shared/lecture-bornee';
 import { svgRegenere } from '../shared/zones-texte';
 import {
   loginPage,
@@ -121,7 +125,7 @@ export class AdminController {
       sort: String(req.query.sort || 'date_desc'),
     };
 
-    const [orders, { nonPayes: quotes, tous: allQuotes }, designs, me, pricing] = await Promise.all([
+    const [orders, { nonPayes: quotes, tous: allQuotes }, designs, me, pricing, etat] = await Promise.all([
       this.data.getOrders(filters),
       /* Deux listes, une seule lecture des lignes (getQuotesDashboard) :
          - non payés : un devis payé est devenu une commande, il n'a plus sa
@@ -137,6 +141,8 @@ export class AdminController {
         this.logger.warn(`Prix catalogue indisponibles pour le chiffrage : ${e}`);
         return undefined;
       }),
+      // Référence de l'auto-rafraîchissement (mêmes compteurs que /status).
+      this.data.getStatus().catch(() => undefined),
     ]);
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') || 'https://example.com';
@@ -150,6 +156,7 @@ export class AdminController {
           allQuotes,
           nonce: nonceOf(req),
           pricing,
+          etat,
           // Permet à la vue de signaler une liste tronquée : sans cela, les
           // commandes au-delà du plafond étaient inatteignables ET invisibles.
           limits: { orders: ORDERS_LIMIT, quotes: QUOTES_LIMIT },
@@ -256,7 +263,51 @@ export class AdminController {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
+    /* UN SEUL ENVOI À LA FOIS PAR DEVIS. Deux onglets (ou deux admins) qui
+       envoyaient en même temps se croisaient : l'un lisait les lignes posées
+       par l'autre comme « état d'avant », et un échec remettait 0 € sur un
+       brouillon que l'autre venait de facturer — ou le client recevait deux
+       e-mails. Verrou en mémoire : une seule instance tourne (voir README). */
+    if (!this.verrouillerDevis(quoteId)) {
+      res.status(409).json({
+        ok: false,
+        error: 'Un envoi est déjà en cours pour ce devis : patientez quelques secondes.',
+      });
+      return;
+    }
+    try {
+      await this.envoyerFacture(
+        req, quoteId, message, unitPrice, prixParFamille, prixParArticle,
+        taxesIncluses, totalAffiche, quantites, attachments, res,
+      );
+    } finally {
+      this.envoisEnCours.delete(quoteId);
+    }
+  }
 
+  /** Devis dont un envoi (facture ou relance) est en cours. */
+  private readonly envoisEnCours = new Set<string>();
+
+  /** Réserve le devis ; faux s'il est déjà pris. Libérer avec envoisEnCours.delete. */
+  private verrouillerDevis(quoteId: string): boolean {
+    if (this.envoisEnCours.has(quoteId)) return false;
+    this.envoisEnCours.add(quoteId);
+    return true;
+  }
+
+  private async envoyerFacture(
+    req: Request,
+    quoteId: string,
+    message: string,
+    unitPrice: unknown,
+    prixParFamille: unknown,
+    prixParArticle: unknown,
+    taxesIncluses: unknown,
+    totalAffiche: unknown,
+    quantites: unknown,
+    attachments: unknown,
+    res: Response,
+  ): Promise<void> {
     const quote = await this.data.getQuote(quoteId);
     if (!quote) {
       res.status(404).json({ ok: false, error: 'Devis introuvable.' });
@@ -386,11 +437,19 @@ export class AdminController {
     let brouillonModifie = false;
     let factureEnvoyee = false;
     let annuler: (() => Promise<void>) | null = null;
+    /* Instant où la requête d'envoi part : au-delà, un échec ambigu ne permet
+       plus d'annuler (voir envoi-facture.ts). */
+    let debutEnvoi: Date | null = null;
+    let envoiPrecedent: unknown = null;
+    let piecesJointes: ReturnType<typeof piecesValides> = [];
+    const enregistrerEnvoi = (draft: Record<string, any> | null, totalTax: unknown) =>
+      this.enregistrerEnvoiFacture(res, quoteId, customer.email, draft, totalTax, piecesJointes);
     try {
       /* 0) Lignes du brouillon AVANT chiffrage, pour pouvoir l'annuler si un
          garde-fou (TVA, montant) refuse l'envoi : le lien de paiement que le
          client a peut-être déjà ne doit jamais afficher un prix refusé. */
       const avant = await this.shopify.getDraftOrder(quote.draftOrderId);
+      envoiPrecedent = avant?.invoice_sent_at ?? null;
       const lignesAvant: Array<Record<string, any>> = Array.isArray(avant?.line_items)
         ? avant.line_items
         : [];
@@ -497,37 +556,15 @@ export class AdminController {
         return;
       }
 
-      // 1.5) Ajoute les pièces jointes comme propriétés du draft order si présentes
-      if (attachments && Array.isArray(attachments) && attachments.length > 0) {
-        // Validation des pièces jointes
-        const validAttachments = attachments.filter(att => 
-          att && typeof att.name === 'string' && typeof att.url === 'string'
-        ).slice(0, 5); // Maximum 5 pièces jointes
-
-        if (validAttachments.length > 0) {
-          // Stockage temporaire des pièces jointes dans l'entité Quote
-          await this.data.updateQuoteAttachments(quoteId, validAttachments);
-
-          // Ajout des URLs comme propriétés Shopify (visibles dans l'admin)
-          const attachmentProperties: Record<string, string> = {};
-          validAttachments.forEach((att, index) => {
-            attachmentProperties[`_PièceJointe_${index + 1}_Nom`] = att.name;
-            attachmentProperties[`_PièceJointe_${index + 1}_URL`] = att.url;
-            if (att.type) attachmentProperties[`_PièceJointe_${index + 1}_Type`] = att.type;
-          });
-
-          // Mise à jour du draft order avec les propriétés. Simple trace pour
-          // l'admin Shopify (le préfixe `_` les masque au client) : son échec
-          // ne doit pas bloquer l'envoi de la facture.
-          try {
-            await this.shopify.updateDraftOrderProperties(quote.draftOrderId, attachmentProperties);
-          } catch (e) {
-            this.logger.warn(
-              `Pièces jointes non reportées sur le brouillon ${quote.draftOrderId} : ${(e as Error).message}`,
-            );
-          }
-        }
-      }
+      /* 1.5) PIÈCES JOINTES — filtrées (https Cloudinary, 5 au plus) et
+         enregistrées seulement APRÈS l'envoi réussi (étape 4), où elles
+         REMPLACENT celles d'un envoi précédent : un renvoi sans pièce ne doit
+         pas laisser l'ancien PDF (à l'ancien prix) repartir dans les relances.
+         Elles ne sont plus posées en propriétés du brouillon : invisibles pour
+         le client, cette réécriture des lignes APRÈS le garde-fou 1.3 pouvait
+         modifier un brouillon déjà contrôlé. Les liens partent dans l'e-mail,
+         et le dashboard les garde en base. */
+      piecesJointes = piecesValides(attachments);
 
       // 2) Génère le message personnalisé ou utilise le message fourni.
       let finalMessage = (message || '').trim();
@@ -544,12 +581,66 @@ export class AdminController {
 
       // 3) Envoie la facture au client. Shopify ne joint aucun fichier :
       //    les pièces jointes partent en liens dans le message (pieces-jointes.ts).
+      debutEnvoi = new Date();
       await this.shopify.sendDraftOrderInvoice(quote.draftOrderId, {
         to: customer.email,
         subject: `Votre devis — ${productName}`,
-        custom_message: avecPiecesJointes(finalMessage, attachments),
+        custom_message: avecPiecesJointes(finalMessage, piecesJointes),
       });
       factureEnvoyee = true; // plus rien à défaire : le client a son devis
+
+      await enregistrerEnvoi(draft, taxes.totalTax);
+    } catch (err) {
+      /* Échec APRÈS le départ de la requête d'envoi, sans refus net (délai
+         dépassé, réseau, 5xx) : l'e-mail a PU partir. Surtout ne pas remettre
+         l'ancien prix — voir envoi-facture.ts. On relit le brouillon. */
+      if (!factureEnvoyee && debutEnvoi && envoiPeutEtrePasse(err)) {
+        let relu: Record<string, any> | null = null;
+        try {
+          relu = await this.shopify.getDraftOrder(quote.draftOrderId as string);
+        } catch { /* on ne sait pas : traité comme non confirmé */ }
+        if (factureEnvoyeeDepuis(relu, debutEnvoi, envoiPrecedent)) {
+          this.logger.warn(
+            `Devis ${quoteId} : réponse d'envoi perdue (${(err as Error).message}) ` +
+              'mais Shopify confirme la facture envoyée.',
+          );
+          await enregistrerEnvoi(relu, null);
+          return;
+        }
+        this.logger.error(
+          `Devis ${quoteId} : envoi de facture NON CONFIRMÉ (${(err as Error).message}). ` +
+            'Brouillon laissé au nouveau prix.',
+        );
+        res.status(502).json({
+          ok: false,
+          error:
+            "L'envoi n'a pas pu être confirmé par Shopify (délai dépassé ou erreur réseau). " +
+            "Le nouveau prix est appliqué au brouillon. Vérifiez dans Shopify si l'e-mail " +
+            'est parti avant de renvoyer, pour éviter un doublon.',
+        });
+        return;
+      }
+      /* Échec avant l'envoi de la facture (Shopify indisponible, brouillon à
+         plusieurs lignes pour une quantité unique…) ou refus net de l'envoi :
+         on défait, pour que le devis et le brouillon ne divergent pas. */
+      if (!factureEnvoyee && annuler) await annuler();
+      res.status(502).json({ ok: false, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * Étape 4 de l'envoi : la facture est partie, on l'enregistre et on répond.
+   * Partagée par l'envoi normal et par l'envoi confirmé après une réponse perdue.
+   */
+  private async enregistrerEnvoiFacture(
+    res: Response,
+    quoteId: string,
+    email: string,
+    draft: Record<string, any> | null,
+    totalTax: unknown,
+    pieces: ReturnType<typeof piecesValides>,
+  ): Promise<void> {
+    {
 
       // 4) Reflète immédiatement l'état « facture envoyée » dans le dashboard.
       //    invoiceSentAt sert de point de départ aux relances automatiques ;
@@ -566,6 +657,15 @@ export class AdminController {
         invoiceSentAt: new Date(),
         remindersSent: 0,
         lastReminderAt: null,
+        // Pièces de CET envoi, qui remplacent celles d'un envoi précédent.
+        tempAttachments: pieces.length
+          ? pieces.map((p) => ({
+              name: p.name,
+              url: p.url,
+              type: p.type || '',
+              uploadedAt: new Date().toISOString(),
+            }))
+          : null,
       };
       if (draft?.total_price) patch.totalPrice = String(draft.total_price);
 
@@ -603,20 +703,14 @@ export class AdminController {
 
       res.json({
         ok: true,
-        to: customer.email,
+        to: email,
         total: draft?.total_price ?? null,
         // TVA calculée par Shopify : le montant officiel, porté sur la facture.
-        totalTax: taxes.totalTax,
+        totalTax: totalTax ?? null,
         /* Le dashboard doit pouvoir distinguer « tout s'est bien passé » d'un
            envoi réussi au suivi incomplet. */
         ...(statutEcrit ? {} : { avertissement: 'statut-non-enregistre' }),
       });
-    } catch (err) {
-      /* Échec avant l'envoi de la facture (Shopify indisponible, brouillon à
-         plusieurs lignes pour une quantité unique…) : on défait, pour que le
-         devis et le brouillon ne divergent pas. */
-      if (!factureEnvoyee && annuler) await annuler();
-      res.status(502).json({ ok: false, error: (err as Error).message });
     }
   }
 
@@ -762,6 +856,11 @@ export class AdminController {
   ): Promise<void> {
     if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    // Une note non textuelle faisait planter .slice (500) : refus net en 400.
+    if (note !== undefined && note !== null && typeof note !== 'string') {
+      res.status(400).json({ ok: false, error: 'Note illisible.' });
       return;
     }
     await this.data.setInternalNote(orderId, (note || '').slice(0, 2000));
@@ -927,6 +1026,9 @@ export class AdminController {
     }
 
     const BATCH = 5;
+    const ZIP_MAX_FICHIER = 50 * 1024 * 1024;
+    const ZIP_MAX_TOTAL = 300 * 1024 * 1024;
+    let totalZip = 0;
     for (let i = 0; i < allowed.length; i += BATCH) {
       await Promise.all(
         allowed.slice(i, i + BATCH).map(async (f) => {
@@ -936,10 +1038,12 @@ export class AdminController {
               signal: AbortSignal.timeout(15000),
             });
             if (!r.ok) return;
-            fetched.push({
-              name: f.name,
-              buf: Buffer.from(await r.arrayBuffer()),
-            });
+            // Plafonds par fichier ET au total : l'archive est construite en
+            // mémoire, un fichier géant (ou 200 gros fichiers) épuisait le process.
+            const buf = await lireCorpsBorne(r, ZIP_MAX_FICHIER);
+            if (totalZip + buf.length > ZIP_MAX_TOTAL) return;
+            totalZip += buf.length;
+            fetched.push({ name: f.name, buf });
           } catch {
             /* fichier inaccessible : ignoré */
           }
@@ -966,7 +1070,11 @@ export class AdminController {
         name = f.name.replace(/(\.\w+)$/, `-${n++}$1`);
       }
       used.add(name);
-      zip.file(name, f.buf);
+      /* Images et PDF sont DÉJÀ compressés : les recompresser en DEFLATE (JS pur,
+         sur le fil principal) bloquait la boucle d'événements — webhooks et
+         configurateur en attente — pour un gain nul. Stockés tels quels. */
+      const dejaCompresse = /\.(png|jpe?g|webp|gif|pdf|zip)$/i.test(name);
+      zip.file(name, f.buf, dejaCompresse ? { compression: 'STORE' } : undefined);
     }
 
     const zipBuffer: Buffer = await zip.generateAsync({
@@ -1001,6 +1109,27 @@ export class AdminController {
     const quote = await this.data.getQuote(quoteId);
     if (!quote?.draftOrderId) {
       res.status(404).json({ ok: false, error: 'Devis introuvable.' });
+      return;
+    }
+    /* Seul un devis FACTURÉ et impayé se relance. Le bouton n'apparaît que
+       dans ce cas, mais une page restée ouverte (ou un appel direct) relançait
+       aussi un devis non chiffré : le client recevait un lien de paiement à
+       0 €, ou un « en attente de règlement » après avoir payé. */
+    if (quote.draftStatus !== 'invoice_sent') {
+      res.status(409).json({
+        ok: false,
+        error:
+          quote.draftStatus === 'completed'
+            ? 'Ce devis a déjà été réglé : pas de relance.'
+            : "Ce devis n'a pas encore été facturé : envoyez d'abord la facture.",
+      });
+      return;
+    }
+    if (!this.verrouillerDevis(quoteId)) {
+      res.status(409).json({
+        ok: false,
+        error: 'Un envoi est déjà en cours pour ce devis : patientez quelques secondes.',
+      });
       return;
     }
 
@@ -1055,6 +1184,8 @@ export class AdminController {
       res.json({ ok: true, to: customer.email });
     } catch (err) {
       res.status(502).json({ ok: false, error: (err as Error).message });
+    } finally {
+      this.envoisEnCours.delete(quoteId);
     }
   }
 
@@ -1071,8 +1202,9 @@ export class AdminController {
       return;
     }
     const type = String(req.query.type || 'orders');
-    const period = String(req.query.period || 'all');
-    const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const period = periodeFichier(req.query.period);
+    // Cellule neutralisée contre les formules Excel (voir csv.ts).
+    const q = celluleCsv;
 
     /**
      * Plafond des exports.
@@ -1101,21 +1233,19 @@ export class AdminController {
       rows = [
         'reference,client,email,telephone,entreprise,produit,quantite,total,statut,relances,date',
       ];
-      const quotes = await this.data.getQuotes(period, true, EXPORT_LIMIT);
+      // Champs extraits en SQL : sans les aperçus base64 (voir le service).
+      const quotes = await this.data.getQuotesPourExport(period, EXPORT_LIMIT);
       truncated = quotes.length >= EXPORT_LIMIT;
       for (const qt of quotes) {
-        const d = (qt.quoteData || {}) as Record<string, any>;
-        const c = d.customer || {};
-        const coin = d.coin || {};
         rows.push(
           [
             q(qt.id),
-            q(c.nom),
-            q(c.email),
-            q(c.telephone),
-            q(c.entreprise),
-            q(coin.name),
-            q(coin.qty),
+            q(qt.nom),
+            q(qt.email),
+            q(qt.telephone),
+            q(qt.entreprise),
+            q(qt.produit),
+            q(qt.quantite),
             q(qt.totalPrice),
             q(QUOTE_STATUS_FR[qt.draftStatus || 'open'] || qt.draftStatus),
             q(qt.remindersSent ?? 0),
@@ -1136,7 +1266,9 @@ export class AdminController {
       for (const o of orders) {
         rows.push(
           [
-            q(o.shopifyCreatedAt ? new Date(o.shopifyCreatedAt).toISOString().slice(0, 10) : ''),
+            // Date de la boutique (Paris), et date de réception à défaut : le
+            // filtre de période utilise la même règle (COALESCE).
+            q(dateBoutique(o.shopifyCreatedAt || o.receivedAt)),
             q(o.orderNumber || o.shopifyOrderId),
             q(o.customerName),
             q(o.customerEmail),
@@ -1302,8 +1434,11 @@ export class AdminController {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
-    await this.data.markOrdersSeen(Array.isArray(orderIds) ? orderIds : []);
-    await this.data.markQuotesSeen(Array.isArray(quoteIds) ? quoteIds : []);
+    // Identifiants textuels seulement (un objet dans In([...]) donnait une 500).
+    const ids = (v: unknown) =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length <= 64).slice(0, 1000) : [];
+    await this.data.markOrdersSeen(ids(orderIds));
+    await this.data.markQuotesSeen(ids(quoteIds));
     res.json({ ok: true });
   }
 

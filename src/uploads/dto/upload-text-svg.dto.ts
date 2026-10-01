@@ -7,6 +7,7 @@ import {
   ValidateNested,
   IsArray,
   ArrayMaxSize,
+  ArrayNotEmpty,
   Min,
   Max,
   MaxLength,
@@ -110,6 +111,7 @@ export class RenderOptionsDto {
 export class UploadTextSvgDto {
   /** Segments de texte avec mise en forme individuelle. */
   @IsArray()
+  @ArrayNotEmpty() // vide : 400 clair au lieu d'un 502 au rendu
   @ArrayMaxSize(20) // Limite le nombre de segments
   @ValidateNested({ each: true })
   @Type(() => TextSegmentDto)

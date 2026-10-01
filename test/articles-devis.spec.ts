@@ -177,3 +177,41 @@ describe('appliquerQuantites', () => {
     expect(() => appliquerQuantites({ ...GUILLERMAIN, group: { rows: [{ qty: 1 }] } }, [1], 'a', date)).toThrow();
   });
 });
+
+describe('appliquerQuantites — familles entrelacées (ordre du panier ≠ ordre des familles)', () => {
+  // Panier : Patch A, Sweat B, Patch C. Familles : Patchs [A, C] puis Sweats [B].
+  const devis = () => ({
+    coin: {
+      name: 'Commande sur devis (3 articles)',
+      qty: 35,
+      details: [
+        'Commande sur devis : 2 famille(s), 3 ligne(s), 35 pièce(s).',
+        '10× Patch A — Rouge',
+        '5× Sweat B — Noir — M',
+        '20× Patch C — Bleu',
+      ],
+      familles: [
+        { libelle: 'Patchs', qty: 30, lignes: ['10× Patch A — Rouge', '20× Patch C — Bleu'] },
+        { libelle: 'Sweats', qty: 5, lignes: ['5× Sweat B — Noir — M'] },
+      ],
+    },
+  });
+
+  it('chaque ligne de famille reçoit la quantité de SON article', () => {
+    const { appliquerQuantites } = require('../src/quotes/articles-devis');
+    // Nouvelles quantités dans l'ordre des articles (details) : A=12, B=6, C=25.
+    const r = appliquerQuantites(devis(), [12, 6, 25], 'admin@x.fr');
+    expect(r.coin.familles[0].lignes).toEqual(['12× Patch A — Rouge', '25× Patch C — Bleu']);
+    expect(r.coin.familles[0].qty).toBe(37);
+    expect(r.coin.familles[1].lignes).toEqual(['6× Sweat B — Noir — M']);
+    expect(r.coin.familles[1].qty).toBe(6);
+    expect(r.coin.qty).toBe(43);
+  });
+
+  it('refuse si une ligne de famille ne correspond à aucun article', () => {
+    const { appliquerQuantites } = require('../src/quotes/articles-devis');
+    const d = devis();
+    d.coin.familles[1].lignes = ['5× Sweat Z — Vert — L'];
+    expect(() => appliquerQuantites(d, [12, 6, 25], 'admin@x.fr')).toThrow(/rattacher/);
+  });
+});

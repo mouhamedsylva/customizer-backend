@@ -1,157 +1,152 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, Not, IsNull } from 'typeorm';
 import { Quote } from '../database/entities/quote.entity';
 import { CloudinaryService } from './cloudinary.service';
 import { ressourceDepuisUrl } from './piece-jointe-cloudinary';
 
 /**
- * Service de nettoyage automatique des pièces jointes temporaires.
- * 
- * Les pièces jointes uploadées pour les devis sont stockées temporairement
- * dans Cloudinary et supprimées automatiquement après 48h pour éviter
- * l'accumulation de fichiers inutiles.
+ * Durée de conservation d'une pièce jointe de facture.
+ *
+ * Ses liens partent dans l'e-mail de facture PUIS dans chaque relance
+ * (pieces-jointes.ts) : les supprimer 48 h après l'upload, comme avant,
+ * cassait les liens des relances de J+3, J+7, J+14. 60 jours couvrent le
+ * cycle de relances et laissent au client le temps de relire son devis.
+ */
+export const RETENTION_PIECES_MS = 60 * 24 * 60 * 60 * 1000;
+
+/** Devis examinés par passe (la table n'a pas d'index sur ce critère). */
+const LOT_NETTOYAGE = 200;
+
+type Piece = NonNullable<Quote['tempAttachments']>[number];
+
+/** Pièces expirées / à garder, selon leur date d'upload. Sans date : expirée. */
+export function trierPieces(
+  pieces: Piece[],
+  maintenant: number,
+  retentionMs = RETENTION_PIECES_MS,
+): { expirees: Piece[]; gardees: Piece[] } {
+  const expirees: Piece[] = [];
+  const gardees: Piece[] = [];
+  for (const p of pieces) {
+    const t = Date.parse(String(p?.uploadedAt ?? ''));
+    (Number.isFinite(t) && maintenant - t <= retentionMs ? gardees : expirees).push(p);
+  }
+  return { expirees, gardees };
+}
+
+/**
+ * Nettoyage périodique des pièces jointes de facture (Cloudinary).
+ *
+ * Corrigé sur trois points :
+ *  - PÉRIMÈTRE : seuls les devis `draftStatus = 'open'` étaient examinés, or
+ *    les pièces ne sont enregistrées qu'à l'envoi de la facture, qui passe le
+ *    devis en `invoice_sent` — elles n'étaient donc jamais nettoyées. Tout
+ *    devis portant des pièces est désormais examiné.
+ *  - ÉCHEC DE SUPPRESSION : la référence était retirée quand même, et le
+ *    fichier restait en ligne sans plus personne pour le retrouver. Elle est
+ *    maintenant gardée, pour réessayer à la passe suivante.
+ *  - URL : seules les URL de NOTRE compte Cloudinary sont supprimées.
  */
 @Injectable()
-export class CleanupService implements OnModuleInit {
+export class CleanupService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CleanupService.name);
   private cleanupTimer?: NodeJS.Timeout;
+  private startTimer?: NodeJS.Timeout;
+  private running = false;
 
   constructor(
     @InjectRepository(Quote)
     private readonly quotes: Repository<Quote>,
     private readonly cloudinary: CloudinaryService,
+    private readonly config: ConfigService,
   ) {}
 
-  /**
-   * Démarre le nettoyage automatique au démarrage du module.
-   * Nettoyage initial différé puis répété toutes les 6 heures.
-   */
   onModuleInit(): void {
-    // Premier nettoyage après 5 minutes (laisser le temps au système de démarrer)
-    setTimeout(() => {
-      void this.cleanupExpiredAttachments();
-    }, 5 * 60 * 1000);
-
-    // Nettoyage récurrent toutes les 6 heures
-    this.cleanupTimer = setInterval(() => {
-      void this.cleanupExpiredAttachments();
-    }, 6 * 60 * 60 * 1000);
+    // Premier passage après 5 minutes, puis toutes les 6 heures.
+    this.startTimer = setTimeout(() => void this.cleanupExpiredAttachments(), 5 * 60 * 1000);
+    this.cleanupTimer = setInterval(
+      () => void this.cleanupExpiredAttachments(),
+      6 * 60 * 60 * 1000,
+    );
   }
 
   onModuleDestroy(): void {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-    }
+    if (this.startTimer) clearTimeout(this.startTimer);
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
   }
 
-  /**
-   * Nettoie les pièces jointes temporaires expirées (> 48h).
-   * 
-   * Les pièces jointes sont considérées comme temporaires si :
-   * - Elles sont stockées dans tempAttachments
-   * - Elles datent de plus de 48h
-   * - Le devis n'a pas encore été facturé (draftStatus !== 'invoice_sent')
-   */
+  /** Supprime les pièces jointes expirées. Ne lève jamais. */
   async cleanupExpiredAttachments(): Promise<{ cleaned: number; errors: number }> {
-    this.logger.log('Début du nettoyage des pièces jointes temporaires');
-    
+    if (this.running) return { cleaned: 0, errors: 0 };
+    this.running = true;
+    let cleaned = 0;
+    let errors = 0;
     try {
-      // Trouve les devis avec des pièces jointes temporaires expirées
-      const expirationDate = new Date();
-      expirationDate.setHours(expirationDate.getHours() - 48); // 48h avant maintenant
-      
-      const quotesWithExpiredAttachments = await this.quotes.find({
-        where: {
-          // Ne nettoie que les devis non encore facturés
-          draftStatus: 'open',
-          // Créés il y a plus de 48h (approximation)
-          createdAt: LessThan(expirationDate)
-        },
-        select: {
-          id: true,
-          tempAttachments: true,
-          createdAt: true
-        }
+      const cloudName = this.config.get<string>('CLOUDINARY_CLOUD_NAME') || undefined;
+      const devis = await this.quotes.find({
+        where: { tempAttachments: Not(IsNull()) },
+        select: { id: true, tempAttachments: true },
+        take: LOT_NETTOYAGE,
       });
 
-      let cleaned = 0;
-      let errors = 0;
+      const maintenant = Date.now();
+      for (const quote of devis) {
+        const pieces = Array.isArray(quote.tempAttachments) ? quote.tempAttachments : [];
+        const { expirees, gardees } = trierPieces(pieces, maintenant);
+        if (!expirees.length) continue;
 
-      for (const quote of quotesWithExpiredAttachments) {
-        if (!quote.tempAttachments || quote.tempAttachments.length === 0) {
-          continue;
-        }
-
-        const expiredAttachments = quote.tempAttachments.filter(attachment => {
-          if (!attachment.uploadedAt) return true; // Pas de date = nettoyage
-          
-          const uploadedAt = new Date(attachment.uploadedAt);
-          const age = Date.now() - uploadedAt.getTime();
-          const expiredMs = 48 * 60 * 60 * 1000; // 48h en millisecondes
-          
-          return age > expiredMs;
-        });
-
-        if (expiredAttachments.length === 0) {
-          continue;
-        }
-
-        // Supprime les fichiers de Cloudinary
-        for (const attachment of expiredAttachments) {
+        const restantes = [...gardees];
+        for (const piece of expirees) {
+          const ressource = ressourceDepuisUrl(piece?.url, cloudName);
+          if (!ressource) {
+            // Pas une URL de notre compte : rien à supprimer chez nous.
+            continue;
+          }
           try {
-            if (attachment.url) {
-              // Extrait le public_id de l'URL Cloudinary
-              // image OU raw (PDF, DOC, XLS) : sans le bon type, destroy()
-              // répond « not found » et le fichier raw resterait en ligne.
-              const ressource = ressourceDepuisUrl(attachment.url);
-              if (ressource) {
-                await this.cloudinary.deleteResource(ressource.publicId, ressource.resourceType);
-                cleaned++;
-                this.logger.debug(`Fichier supprimé: ${attachment.name} (${ressource.publicId})`);
-              }
-            }
-          } catch (error) {
-            this.logger.warn(
-              `Erreur suppression fichier ${attachment.name}: ${(error as Error).message}`
-            );
+            await this.cloudinary.deleteResource(ressource.publicId, ressource.resourceType);
+            cleaned++;
+          } catch (e) {
             errors++;
+            restantes.push(piece); // gardée : on réessaiera
+            this.logger.warn(
+              `Pièce jointe ${piece?.name} non supprimée : ${(e as Error).message}`,
+            );
           }
         }
 
-        // Met à jour le devis pour supprimer les pièces jointes expirées
-        const remainingAttachments = quote.tempAttachments.filter(attachment => {
-          return !expiredAttachments.some(expired => expired.url === attachment.url);
-        });
-
-        await this.quotes.update(quote.id, {
-          tempAttachments: remainingAttachments.length > 0 ? remainingAttachments : null
-        });
+        /* Écriture conditionnelle : si les pièces du devis ont changé pendant
+           la passe (nouvel envoi de facture), on n'écrase pas la nouvelle liste
+           avec une liste périmée. */
+        await this.quotes
+          .createQueryBuilder()
+          .update(Quote)
+          .set({ tempAttachments: restantes.length ? restantes : null })
+          .where('id = :id', { id: quote.id })
+          // Liste INCHANGÉE depuis la lecture (même contenu, pas seulement même
+          // nombre) : sinon un renvoi de facture serait écrasé par une liste périmée.
+          .andWhere('JSON_LENGTH(tempAttachments) = :n', { n: pieces.length })
+          .andWhere('JSON_CONTAINS(tempAttachments, CAST(:avant AS JSON))', {
+            avant: JSON.stringify(pieces),
+          })
+          .execute();
       }
 
-      this.logger.log(
-        `Nettoyage terminé: ${cleaned} fichiers supprimés, ${errors} erreurs`
-      );
-      
-      return { cleaned, errors };
-
-    } catch (error) {
-      this.logger.error(
-        `Erreur lors du nettoyage des pièces jointes: ${(error as Error).message}`
-      );
-      return { cleaned: 0, errors: 1 };
+      if (cleaned || errors) {
+        this.logger.log(`Nettoyage des pièces jointes : ${cleaned} supprimée(s), ${errors} erreur(s).`);
+      }
+    } catch (e) {
+      errors++;
+      this.logger.error(`Nettoyage des pièces jointes impossible : ${(e as Error).message}`);
+    } finally {
+      this.running = false;
     }
+    return { cleaned, errors };
   }
 
-  /**
-   * Extrait le public_id d'une URL Cloudinary.
-   * Exemple: https://res.cloudinary.com/cloud/image/upload/v123/folder/file.ext -> folder/file
-   */
-  /**
-   * Force le nettoyage immédiat (pour les tests ou la maintenance).
-   */
+  /** Force le nettoyage immédiat (tests, maintenance). */
   async forceCleanup(): Promise<{ cleaned: number; errors: number }> {
-    this.logger.log('Nettoyage forcé des pièces jointes temporaires');
     return this.cleanupExpiredAttachments();
   }
 }

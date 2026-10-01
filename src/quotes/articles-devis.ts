@@ -77,6 +77,24 @@ function reecrire(lignes: unknown, qtes: number[]): { lignes: unknown; ok: boole
 }
 
 /**
+ * Pour chaque ligne des familles (ordre aplati), l'indice de l'article de même
+ * contenu dans `articles`. Chaque article sert une seule fois ; null si une
+ * ligne n'a pas d'équivalent (devis retouché, données incohérentes).
+ */
+function rattacherFamilles(articles: ArticleDevis[], familles: any[]): number[] | null {
+  const pris = new Set<number>();
+  const cle = (a: ArticleDevis) => `${a.qty}|${a.libelle}|${a.options}`;
+  const out: number[] = [];
+  for (const ligne of familles.flatMap((f: any) => lire(f?.lignes))) {
+    const i = articles.findIndex((a, j) => !pris.has(j) && cle(a) === cle(ligne));
+    if (i < 0) return null;
+    pris.add(i);
+    out.push(i);
+  }
+  return out;
+}
+
+/**
  * Applique de NOUVELLES QUANTITÉS à un devis (correction par l'admin, le
  * client s'étant trompé), et renvoie le devis modifié — sans toucher à
  * l'original.
@@ -119,14 +137,33 @@ export function appliquerQuantites(
   const nbDetails = lire(c.details).length;
   if (nbDetails === quantites.length) c.details = reecrire(c.details, quantites).lignes;
 
-  // `familles` : lignes dans l'ordre aplati, puis total par famille.
+  // `familles` : chaque ligne reçoit la quantité de SON article, puis total par famille.
   if (Array.isArray(c.familles)) {
     const nbFam = c.familles.reduce((n: number, f: any) => n + lire(f?.lignes).length, 0);
     if (nbFam === quantites.length) {
+      /* ORDRE DES ARTICLES ≠ ORDRE DES FAMILLES. Les articles viennent de
+         `details`, dans l'ordre du panier (Patch A, Sweat B, Patch C) ; les
+         familles regroupent par produit (A, C | B). Appliquer les quantités
+         dans l'ordre aplati donnait à Patch C la quantité du Sweat B — et ces
+         quantités fausses servaient ensuite au palier de prix.
+         On rattache donc chaque ligne de famille à l'article de MÊME contenu
+         (produit, options, quantité d'origine). Si les articles viennent
+         eux-mêmes des familles, l'ordre aplati EST le bon. */
+      // Produit unique (articles null) : une seule ligne, rien à rattacher.
+      const depuisDetails = !!articles && lire(coin.details).length === quantites.length;
+      const cible = depuisDetails ? rattacherFamilles(articles || [], c.familles) : null;
+      if (depuisDetails && !cible) {
+        throw new Error(
+          'Impossible de rattacher les lignes des familles aux articles du devis : ' +
+            'corrigez la quantité dans Shopify.',
+        );
+      }
       let k = 0;
       for (const f of c.familles) {
         const n = lire(f?.lignes).length;
-        const qs = quantites.slice(k, k + n);
+        const qs = cible
+          ? cible.slice(k, k + n).map((idx) => quantites[idx])
+          : quantites.slice(k, k + n);
         f.lignes = reecrire(f.lignes, qs).lignes;
         if (n) f.qty = qs.reduce((s, q) => s + q, 0);
         k += n;

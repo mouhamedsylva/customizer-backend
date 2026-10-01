@@ -1,9 +1,15 @@
-import { Column, Entity, PrimaryColumn, CreateDateColumn } from 'typeorm';
+import { Column, Entity, Index, PrimaryColumn, CreateDateColumn } from 'typeorm';
 
 /**
  * Demande de devis (patchs PVC/Tissé, coins…).
  * Remplace le stockage en mémoire (Map) de l'ancien QuotesService.
  */
+/* Index posés à la main par 1759300000000-IndexDevis.sql (mêmes noms) : sans
+   eux, les tâches périodiques triaient des lignes complètes en mémoire. */
+@Index('IDX_quotes_createdAt', ['createdAt'])
+@Index('IDX_quotes_status_invoiceSentAt', ['draftStatus', 'invoiceSentAt'])
+@Index('IDX_quotes_draftOrderId', ['draftOrderId'])
+@Index('IDX_quotes_seen', ['seen'])
 @Entity('quotes')
 export class Quote {
   /** Référence du devis (UUID). */

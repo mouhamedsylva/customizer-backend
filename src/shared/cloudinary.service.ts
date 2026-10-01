@@ -3,6 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import sharp from 'sharp';
 import { optionsPieceJointe, TypeRessource } from './piece-jointe-cloudinary';
+import { lireCorpsBorne } from './lecture-bornee';
+
+/* Plafond de pixels des images EXTERNES (uploads, CDN) : le défaut de sharp
+   (~268 Mpx, ~1 Go décodé) laissait passer une « bombe » de décompression. */
+// 150 Mpx : une photo de smartphone de 48 Mpx doit passer (40 Mpx la refusait).
+const ENTREE_SHARP = { limitInputPixels: 150_000_000 };
 // Depuis sharp 0.35, le namespace de types n'est plus exposé via l'import par
 // défaut : `sharp.OverlayOptions` ne résout plus. Le type est importé nommément.
 import type { OverlayOptions } from 'sharp';
@@ -197,7 +203,7 @@ export class CloudinaryService implements OnModuleInit {
     productType = 'generic',
     placement = 'front',
   ): Promise<UploadResult> {
-    const optimized = await sharp(fileBuffer)
+    const optimized = await sharp(fileBuffer, ENTREE_SHARP)
       .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
       .png({ quality: 90 })
       .toBuffer();
@@ -215,7 +221,7 @@ export class CloudinaryService implements OnModuleInit {
     fileBuffer: Buffer,
     designId = `${Date.now()}`,
   ): Promise<UploadResult> {
-    const optimized = await sharp(fileBuffer)
+    const optimized = await sharp(fileBuffer, ENTREE_SHARP)
       .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 85 })
       .toBuffer();
@@ -479,6 +485,14 @@ export class CloudinaryService implements OnModuleInit {
        le domaine du commerçant sans son accord. */
     if (this.hotesFrontend().includes(host)) return true;
 
+    /* res.cloudinary.com sert TOUS les comptes Cloudinary : n'importe qui peut
+       y héberger un fichier piégé. Seul NOTRE compte est accepté (le thème n'y
+       référence aucun autre — vérifié le 30/09/2026). */
+    const cloud = this.config.get<string>('CLOUDINARY_CLOUD_NAME');
+    if (host === 'res.cloudinary.com' && cloud) {
+      return url.pathname.split('/')[1] === cloud;
+    }
+
     return CloudinaryService.ALLOWED_IMAGE_HOSTS.some(
       (d) => host === d || host.endsWith('.' + d),
     );
@@ -517,6 +531,9 @@ export class CloudinaryService implements OnModuleInit {
   private async loadImageBuffer(src: string): Promise<Buffer> {
     if (src.startsWith('data:')) {
       const base64 = src.split(',')[1] || '';
+      if (base64.length > CloudinaryService.TAILLE_MAX_IMAGE * 1.4) {
+        throw new Error('Image trop volumineuse.');
+      }
       return Buffer.from(base64, 'base64');
     }
     // Les asset_url Shopify sont souvent protocole-relatifs (//cdn.shopify...).
@@ -551,9 +568,11 @@ export class CloudinaryService implements OnModuleInit {
       // Message générique + code, sans l'URL.
       throw new Error(`Impossible de charger l'image (${res.status}).`);
     }
-    const arrayBuffer = await res.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    return lireCorpsBorne(res, CloudinaryService.TAILLE_MAX_IMAGE);
   }
+
+  /** Taille maximale d'une image distante (fond ou logo) : 15 Mo, comme multer. */
+  private static readonly TAILLE_MAX_IMAGE = 15 * 1024 * 1024;
 
   /**
    * Compose UNE vue (fond produit + logos superposes) en un buffer PNG.
@@ -573,7 +592,7 @@ export class CloudinaryService implements OnModuleInit {
     // retourné : les logos arrivent déjà positionnés dans le repère retourné et
     // sont posés à l'endroit, sinon le design du client sortirait inversé.
     const bgBuffer = await this.loadImageBuffer(backgroundSrc);
-    let bgPipeline = sharp(bgBuffer).resize(baseWidth, null, {
+    let bgPipeline = sharp(bgBuffer, ENTREE_SHARP).resize(baseWidth, null, {
       fit: 'inside',
       withoutEnlargement: false,
     });
@@ -595,7 +614,7 @@ export class CloudinaryService implements OnModuleInit {
       try {
         const logoBuffer = await this.loadImageBuffer(logo.src);
         const targetW = Math.max(1, Math.round((logo.w || 0.1) * canvasW));
-        const resized = await sharp(logoBuffer)
+        const resized = await sharp(logoBuffer, ENTREE_SHARP)
           .resize(targetW, null, { fit: 'inside', withoutEnlargement: false })
           .png()
           .toBuffer();
@@ -776,7 +795,7 @@ export class CloudinaryService implements OnModuleInit {
 
   /**
    * Upload temporaire de pièce jointe pour devis/facture.
-   * Stocké dans un dossier temporaire avec TTL automatique (24h).
+   * Conservé 60 jours puis supprimé par CleanupService (liens des relances).
    */
   async uploadQuoteAttachment(
     fileBuffer: Buffer,
@@ -793,7 +812,7 @@ export class CloudinaryService implements OnModuleInit {
           folder: 'customizer/temp-attachments',
           public_id: publicId,
           resource_type: resourceType,
-          // TTL de 24h pour nettoyage automatique
+          // Nettoyage : CleanupService (60 jours), pas de TTL Cloudinary.
           invalidate: true,
           overwrite: true,
           // Tags pour identification et nettoyage

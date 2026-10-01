@@ -103,6 +103,13 @@ function isAllowedImgHost(u: string): boolean {
  * `.svg` reste exclu : c'est un format XML, et ces URLs sont chargées
  * automatiquement à l'ouverture de la page.
  */
+/** Vraie couleur (#hex, rgb/rgba) : seule valeur admise dans un `style`.
+    La couleur du texte vient du panier ; sans ce filtre, une valeur comme
+    « red;position:fixed;inset:0;background:url(…) » recouvrait la fiche. */
+function couleurSure(c: unknown): c is string {
+  return typeof c === 'string' && /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i.test(c);
+}
+
 function isImg(u: unknown): u is string {
   if (typeof u !== 'string') return false;
 
@@ -2379,7 +2386,7 @@ function specsTypo(props: Array<{ name: string; value: string }>): string {
   if (couleur) {
     /* La valeur vient du panier : seule une vraie couleur entre dans `style`,
        jamais une déclaration CSS arbitraire (« red;background:url(…) »). */
-    const sure = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i.test(couleur);
+    const sure = couleurSure(couleur);
     const point = sure ? `<span class="typo-dot" style="background:${esc(couleur)}"></span> ` : '';
     pastilles.push(`<span class="spec"><b>Couleur texte</b> ${point}${esc(couleur)}</span>`);
   }
@@ -2714,7 +2721,7 @@ function blocTypoFiche(props: Array<{ name: string; value: string }>): string {
       }
 
       const pastille =
-        p.name === '_TexteColor'
+        p.name === '_TexteColor' && couleurSure(valeur)
           ? `<span class="ps-typo-dot" style="background:${esc(valeur)}"></span>`
           : '';
 
@@ -2746,7 +2753,7 @@ function typoCell(tp: any): string {
   if (police) bouts.push(esc(police));
   if (corps) bouts.push(esc(corps));
 
-  const pastille = couleur
+  const pastille = couleurSure(couleur)
     ? `<span class="typo-dot" style="background:${esc(couleur)}" title="${esc(couleur)}"></span>`
     : '';
 
@@ -3187,7 +3194,12 @@ function quoteCard(
                  - PDF ou autre -> lien d ouverture, une vignette serait vide.
                isImg() filtre l URL, esc() echappe : memes garde-fous que
                partout ailleurs dans cette vue. */
-            c.fichierUrl
+            /* Lien affiché seulement vers Cloudinary en https (même règle que le
+               DTO) : un ancien devis au lien arbitraire (javascript:, phishing)
+               n'est pas cliquable. */
+            c.fichierUrl && !/^https:\/\/res\.cloudinary\.com\//.test(String(c.fichierUrl))
+              ? `<div class="kv" style="grid-column:1/-1"><span class="k">Fichier joint</span><span class="mono">lien non vérifié : ${esc(c.fichierUrl)}</span></div>`
+            : c.fichierUrl
               ? (isImg(c.fichierUrl)
                   ? `<div class="kv" style="grid-column:1/-1"><span class="k">Fichier joint</span><img class="thumb js-zoom" src="${esc(c.fichierUrl)}" data-zoom="${esc(c.fichierUrl)}" alt="fichier joint" style="max-width:120px;max-height:120px;cursor:zoom-in;vertical-align:middle"><a href="${esc(c.fichierUrl)}" target="_blank" rel="noopener" style="margin-left:10px">${esc(c.fichierNom || 'Telecharger')}</a></div>`
                   : `<div class="kv" style="grid-column:1/-1"><span class="k">Fichier joint</span><a href="${esc(c.fichierUrl)}" target="_blank" rel="noopener">📎 ${esc(c.fichierNom || 'Ouvrir le fichier')}</a></div>`)
@@ -3731,8 +3743,11 @@ const PERIODS: Array<[string, string]> = [
   ['7d', '7 derniers jours'],
   ['30d', '30 derniers jours'],
   ['month', 'Ce mois-ci'],
+  // Périodes CLOSES : seul moyen d'exporter un mois ou une année terminés.
+  ['prev_month', 'Mois précédent'],
   ['quarter', 'Ce trimestre'],
   ['year', 'Cette année'],
+  ['prev_year', 'Année précédente'],
 ];
 const SORTS: Array<[string, string]> = [
   ['date_desc', 'Plus récentes'],
@@ -3803,6 +3818,9 @@ export function dashboardPage(
     limits?: { orders: number; quotes: number };
     /** Prix catalogue TTC : pré-remplissent la fenêtre de chiffrage. */
     pricing?: PricingPayload;
+    /** Compteurs de /api/admin/status au moment du rendu : référence de
+        l'auto-rafraîchissement (même mesure que le sondage). */
+    etat?: { orders: number; quotes: number; designs: number; newOrders: number; newQuotes: number };
   } = {},
 ): string {
   const nonce = extra.nonce || '';
@@ -4704,7 +4722,12 @@ export function dashboardPage(
        compteurs). Si l'état a changé (nouvelle commande/devis, etc.), on recharge
        la page — SAUF si l'utilisateur est occupé (champ en cours de saisie, menu
        ou modale ouverte), pour ne rien interrompre. */
-    var DASH_STATE=${JSON.stringify({
+    /* Référence = les MÊMES compteurs que /api/admin/status, lus au rendu.
+       Comparer le sondage (tous les devis, sans filtre de période) aux
+       longueurs des listes affichées (filtrées, sans devis payés) donnait un
+       écart permanent : la bannière « nouvelles données » revenait toutes les
+       5 s dès qu'un devis était payé ou qu'un filtre était actif. */
+    var DASH_STATE=${JSON.stringify(extra.etat || {
       orders: orders.length,
       quotes: quotes.length,
       designs: designs.length,
@@ -6729,7 +6752,7 @@ export function dashboardPage(
           '  <div class="file-icon ' + icon + '">' + icon.toUpperCase()[0] + '</div>',
           '  <div class="file-info">',
           '    <div class="file-name" title="' + escapeHtml(file.name) + '">' + escapeHtml(file.name) + '</div>',
-          '    <div class="file-size">' + formatFileSize(file.size || 0) + (file.error ? ' - ' + file.error : '') + '</div>',
+          '    <div class="file-size">' + formatFileSize(file.size || 0) + (file.error ? ' - ' + escapeHtml(file.error) : '') + '</div>',
           '    ' + (!file.uploaded && !file.error ? '<div class="upload-progress"><div class="upload-bar" style="width:' + (file.progress || 0) + '%"></div></div>' : ''),
           '  </div>',
           '  <div class="file-actions">',
@@ -7370,10 +7393,13 @@ export function dashboardPage(
     }
 
     /* Conservée : utilisée aussi par la liste des pièces jointes d'un devis. */
+    /* Guillemets compris : le résultat sert aussi dans des ATTRIBUTS
+       (title="…" de la liste des pièces jointes), où un " non échappé
+       fermait l'attribut. */
     function escapeHtml(text){
       var div=document.createElement('div');
-      div.textContent=text;
-      return div.innerHTML;
+      div.textContent=(text==null?'':String(text));
+      return div.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
   </script>`, nonce);
 }

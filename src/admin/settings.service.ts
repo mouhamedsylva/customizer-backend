@@ -82,6 +82,8 @@ export class SettingsService {
       const clean = (input.reminderDays || [])
         .map((d) => parseInt(String(d), 10))
         .filter((d) => Number.isFinite(d) && d > 0 && d <= 365)
+        // Dédoublonné : [3, 3, 7] envoyait deux relances, à J3 puis J4.
+        .filter((d, i, t) => t.indexOf(d) === i)
         .sort((a, b) => a - b)
         .slice(0, 6);
       entries.push(['reminder_days', clean.join(',')]);

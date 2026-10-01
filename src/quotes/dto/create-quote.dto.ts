@@ -6,10 +6,11 @@ import {
   IsDefined,
   IsEmail,
   IsNotEmpty,
-  IsNumber,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -62,6 +63,12 @@ export class QuoteCustomerDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
+  /* Uniquement une URL Cloudinary en https : ce lien est affiché à l'admin
+     dans le dashboard. Sans contrôle, le formulaire public pouvait y placer
+     un `javascript:` ou une page de phishing. */
+  @Matches(/^https:\/\/res\.cloudinary\.com\//, {
+    message: 'fichierUrl doit être un fichier envoyé via /api/uploads/piece-jointe.',
+  })
   fichierUrl?: string;
 
   /** Nom d'origine du fichier, pour l'afficher tel que le client l'a envoyé. */
@@ -120,7 +127,7 @@ export class QuoteFamilyDto {
   @MaxLength(120)
   libelle!: string;
 
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(100000)
   qty!: number;
@@ -129,9 +136,9 @@ export class QuoteFamilyDto {
      retrouve en propriété, au lieu d'un bloc global détaché des prix. */
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(600)
   @IsString({ each: true })
-  @MaxLength(300, { each: true })
+  @MaxLength(600, { each: true })
   lignes?: string[];
 }
 
@@ -142,22 +149,30 @@ export class QuoteCoinDto {
   @MaxLength(200)
   name!: string;
 
+  /* 600 lignes de 600 caractères : une ligne par article d'un panier
+     (commande de groupe : une par personne, 500 au plus) ; et la note client
+     (500 caractères, préfixée « Notes : ») dépassait 300 → devis refusé. */
   @IsArray()
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(600)
   @IsString({ each: true })
-  @MaxLength(300, { each: true })
+  @MaxLength(600, { each: true })
   details!: string[];
 
   // Plafond : au-delà, la demande relève d'un échange commercial direct, pas
   // d'un formulaire. Sans borne, la quantité partait telle quelle chez Shopify.
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(100000)
   qty!: number;
 
-  // Chaque aperçu porte deux URLs rendues dans le dashboard et l'e-mail.
+  /* Chaque aperçu porte deux URLs rendues dans le dashboard et l'e-mail.
+     100 et non 10 : un panier « coin + commande de groupe » envoie un aperçu
+     par ligne (une par personne) ; au-delà de 10 personnes le devis était
+     refusé en 400 et le coin, vendu uniquement sur devis, devenait
+     impossible à commander. Ce sont des URL (le thème les uploade d'abord),
+     et le corps reste plafonné à 25 Mo (main.ts). */
   @IsArray()
-  @ArrayMaxSize(10)
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => QuotePreviewDto)
   previews!: QuotePreviewDto[];
@@ -195,7 +210,7 @@ export class GroupRowDto {
   @MaxLength(200)
   flock?: string;
 
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(10000)
   qty!: number;
@@ -212,9 +227,10 @@ export class GroupOrderDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(200) // copié dans le titre de la ligne Shopify
   productLabel?: string;
 
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(100000)
   pieces!: number;

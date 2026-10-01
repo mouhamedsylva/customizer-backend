@@ -540,6 +540,21 @@ export class TextOutlineService {
   ): { chemin: opentype.Path; avance: number } {
     const ratio = taille / police.unitsPerEm;
 
+    /* CARACTÈRE ABSENT DE LA POLICE (« € », « ł », emoji, accent sur une police
+       pixel…) : opentype.js renvoie le glyphe `.notdef` (index 0) — un
+       rectangle « tofu » ou rien — et le SVG partait quand même à l'atelier,
+       alors que le navigateur du client affichait une police de remplacement.
+       Tout ou rien : on lève, genererSvgVectoriel renvoie null et la commande
+       part avec le PNG seul, rendu avec les polices de secours. */
+    const manquants = Array.from(texte).filter(
+      (c) => c.trim() !== '' && police.charToGlyphIndex(c) === 0,
+    );
+    if (manquants.length) {
+      throw new Error(
+        `caractère(s) absent(s) de la police : ${[...new Set(manquants)].join(' ')}`,
+      );
+    }
+
     let glyphes: opentype.Glyph[];
     try {
       glyphes = police.stringToGlyphs(texte);

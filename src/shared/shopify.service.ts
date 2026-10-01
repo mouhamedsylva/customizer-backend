@@ -221,6 +221,7 @@ export class ShopifyService {
     url: string,
     init: RequestInit = {},
   ): Promise<Response> {
+    let jetonRenouvele = false;
     for (let attempt = 0; ; attempt++) {
       let response: Response;
       try {
@@ -237,6 +238,26 @@ export class ShopifyService {
           );
         }
         throw e;
+      }
+
+      /* 401 avec un jeton OAuth mis en cache : révoqué (réinstallation de
+         l'app, secret changé). Il restait utilisé jusqu'à son expiration
+         calculée — jusqu'à 24 h de 401 sur TOUT le backend. On l'oublie et on
+         rejoue UNE fois avec un jeton neuf : une requête refusée en 401 n'a
+         rien écrit, la rejouer ne crée pas de doublon. */
+      if (response.status === 401 && !jetonRenouvele && this.jeton &&
+          !this.config.get<string>('SHOPIFY_ACCESS_TOKEN')) {
+        jetonRenouvele = true;
+        this.jeton = null;
+        this.jetonExpireA = 0;
+        const headers = { ...((init.headers as Record<string, string>) || {}) };
+        if ('X-Shopify-Access-Token' in headers) {
+          headers['X-Shopify-Access-Token'] = await this.obtenirJeton();
+          init = { ...init, headers };
+          this.logger.warn('Jeton Shopify refusé (401) : renouvelé, requête rejouée.');
+          attempt--; // ne compte pas comme un réessai de quota
+          continue;
+        }
       }
 
       if (response.status !== 429 || attempt >= ShopifyService.MAX_RETRIES) {

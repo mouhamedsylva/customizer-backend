@@ -6,6 +6,7 @@ import { randomBytes } from 'crypto';
 import helmet from 'helmet';
 import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
+import { verifierEnv } from './config/verifier-env';
 
 async function bootstrap(): Promise<void> {
   // FILET DE SÉCURITÉ : depuis Node 15, une promesse rejetée sans récepteur
@@ -25,6 +26,15 @@ async function bootstrap(): Promise<void> {
       'UnhandledRejection',
     );
   });
+
+  /* Configuration vérifiée AVANT tout, et signalée en tête des logs du
+     conteneur : sans cela, une variable absente ne se révélait qu'à l'usage
+     (webhooks en 401, uploads en 502…), loin de sa cause. Le démarrage n'est
+     pas bloqué : une fonction secondaire mal configurée ne doit pas couper le
+     configurateur. Le bilan est aussi exposé à l'admin par /api/health/details. */
+  const bilan = verifierEnv(process.env);
+  for (const a of bilan.avertissements) Logger.warn(`Configuration : ${a}`, 'Bootstrap');
+  for (const c of bilan.critiques) Logger.error(`Configuration MANQUANTE : ${c}`, 'Bootstrap');
 
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
@@ -123,31 +133,6 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // Augmente la taille max du body JSON/urlencoded.
-  // Les devis "coins" embarquent 3 apercus (recto/verso/cote) en base64,
-  // ce qui depasse largement la limite Express par defaut (100 kb) -> erreur 413.
-  // `verify` conserve le corps BRUT (req.rawBody) UNIQUEMENT pour les webhooks
-  // Shopify, indispensable à la vérification de la signature HMAC.
-  app.use(
-    json({
-      limit: '25mb',
-      verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
-        // Le test porte sur le CHEMIN SEUL, et il est ancré.
-        //
-        // `originalUrl.includes('/webhooks/')` regardait aussi la query : une
-        // URL comme `/api/quotes?x=/webhooks/` déclenchait donc la copie du
-        // corps sur une route publique quelconque. Avec une limite à 25 Mo,
-        // chaque requête allouait 50 Mo au lieu de 25 (le buffer d'Express plus
-        // sa copie), sans aucune authentification.
-        const path = (req.originalUrl || '').split('?')[0];
-        if (path.startsWith('/api/webhooks/')) {
-          req.rawBody = Buffer.from(buf);
-        }
-      },
-    }),
-  );
-  app.use(urlencoded({ limit: '25mb', extended: true }));
-
   // Cookies (session du dashboard admin).
   app.use(cookieParser());
 
@@ -177,7 +162,7 @@ async function bootstrap(): Promise<void> {
     ...frontendUrls.map((u) => u.replace(/^https?:\/\//, 'https://')),
     'http://localhost:9292',    // shopify theme dev
     'http://127.0.0.1:9292',
-    'vps-c1a07d74.vps.ovh.net',
+    'https://vps-c1a07d74.vps.ovh.net', // sans schéma, l'entrée ne correspondait jamais
   ];
 
   /* Domaine de la boutique en production. Codé ici EN PLUS de FRONTEND_URL :
@@ -198,7 +183,11 @@ async function bootstrap(): Promise<void> {
   const isShopifyOrigin = (origin: string): boolean => {
     try {
       const { hostname, protocol } = new URL(origin);
-      return protocol === 'https:' && hostname.endsWith('.myshopify.com');
+      // *.shopifypreview.com : liens d'aperçu de thème partagés par Shopify.
+      return (
+        protocol === 'https:' &&
+        (hostname.endsWith('.myshopify.com') || hostname.endsWith('.shopifypreview.com'))
+      );
     } catch {
       return false;
     }
@@ -248,7 +237,75 @@ async function bootstrap(): Promise<void> {
       origin: allowed,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       credentials: true,
+      // Lu par le thème pour patienter avant de réessayer après un 429.
+      exposedHeaders: ['Retry-After'],
     });
+  });
+
+  /* Les parseurs passent APRÈS le CORS : enregistrés avant, un corps trop
+     gros (413) ou un JSON invalide répondait SANS en-tête CORS — le navigateur
+     n'y voyait qu'un « Failed to fetch », impossible à distinguer d'une panne.
+     Le gestionnaire ci-dessous renvoie ces erreurs en JSON, en français. */
+  // Augmente la taille max du body JSON/urlencoded.
+  // Les devis "coins" embarquent 3 apercus (recto/verso/cote) en base64,
+  // ce qui depasse largement la limite Express par defaut (100 kb) -> erreur 413.
+  // `verify` conserve le corps BRUT (req.rawBody) UNIQUEMENT pour les webhooks
+  // Shopify, indispensable à la vérification de la signature HMAC.
+  /* LIMITE DE TAILLE PAR ROUTE. 25 Mo s'appliquaient PARTOUT — y compris sur
+     une 404 ou sur /admin/login — et le corps est lu et décodé AVANT que la
+     limite de débit (ThrottlerGuard, un guard Nest) n'intervienne : quelques
+     dizaines de requêtes parallèles suffisaient à épuiser la mémoire. Seules
+     les routes qui transportent réellement des images en base64 gardent une
+     limite large ; `json()` ne relit pas un corps déjà décodé, donc le
+     premier parseur qui correspond l'emporte. */
+  const LIMITES_CORPS: Array<[string, string]> = [
+    ['/api/quotes', '25mb'],   // aperçus des devis (base64)
+    ['/api/cart', '10mb'],     // propriétés de personnalisation (aperçus)
+    ['/api/export', '10mb'],   // compositions d'aperçus
+    ['/api/uploads', '10mb'],  // text-svg ; les fichiers passent par multer
+    ['/api/webhooks', '5mb'],  // commandes Shopify volumineuses
+  ];
+  for (const [prefixe, limit] of LIMITES_CORPS) {
+    app.use(
+      prefixe,
+      json({
+        limit,
+        verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
+          if (prefixe === '/api/webhooks') req.rawBody = Buffer.from(buf);
+        },
+      }),
+    );
+  }
+  app.use(
+    json({
+      limit: '1mb',
+      verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
+        // Le test porte sur le CHEMIN SEUL, et il est ancré.
+        //
+        // `originalUrl.includes('/webhooks/')` regardait aussi la query : une
+        // URL comme `/api/quotes?x=/webhooks/` déclenchait donc la copie du
+        // corps sur une route publique quelconque. Avec une limite à 25 Mo,
+        // chaque requête allouait 50 Mo au lieu de 25 (le buffer d'Express plus
+        // sa copie), sans aucune authentification.
+        const path = (req.originalUrl || '').split('?')[0];
+        if (path.startsWith('/api/webhooks/')) {
+          req.rawBody = Buffer.from(buf);
+        }
+      },
+    }),
+  );
+  // Aucun formulaire HTML ne poste de gros volume : 100 ko suffisent.
+  app.use(urlencoded({ limit: '100kb', extended: true }));
+  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (err?.type === 'entity.too.large') {
+      res.status(413).json({ statusCode: 413, message: 'Demande trop volumineuse.' });
+      return;
+    }
+    if (err?.type === 'entity.parse.failed') {
+      res.status(400).json({ statusCode: 400, message: 'Corps de requête JSON invalide.' });
+      return;
+    }
+    next(err);
   });
 
   // Validation automatique des DTOs (class-validator) sur toutes les routes.
@@ -271,4 +328,14 @@ async function bootstrap(): Promise<void> {
   Logger.log(`Customizer backend demarre sur http://localhost:${port}/api`, 'Bootstrap');
 }
 
-void bootstrap();
+/* Un échec du démarrage (port déjà pris, base injoignable, configuration
+   critique manquante) ARRÊTE le process. Avec le filet unhandledRejection
+   ci-dessus, il restait en vie SANS serveur HTTP — timers de synchro et de
+   relances actifs — et Docker ne le redémarrait jamais. */
+bootstrap().catch((e) => {
+  Logger.error(
+    `Démarrage impossible : ${e instanceof Error ? e.stack || e.message : String(e)}`,
+    'Bootstrap',
+  );
+  process.exit(1);
+});

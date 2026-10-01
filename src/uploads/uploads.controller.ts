@@ -13,6 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import {
   CloudinaryService,
@@ -62,6 +63,9 @@ export class UploadsController {
    * Optimise (2000x2000, PNG q90) et upload sur Cloudinary.
    */
   @Post('logo')
+  /* Pas de limite plus stricte que le plafond par défaut (120/min PAR ROUTE et
+     par IP) : une commande de groupe envoie un visuel par personne, et 30/min
+     faisait perdre les visuels au-delà de ~25 noms, sans message au client. */
   @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_IMAGES) }))
   async uploadLogo(
     @UploadedFile() file: UploadedMulterFile,
@@ -83,6 +87,7 @@ export class UploadsController {
    * Optimise (1200x1200, JPEG q85) et upload dans le dossier previews.
    */
   @Post('preview')
+  // Plafond par défaut (120/min par route) : voir /logo.
   @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_IMAGES) }))
   async uploadPreview(
     @UploadedFile() file: UploadedMulterFile,
@@ -108,6 +113,7 @@ export class UploadsController {
    * devis n'est pas authentifié.
    */
   @Post('piece-jointe')
+  // Plafond par défaut (120/min par route) : voir /logo.
   @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_PIECE_JOINTE) }))
   async uploadPieceJointe(
     @UploadedFile() file: UploadedMulterFile,
@@ -147,6 +153,11 @@ export class UploadsController {
    * Remplace la rasterisation canvas côté client par un rendu vectoriel.
    */
   @Post('text-svg')
+  /* Appelée à chaque retouche de texte (anti-rebond 200 ms) et ~3 fois par nom
+     d'une commande de groupe. À 40/min, le rendu retombait sur le canvas et le
+     fichier de découpe VECTORIEL était perdu sans message. Plafond relevé
+     au-dessus du défaut (120/min par route). */
+  @Throttle({ default: { limit: 240, ttl: 60000 } })
   async uploadTextSvg(
     @Body() dto: UploadTextSvgDto,
   ): Promise<UploadResult & { svgUrl?: string }> {
@@ -289,7 +300,7 @@ export class UploadsController {
   /**
    * POST /api/uploads/quote-attachment
    * Upload temporaire de pièce jointe pour devis/facture.
-   * Fichiers stockés temporairement (24h) puis nettoyés automatiquement.
+   * Fichiers conservés 60 jours puis nettoyés (CleanupService).
    */
   @Post('quote-attachment')
   @UseGuards(AdminSessionGuard) // Seuls les admins peuvent uploader

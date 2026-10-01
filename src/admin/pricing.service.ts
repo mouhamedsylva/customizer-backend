@@ -178,6 +178,9 @@ const DEFAULT_TIERS: Tiers = {
  * sans TVA ajoutée : la fenêtre de chiffrage doit alors AJOUTER la TVA à leur
  * prix pré-rempli, au lieu de le prendre pour un TTC.
  */
+/** Prix unitaire maximal accepté (garde-fou contre une saisie aberrante). */
+const PRIX_MAX = 100000;
+
 export const PRIX_HT_KEYS: ProductKey[] = ['patches'];
 
 /** Préfixe des clés dans la table `settings` (ex. `price_patches`). */
@@ -375,7 +378,9 @@ export class PricingService {
       // dans le contrôleur laisserait passer tout autre appelant de `save()`.
       if (QUOTE_ONLY_KEYS.includes(key)) continue;
       const n = Number(input[key]);
-      if (Number.isNaN(n) || n < 0) continue;
+      // Fini et borné : « Infinity » / 1e400 passaient (isNaN faux), étaient
+      // stockés tels quels et servis comme null au configurateur.
+      if (!Number.isFinite(n) || n < 0 || n > PRIX_MAX) continue;
       // Deux décimales : un prix n'a pas plus de précision.
       const value = (Math.round(n * 100) / 100).toFixed(2);
       rows.push({ key: KEY_PREFIX + key, value });
@@ -486,7 +491,9 @@ export class PricingService {
       const min = Math.floor(Number((row as Tier).min));
       const price = Number((row as Tier).price);
       if (!Number.isFinite(min) || min < 1) continue;
-      if (!Number.isFinite(price) || price < 0) continue;
+      // Prix > 0 : le thème ignore un palier gratuit (tierUnitPrice), la grille
+      // enregistrée ne doit donc pas en contenir.
+      if (!Number.isFinite(price) || price <= 0 || price > PRIX_MAX) continue;
       byMin.set(min, Math.round(price * 100) / 100);
     }
 

@@ -56,9 +56,11 @@ export class ExportController {
    *
    * Plafond dédié : cette route télécharge N images, les décode avec sharp
    * (opération lourde) et crée un asset Cloudinary permanent — donc facturé.
-   * Le plafond global de 120/min était très au-dessus de tout usage légitime.
+   * 60/min : une commande de groupe compose 1 à 2 vues par couleur et par
+   * face ; à 10/min, les fiches de production au-delà étaient perdues sans
+   * message (le thème ne journalise que dans la console).
    */
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @Post('preview-image')
   async previewImage(@Body() dto: PreviewImageDto): Promise<{ url: string }> {
     try {
@@ -81,9 +83,11 @@ export class ExportController {
    * sur Cloudinary. Retourne l'URL publique.
    *
    * La route la plus coûteuse du backend : jusqu'à 8 vues × 21 téléchargements.
-   * Plafond strict, en complément des `@ArrayMaxSize` du DTO.
+   * Plafond en complément des `@ArrayMaxSize` du DTO. 60/min et non 10 : une
+   * commande de groupe en appelle UNE PAR NOM ; à 10/min, la fiche « Aperçu »
+   * de production manquait au-delà de 10 personnes.
    */
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @Post('preview-multi')
   async previewMulti(@Body() dto: PreviewMultiDto): Promise<{ url: string }> {
     try {

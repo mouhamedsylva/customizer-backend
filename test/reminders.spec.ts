@@ -21,6 +21,8 @@ function build(opts: {
   quotes?: Partial<Quote>[];
   settingsThrows?: boolean;
   onSend?: (id: string) => void;
+  claimAffected?: number;
+  sendThrows?: boolean;
 }) {
   const envois: string[] = [];
   const settings = {
@@ -35,14 +37,33 @@ function build(opts: {
 
   const shopify = {
     sendDraftOrderInvoice: async (id: string) => {
+      if (opts.sendThrows) throw new Error('Erreur Shopify (422) : refus');
       envois.push(String(id));
       return {};
     },
   } as unknown as ShopifyService;
 
+  /* UPDATE conditionnels (revendication du palier, puis restitution) :
+     `claimAffected` simule un devis modifié entre la lecture et l'envoi. */
+  const ecritures: Array<{ set: Record<string, unknown>; where: string[] }> = [];
+  const qb = () => {
+    const e = { set: {} as Record<string, unknown>, where: [] as string[] };
+    const b: any = {
+      update: () => b,
+      set: (s: Record<string, unknown>) => ((e.set = s), b),
+      where: (w: string) => (e.where.push(w), b),
+      andWhere: (w: string) => (e.where.push(w), b),
+      execute: async () => {
+        ecritures.push(e);
+        return { affected: opts.claimAffected ?? 1 };
+      },
+    };
+    return b;
+  };
   const repo = {
     find: async () => (opts.quotes || []) as Quote[],
     update: async () => ({ affected: 1 }),
+    createQueryBuilder: qb,
   } as unknown as Repository<Quote>;
 
   /* 4e dépendance ajoutée au service (modèles de message) : le test la
@@ -53,7 +74,11 @@ function build(opts: {
     replaceVariables: (t: string) => t,
   } as unknown as MessageTemplateService;
 
-  return { service: new RemindersService(shopify, settings, messageTemplates, repo), envois };
+  return {
+    service: new RemindersService(shopify, settings, messageTemplates, repo),
+    envois,
+    ecritures,
+  };
 }
 
 function devis(p: Partial<Quote>): Partial<Quote> {
@@ -76,6 +101,37 @@ describe('RemindersService.run', () => {
     });
     await service.run('test');
     expect(envois).toHaveLength(0);
+  });
+
+  it('ne relance pas un devis modifié entre la lecture et l’envoi', async () => {
+    // Facture renvoyée ou relance manuelle entre-temps : la revendication ne touche aucune ligne.
+    const { service, envois } = build({
+      claimAffected: 0,
+      quotes: [devis({ invoiceSentAt: new Date(Date.now() - 4 * JOUR) })],
+    });
+    await service.run('test');
+    expect(envois).toHaveLength(0);
+  });
+
+  it('écrit le palier AVANT l’envoi, et le rend si l’envoi échoue', async () => {
+    const { service, envois, ecritures } = build({
+      sendThrows: true,
+      quotes: [devis({ invoiceSentAt: new Date(Date.now() - 4 * JOUR) })],
+    });
+    await service.run('test');
+    expect(envois).toHaveLength(0);
+    expect(ecritures).toHaveLength(2);
+    expect(ecritures[0].set.remindersSent).toBe(1);
+    expect(ecritures[0].where).toContain('remindersSent = :n');
+    expect(ecritures[1].set.remindersSent).toBe(0);
+  });
+
+  it('ne lance pas deux passes en même temps', async () => {
+    const { service } = build({
+      quotes: [devis({ invoiceSentAt: new Date(Date.now() - 4 * JOUR) })],
+    });
+    const [a, b] = await Promise.all([service.run('a'), service.run('b')]);
+    expect(a.sent + b.sent).toBe(1);
   });
 
   it('ne relance pas avant le premier palier', async () => {

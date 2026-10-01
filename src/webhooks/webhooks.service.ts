@@ -219,7 +219,13 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
    * Aucune notification n'est émise : la correspondance passe intégralement
    * par les e-mails natifs de Shopify.
    */
-  async saveOrder(payload: Record<string, any>): Promise<void> {
+  /**
+   * @param enArrierePlan  webhook : la vérification Shopify du devis payé part
+   *   APRÈS la réponse. Shopify attend un 200 en ~5 s ; cet appel (20 s de
+   *   délai, réessais 429) le faisait dépasser, et Shopify rejouait le
+   *   webhook — voire supprimait l'abonnement après des échecs répétés.
+   */
+  async saveOrder(payload: Record<string, any>, enArrierePlan = false): Promise<void> {
     const shopifyOrderId = String(payload.id);
     const isNew = !(await this.orders.exists({ where: { shopifyOrderId } }));
 
@@ -377,7 +383,15 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     /* La commande vient d'un devis ET elle est payée : on referme la boucle
        tout de suite, sans attendre la synchro de 10 minutes. */
     if (quoteId && this.estPayee(payload)) {
-      await this.marquerDevisPaye(quoteId, shopifyOrderId, payload);
+      if (enArrierePlan) {
+        setImmediate(() => {
+          this.marquerDevisPaye(quoteId, shopifyOrderId, payload).catch((e) =>
+            this.logger.warn(`Devis ${quoteId} non marqué payé : ${(e as Error).message}`),
+          );
+        });
+      } else {
+        await this.marquerDevisPaye(quoteId, shopifyOrderId, payload);
+      }
     }
     this.logger.log(
       `Commande ${entity.orderNumber || shopifyOrderId} enregistrée (${lineItems.length} article(s)).`,

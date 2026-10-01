@@ -5,6 +5,8 @@ import { ShopifyService } from '../shared/shopify.service';
 import { AdminSessionGuard } from '../admin/admin-session.guard';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { PRODUCT_SHOPIFY_IDS } from '../admin/pricing.service';
+import { DataSource } from 'typeorm';
+import { verifierEnv } from '../config/verifier-env';
 
 /**
  * Produits interrogés par la route de debug `variants`.
@@ -29,33 +31,64 @@ export class HealthController {
     private readonly shopify: ShopifyService,
     private readonly webhooks: WebhooksService,
     private readonly schema: SchemaCheckService,
+    private readonly db: DataSource,
   ) {}
+
+  /** La base répond-elle ? Borné à 3 s : une base figée ne doit pas figer la sonde. */
+  private async basePing(): Promise<boolean> {
+    try {
+      await Promise.race([
+        this.db.query('SELECT 1'),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('délai')), 3000)),
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * GET /api/health
    *
-   * 503 tant qu'il manque une table ou une colonne en base : le service
+   * 503 si la base ne répond pas, ou tant qu'il manque une table ou une colonne : le service
    * répondait « ok » pendant que le dashboard tombait sur « Unknown column ».
    * La vérification est rejouée à chaque appel tant qu'il manque quelque
    * chose : une fois le .sql de rattrapage appliqué, l'état redevient « ok »
    * sans redémarrage.
    */
   @Get()
-  async check(): Promise<{ status: string; timestamp: string; environment: string }> {
+  async check(): Promise<{ status: string; timestamp: string }> {
+    /* La BASE est testée : MySQL tombé après le démarrage laissait la sonde à
+       200, et ni Docker ni la supervision ne voyaient rien.
+       Réponse PUBLIQUE réduite au statut : le détail (colonnes manquantes,
+       fichier de correctif, environnement) renseignait un visiteur sur le
+       schéma. Il est dans /api/health/details, réservé aux admins. */
+    const baseOk = await this.basePing();
     let { manquants } = this.schema.etat();
-    if (manquants.length) manquants = await this.schema.verifier();
-    const corps = {
-      status: manquants.length ? 'schema_incomplet' : 'ok',
-      timestamp: new Date().toISOString(),
-      environment: this.config.get<string>('NODE_ENV') || 'development',
-    };
-    if (manquants.length) {
-      throw new HttpException(
-        { ...corps, manquants, correctif: FICHIER_RATTRAPAGE },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
+    if (baseOk && manquants.length) manquants = await this.schema.verifier();
+    const status = !baseOk ? 'base_injoignable' : manquants.length ? 'schema_incomplet' : 'ok';
+    const corps = { status, timestamp: new Date().toISOString() };
+    if (status !== 'ok') throw new HttpException(corps, HttpStatus.SERVICE_UNAVAILABLE);
     return corps;
+  }
+
+  /**
+   * GET /api/health/details — RÉSERVÉ AUX ADMINS.
+   * Ce qui manque en base, le fichier SQL à appliquer, et les variables
+   * d'environnement absentes (voir verifier-env.ts).
+   */
+  @UseGuards(AdminSessionGuard)
+  @Get('details')
+  async details(): Promise<Record<string, unknown>> {
+    const baseOk = await this.basePing();
+    const manquants = baseOk ? await this.schema.verifier() : [];
+    return {
+      base: baseOk ? 'ok' : 'injoignable',
+      schema: { manquants, correctif: manquants.length ? FICHIER_RATTRAPAGE : null },
+      configuration: verifierEnv(process.env),
+      environment: this.config.get<string>('NODE_ENV') || 'development',
+      uptimeSecondes: Math.round(process.uptime()),
+    };
   }
 
   /**

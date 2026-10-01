@@ -148,6 +148,14 @@ describe('genererSvgVectoriel', () => {
     expect(await service().genererSvgVectoriel([segment('PAUL', 'Bebas')])).not.toBeNull();
   });
 
+  it('caractère absent de la police : null (PNG seul), jamais un rectangle « tofu »', async () => {
+    const s = service();
+    // Un emoji n'existe dans aucune police texte du catalogue.
+    expect(await s.genererSvgVectoriel([segment('PAUL 🎉', 'Lora')])).toBeNull();
+    // Les accents usuels, eux, restent vectorisés.
+    expect(await s.genererSvgVectoriel([segment('Éléonore', 'Lora')])).not.toBeNull();
+  });
+
   it('renvoie null pour une police absente ou un texte vide', async () => {
     const s = service();
     expect(await s.genererSvgVectoriel([segment('x', 'Comic Sans')])).toBeNull();

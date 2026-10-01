@@ -30,6 +30,11 @@ function build(counts: {
     ({
       count: async (opts?: { where?: { seen?: boolean } }) =>
         opts?.where?.seen === false ? unseen : n,
+      // Devis non vus HORS devis payés : compté par QueryBuilder.
+      createQueryBuilder: () => {
+        const b: any = { where: () => b, andWhere: () => b, getCount: async () => unseen };
+        return b;
+      },
     }) as unknown as Repository<never>;
 
   return new AdminService(
@@ -138,9 +143,9 @@ describe('periodStart', () => {
     expect(ecart).toBeLessThan(7.1 * 86400000);
   });
 
-  it('ancre « mois » au premier jour du mois courant', () => {
+  it('ancre « mois » au premier jour du mois courant (heure de Paris)', () => {
     const d = periodStart('month') as Date;
-    expect(d.getDate()).toBe(1);
-    expect(d.getMonth()).toBe(new Date().getMonth());
+    const jour = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric' }).format(d);
+    expect(jour).toBe('1');
   });
 });

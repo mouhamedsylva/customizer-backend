@@ -51,11 +51,33 @@ export function optionsPieceJointe(
  */
 export function ressourceDepuisUrl(
   url: string,
+  cloudName?: string,
 ): { publicId: string; resourceType: TypeRessource } | null {
-  const m = String(url || '').match(/\/(image|raw)\/upload\/(?:v\d+\/)?(.+)$/i);
+  /* Hôte ET compte vérifiés : l'URL vient d'une requête admin, et le
+     nettoyage supprime ce qu'elle désigne. Sans ce contrôle, une URL forgée
+     faisait supprimer n'importe quel fichier du compte. */
+  let u: URL;
+  try {
+    u = new URL(String(url || ''));
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.hostname !== 'res.cloudinary.com') return null;
+  if (cloudName && u.pathname.split('/')[1] !== cloudName) return null;
+  const m = u.pathname.match(/\/(image|raw)\/upload\/(?:v\d+\/)?(.+)$/i);
   if (!m) return null;
   const resourceType = m[1].toLowerCase() as TypeRessource;
-  const chemin = decodeURIComponent(m[2].split(/[?#]/)[0]);
+  // URL fournie par une requête admin : un échappement invalide (%zz) faisait
+  // lever decodeURIComponent et arrêtait TOUTE la passe de nettoyage.
+  let chemin: string;
+  try {
+    chemin = decodeURIComponent(m[2]);
+  } catch {
+    return null;
+  }
+  /* Seul le dossier des pièces jointes est supprimable : une URL pointant un
+     logo ou un SVG de commande de notre compte ne doit jamais être détruite. */
+  if (!chemin.startsWith('customizer/temp-attachments/')) return null;
   if (resourceType === 'raw') return { publicId: chemin, resourceType };
   const sansExt = chemin.replace(/\.[a-zA-Z0-9]{1,5}$/, '');
   return sansExt ? { publicId: sansExt, resourceType } : null;

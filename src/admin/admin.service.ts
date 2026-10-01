@@ -5,10 +5,11 @@ import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
 import { evaluerLignes } from '../shared/reconnaissance-configurateur';
+import { plagePeriode } from './periodes';
 
 /** Critères de filtrage / tri des commandes. */
 export interface OrderQuery {
-  period?: string;      // all | 7d | 30d | month | quarter | year
+  period?: string;      // all | 7d | 30d | month | prev_month | quarter | year | prev_year
   payment?: string;     // all | paid | pending | refunded…
   production?: string;  // all | to_produce | producing | ready | shipped
   sort?: string;        // date_desc | date_asc | amount_desc | amount_asc
@@ -16,45 +17,16 @@ export interface OrderQuery {
 }
 
 /**
- * Date de début d'une période (null = pas de filtre).
- *
- * TOUT est ancré en UTC, délibérément.
- *
- * Les dates de commande sont stockées en colonne `datetime` MySQL, un type SANS
- * fuseau : la valeur écrite est celle qu'on relit, telle quelle. Les bornes
- * doivent donc être calculées dans le même référentiel, sinon le filtre décale.
- *
- * Les bornes calendaires (mois, trimestre, année) utilisaient `getFullYear()` /
- * `getMonth()` et le constructeur `Date`, qui lisent et écrivent en heure
- * LOCALE. Tant que le serveur tourne en UTC, local et UTC coïncident et rien ne
- * se voit. Le jour où quelqu'un pose `TZ=Europe/Paris` sur le conteneur — un
- * geste anodin — la borne du 1er août devient le 31 juillet à 22 h UTC : une
- * commande passée le 31 juillet à 23 h apparaîtrait alors dans l'export
- * comptable de juillet ET dans celui d'août, comptée deux fois.
- *
- * Les fenêtres glissantes (7d, 30d) étaient déjà correctes : un décalage à
- * partir de `now` ne dépend d'aucun fuseau.
+ * Début d'une période (null = pas de filtre). Calendrier de la boutique
+ * (Europe/Paris) : voir periodes.ts. Conservé pour les appelants existants.
  */
 export function periodStart(period?: string): Date | null {
-  const now = new Date();
-  switch (period) {
-    case '7d':
-      return new Date(now.getTime() - 7 * 86400000);
-    case '30d':
-      return new Date(now.getTime() - 30 * 86400000);
-    case 'month':
-      return new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
-      );
-    case 'quarter': {
-      const q = Math.floor(now.getUTCMonth() / 3) * 3;
-      return new Date(Date.UTC(now.getUTCFullYear(), q, 1, 0, 0, 0, 0));
-    }
-    case 'year':
-      return new Date(Date.UTC(now.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
-    default:
-      return null; // 'all' ou non précisé
-  }
+  return plagePeriode(period).debut;
+}
+
+/** Fin (exclusive) d'une période close (« mois précédent »…), sinon null. */
+export function periodEnd(period?: string): Date | null {
+  return plagePeriode(period).fin;
 }
 
 /**
@@ -247,6 +219,8 @@ export class AdminService implements OnModuleInit {
     // Filtre par période (sur la date réelle de commande).
     const since = periodStart(opts.period);
     if (since) qb.andWhere(`${dateExpr} >= :since`, { since });
+    const until = periodEnd(opts.period);
+    if (until) qb.andWhere(`${dateExpr} < :until`, { until });
 
     // Filtre par statut de paiement.
     if (opts.payment && opts.payment !== 'all') {
@@ -330,7 +304,14 @@ export class AdminService implements OnModuleInit {
       this.quotes.count(),
       this.designs.count(),
       this.orders.count({ where: { fromConfigurator: true, seen: false } }),
-      this.quotes.count({ where: { seen: false } }),
+      /* Devis PAYÉS exclus : ils quittent la liste des devis (devenus des
+         commandes), ne sont donc jamais affichés ni marqués vus — le badge de
+         la cloche ne redescendait jamais. */
+      this.quotes
+        .createQueryBuilder('q')
+        .where('q.seen = :vu', { vu: false })
+        .andWhere('(q.draftStatus IS NULL OR q.draftStatus <> :done)', { done: 'completed' })
+        .getCount(),
     ]);
     return {
       orders: Math.min(orders, ORDERS_LIMIT),
@@ -359,6 +340,8 @@ export class AdminService implements OnModuleInit {
     const qb = this.quotes.createQueryBuilder('q').select('q.id', 'id');
     const since = periodStart(period);
     if (since) qb.andWhere('q.createdAt >= :since', { since });
+    const until = periodEnd(period);
+    if (until) qb.andWhere('q.createdAt < :until', { until });
     if (!includePaid) {
       qb.andWhere('(q.draftStatus IS NULL OR q.draftStatus <> :done)', {
         done: 'completed',
@@ -377,6 +360,69 @@ export class AdminService implements OnModuleInit {
   }
 
   /**
+   * Devis pour l'EXPORT CSV : seuls les champs exportés, extraits en SQL.
+   *
+   * L'export chargeait jusqu'à 50 000 devis COMPLETS — colonne `quoteData`
+   * avec ses aperçus base64 de plusieurs Mo — pour n'en garder que le client
+   * et le produit : un export « tout » près de la clôture comptable épuisait
+   * la mémoire et faisait tomber le serveur.
+   */
+  async getQuotesPourExport(
+    period: string | undefined,
+    limit: number,
+  ): Promise<
+    Array<{
+      id: string;
+      nom: string | null;
+      email: string | null;
+      telephone: string | null;
+      entreprise: string | null;
+      produit: string | null;
+      quantite: string | null;
+      totalPrice: string | null;
+      draftStatus: string | null;
+      remindersSent: number | null;
+      createdAt: Date | null;
+    }>
+  > {
+    const champ = (chemin: string) =>
+      `JSON_UNQUOTE(JSON_EXTRACT(q.quoteData, '${chemin}'))`;
+    const qb = this.quotes
+      .createQueryBuilder('q')
+      .select('q.id', 'id')
+      .addSelect(champ('$.customer.nom'), 'nom')
+      .addSelect(champ('$.customer.email'), 'email')
+      .addSelect(champ('$.customer.telephone'), 'telephone')
+      .addSelect(champ('$.customer.entreprise'), 'entreprise')
+      .addSelect(champ('$.coin.name'), 'produit')
+      .addSelect(champ('$.coin.qty'), 'quantite')
+      .addSelect('q.totalPrice', 'totalPrice')
+      .addSelect('q.draftStatus', 'draftStatus')
+      .addSelect('q.remindersSent', 'remindersSent')
+      .addSelect('q.createdAt', 'createdAt');
+    const since = periodStart(period);
+    if (since) qb.andWhere('q.createdAt >= :since', { since });
+    const until = periodEnd(period);
+    if (until) qb.andWhere('q.createdAt < :until', { until });
+    const rows = await qb.orderBy('q.createdAt', 'DESC').limit(limit).getRawMany();
+    // JSON_UNQUOTE renvoie la chaîne 'null' pour une valeur JSON null.
+    const net = (v: unknown) => (v === null || v === undefined || v === 'null' ? null : String(v));
+    return rows.map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      nom: net(r.nom),
+      email: net(r.email),
+      telephone: net(r.telephone),
+      entreprise: net(r.entreprise),
+      produit: net(r.produit),
+      quantite: net(r.quantite),
+      totalPrice: net(r.totalPrice),
+      draftStatus: net(r.draftStatus),
+      remindersSent: r.remindersSent == null ? null : Number(r.remindersSent),
+      createdAt: r.createdAt ? new Date(r.createdAt as string) : null,
+    }));
+  }
+
+  /**
    * Les deux listes de devis du dashboard (non payés / tous) en UNE lecture
    * des lignes : les mêmes devis — colonne JSON et aperçus compris, jusqu'à
    * plusieurs Mo chacun — étaient chargés deux fois à chaque affichage.
@@ -387,9 +433,11 @@ export class AdminService implements OnModuleInit {
     limit = QUOTES_LIMIT,
   ): Promise<{ nonPayes: Quote[]; tous: Quote[] }> {
     const since = periodStart(period);
+    const until = periodEnd(period);
     const idsDe = async (includePaid: boolean): Promise<string[]> => {
       const qb = this.quotes.createQueryBuilder('q').select('q.id', 'id');
       if (since) qb.andWhere('q.createdAt >= :since', { since });
+      if (until) qb.andWhere('q.createdAt < :until', { until });
       if (!includePaid) {
         qb.andWhere('(q.draftStatus IS NULL OR q.draftStatus <> :done)', { done: 'completed' });
       }
@@ -423,6 +471,7 @@ export class AdminService implements OnModuleInit {
         | 'invoiceSentAt'
         | 'remindersSent'
         | 'lastReminderAt'
+        | 'tempAttachments'
       >
     >,
   ): Promise<void> {

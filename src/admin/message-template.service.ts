@@ -114,39 +114,47 @@ export class MessageTemplateService implements OnModuleInit {
     isActive?: boolean;
     isDefault?: boolean;
   }): Promise<MessageTemplate> {
-    // Si c'est marqué comme défaut, désactiver les autres défauts du même type
-    if (data.isDefault) {
-      await this.templates.update(
-        { type: data.type },
-        { isDefault: false }
-      );
-    }
+    /* Trois défauts corrigés, le tout en UNE transaction :
+       - une mise à jour sans `isDefault` le remettait à false (`?? false`) : le
+         modèle cessait d'être le défaut et les factures repartaient sur le
+         texte de repli. Absent = inchangé ;
+       - la remise à zéro des autres défauts utilisait le type ENVOYÉ, et non
+         celui du modèle réel ; elle avait aussi lieu avant de vérifier que le
+         modèle existe — un id inconnu laissait le type sans aucun défaut ;
+       - sans transaction, un échec entre les deux écritures laissait le même
+         état sans défaut. */
+    return this.templates.manager.transaction(async (m) => {
+      const repo = m.getRepository(MessageTemplate);
 
-    if (data.id) {
-      // Mise à jour
-      await this.templates.update(data.id, {
-        name: data.name,
-        content: data.content,
-        isActive: data.isActive ?? true,
-        isDefault: data.isDefault ?? false
-      });
-      
-      const updated = await this.templates.findOne({ where: { id: data.id } });
-      if (!updated) {
-        throw new NotFoundException('Modèle de message introuvable');
+      if (data.id) {
+        const existant = await repo.findOne({ where: { id: data.id } });
+        if (!existant) throw new NotFoundException('Modèle de message introuvable');
+        const devientDefaut = data.isDefault ?? existant.isDefault;
+        if (devientDefaut && !existant.isDefault) {
+          await repo.update({ type: existant.type }, { isDefault: false });
+        }
+        await repo.update(existant.id, {
+          name: data.name,
+          content: data.content,
+          isActive: data.isActive ?? existant.isActive,
+          isDefault: devientDefaut,
+        });
+        return (await repo.findOne({ where: { id: existant.id } })) as MessageTemplate;
       }
-      return updated;
-    } else {
-      // Création
-      const template = this.templates.create({
-        type: data.type,
-        name: data.name,
-        content: data.content,
-        isActive: data.isActive ?? true,
-        isDefault: data.isDefault ?? false
-      });
-      return this.templates.save(template);
-    }
+
+      if (data.isDefault) {
+        await repo.update({ type: data.type }, { isDefault: false });
+      }
+      return repo.save(
+        repo.create({
+          type: data.type,
+          name: data.name,
+          content: data.content,
+          isActive: data.isActive ?? true,
+          isDefault: data.isDefault ?? false,
+        }),
+      );
+    });
   }
 
   /**
@@ -180,12 +188,17 @@ export class MessageTemplateService implements OnModuleInit {
   }): string {
     let result = template;
 
-    // Remplacements sécurisés avec fallback
-    result = result.replace(/\{nom\}/g, variables.nom || '');
-    result = result.replace(/\{produit\}/g, variables.produit || 'votre commande personnalisée');
-    result = result.replace(/\{quantite\}/g, String(variables.quantite || 1));
-    result = result.replace(/\{total\}/g, variables.total || '');
-    result = result.replace(/\{entreprise\}/g, variables.entreprise || '');
+    /* Remplacement par FONCTION : avec une chaîne, `$&`, `$'` ou `` $` ``
+       présents dans une valeur saisie par le client (nom, entreprise) étaient
+       interprétés et réinjectaient des morceaux du modèle dans l'e-mail. */
+    const mettre = (re: RegExp, v: string) => {
+      result = result.replace(re, () => v);
+    };
+    mettre(/\{nom\}/g, variables.nom || '');
+    mettre(/\{produit\}/g, variables.produit || 'votre commande personnalisée');
+    mettre(/\{quantite\}/g, String(variables.quantite || 1));
+    mettre(/\{total\}/g, variables.total || '');
+    mettre(/\{entreprise\}/g, variables.entreprise || '');
 
     return result;
   }

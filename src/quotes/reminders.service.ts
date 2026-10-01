@@ -70,6 +70,21 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
    * Ne lève jamais : une panne Shopify ne doit pas arrêter le backend.
    */
   async run(reason = 'manuel'): Promise<{ sent: number }> {
+    /* Une passe à la fois. Shopify lent (200 devis × 2 appels × 20 s) : une
+       passe pouvait dépasser l'heure, et la suivante relisait des devis pas
+       encore mis à jour — le client recevait la même relance deux fois. */
+    if (this.running) return { sent: 0 };
+    this.running = true;
+    try {
+      return await this.passe(reason);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private running = false;
+
+  private async passe(reason: string): Promise<{ sent: number }> {
     // La lecture des réglages est DANS le try, comme celle des devis juste en
     // dessous. Elle ne l'était pas : `settings.get()` fait un `find()` qui
     // rejette si MySQL est indisponible, et `run()` est appelée via
@@ -134,16 +149,37 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
          Au regard d'un message erroné à un client payant, le coût est nul. */
       if (await this.dejaPaye(q)) continue;
 
+      /* REVENDICATION AVANT L'ENVOI : le palier est écrit d'abord, sous
+         condition que le devis n'ait pas bougé depuis sa lecture (même cycle
+         de facturation, même compteur). Sinon on passe :
+          - une facture renvoyée entre-temps a ouvert un nouveau cycle
+            (invoiceSentAt changé) — relancer écraserait son compteur et
+            citerait l'ancien montant ;
+          - une relance manuelle vient de partir (compteur changé).
+         Écrire APRÈS l'envoi laissait aussi un trou : base en échec au moment
+         de l'écriture, et la même relance repartait chaque heure. */
+      // À la seconde : la colonne est un DATETIME sans fraction, et rendre()
+      // compare cette valeur exacte.
+      const revendiqueA = new Date(Math.floor(Date.now() / 1000) * 1000);
+      let revendique = false;
+      try {
+        revendique = await this.revendiquer(q, due.index, revendiqueA);
+      } catch (e) {
+        this.logger.warn(`Relance du devis ${q.id} non revendiquée : ${(e as Error).message}`);
+        continue;
+      }
+      if (!revendique) continue;
+
       try {
         await this.sendReminder(q, due.index);
-        await this.quotes.update(q.id, {
-          remindersSent: due.index,
-          lastReminderAt: new Date(),
-        });
         sent++;
       } catch (e) {
         this.logger.warn(
           `Relance du devis ${q.id} échouée : ${(e as Error).message}`,
+        );
+        // Rien n'est parti (ou on l'ignore) : on rend le palier, pour réessayer.
+        await this.rendre(q, due.index, revendiqueA).catch((err) =>
+          this.logger.warn(`Devis ${q.id} : palier non rendu (${(err as Error).message}).`),
         );
       }
     }
@@ -231,6 +267,32 @@ export class RemindersService implements OnModuleInit, OnModuleDestroy {
     }
 
     return { index: nextIndex, day: dayThreshold };
+  }
+
+  /** Écrit le palier si le devis est toujours tel qu'on l'a lu. Vrai si pris. */
+  private async revendiquer(q: Quote, index: number, a: Date): Promise<boolean> {
+    const qb = this.quotes
+      .createQueryBuilder()
+      .update(Quote)
+      .set({ remindersSent: index, lastReminderAt: a })
+      .where('id = :id', { id: q.id })
+      .andWhere('draftStatus = :st', { st: 'invoice_sent' })
+      .andWhere('remindersSent = :n', { n: q.remindersSent || 0 });
+    if (q.invoiceSentAt) qb.andWhere('invoiceSentAt = :inv', { inv: q.invoiceSentAt });
+    const r = await qb.execute();
+    return (r.affected ?? 0) > 0;
+  }
+
+  /** Annule une revendication dont l'envoi a échoué (si personne n'y a touché). */
+  private async rendre(q: Quote, index: number, a: Date): Promise<void> {
+    await this.quotes
+      .createQueryBuilder()
+      .update(Quote)
+      .set({ remindersSent: q.remindersSent || 0, lastReminderAt: q.lastReminderAt ?? null })
+      .where('id = :id', { id: q.id })
+      .andWhere('remindersSent = :n', { n: index })
+      .andWhere('lastReminderAt = :a', { a })
+      .execute();
   }
 
   /** Renvoie la facture Shopify avec un message de relance. */

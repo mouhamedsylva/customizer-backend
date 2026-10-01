@@ -46,3 +46,17 @@ describe('pièces jointes de facture sur Cloudinary', () => {
     expect(ressourceDepuisUrl('https://exemple.com/x.pdf')).toBeNull();
   });
 });
+
+describe('ressourceDepuisUrl : garde-fous du nettoyage', () => {
+  it('ignore un échappement invalide au lieu de lever', () => {
+    expect(
+      ressourceDepuisUrl('https://res.cloudinary.com/c/raw/upload/customizer/temp-attachments/a%zz.pdf'),
+    ).toBeNull();
+  });
+
+  it('ne vise jamais un fichier hors du dossier des pièces jointes', () => {
+    expect(
+      ressourceDepuisUrl('https://res.cloudinary.com/c/image/upload/v1/customizer/logos/x/logo_1.png'),
+    ).toBeNull();
+  });
+});
