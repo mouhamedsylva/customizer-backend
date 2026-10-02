@@ -3021,6 +3021,7 @@ const COLOR_HEX: Record<string, string> = {
   'Mauve foncé': '#a4767e',
   'Mauve orchidée': '#c57bb0',
   Noir: '#020204',
+  Noyer: '#6c614d', // t-shirt coton, ex-« Vert olive »
   'Orange vif': '#f08927',
   Prune: '#875560',
   'Rose fuchsia': '#d93280',
@@ -3036,7 +3037,7 @@ const COLOR_HEX: Record<string, string> = {
   'Vert émeraude': '#078d19',
   'Vert kaki': '#7f8783',
   'Vert militaire': '#484e42',
-  'Vert olive': '#766e4a',
+  'Vert olive': '#766e4a', // anciennes commandes (t-shirt coton, avant le 02/10/2026)
   'Vert pomme': '#80b95b',
   'Vert prairie': '#559f2a',
   'Vert sapin': '#004238',

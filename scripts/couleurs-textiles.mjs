@@ -208,7 +208,8 @@ export const PALETTES = {
     { nom: 'Blanc', slug: 'blanc', hex: '#fefefd', numero: '01', image: true },
     { nom: 'Camel', slug: 'camel', hex: '#bf9f7f', numero: '07', image: true },
     { nom: 'Rose taupe', slug: 'rose-taupe', hex: '#d9b8a7', numero: '229', image: true },
-    { nom: 'Vert olive', slug: 'vert-olive', hex: '#766e4a', numero: '67', image: true },
+    // Ex-« Vert olive » : le slug reste celui des fichiers d'images.
+    { nom: 'Noyer', slug: 'vert-olive', hex: '#6c614d', numero: '67', image: true },
     { nom: 'Marron chocolat', slug: 'marron-chocolat', hex: '#683d2f', numero: '87', image: true },
     { nom: 'Jaune vif', slug: 'jaune-vif', hex: '#fee403', numero: '03', image: true },
     { nom: 'Orange vif', slug: 'orange-vif', hex: '#f08b2c', numero: '31', image: true },
