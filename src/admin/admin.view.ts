@@ -18,7 +18,12 @@ import {
   prixFamille,
 } from '../quotes/prix-catalogue';
 import type { PricingPayload } from './pricing.service';
-import { svgRegenere } from '../shared/zones-texte';
+import {
+  aDesTextesRegeneres,
+  pngRegenere,
+  svgRegenere,
+  svgRegeneresSansOrigine,
+} from '../shared/zones-texte';
 import { scriptTva, TVA_TAUX_DEFAUT } from '../shared/tva';
 
 /**
@@ -2407,9 +2412,21 @@ function itemRow(li: any): string {
   /* Les `_Texte*` sont regroupés par specsTypo — même test que la fiche. */
   const estTypo = (p: { name: string }) => /^_Texte[A-Z]/.test(String(p.name || ''));
   const texts = props.filter((p) => !isUrl(p.value) && !estTypo(p));
+  /* Visuel de texte REDESSINÉ dans la bonne police (scripts/corriger-texte-
+     commande) : il remplace l'original, sorti en police par défaut. */
   const thumbs = imgs.length
-    ? `<div class="thumbs">${imgs.map((p) => `<img class="thumb js-zoom" src="${esc(p.value)}" title="${esc(p.name)}" data-zoom="${esc(p.value)}" alt="${esc(p.name)}">`).join('')}</div>`
+    ? `<div class="thumbs">${imgs
+        .map((p) => {
+          const src = pngRegenere(li.__typoRetrouvee, p.name) || p.value;
+          const titre = src !== p.value ? `${p.name} — redessiné dans la bonne police` : p.name;
+          return `<img class="thumb js-zoom" src="${esc(src)}" title="${esc(titre)}" data-zoom="${esc(src)}" alt="${esc(p.name)}">`;
+        })
+        .join('')}</div>`
     : `<div class="no-thumb">Sans aperçu</div>`;
+  /* La planche d'aperçu est une image figée : elle garde l'ancienne police. */
+  const avertPlanche = aDesTextesRegeneres(li.__typoRetrouvee)
+    ? `<div class="spec" style="color:var(--danger)">⚠ Aperçu : police du texte incorrecte sur la planche — se fier au visuel et au SVG du texte.</div>`
+    : '';
   const specs =
     (texts.length
       ? `<div class="specs">${texts.map((p) => `<span class="spec"><b>${esc(p.name)}</b> ${esc(p.value)}</span>`).join('')}</div>`
@@ -2430,11 +2447,20 @@ function itemRow(li: any): string {
         : '';
       return lien + svg;
     })
+    .concat(
+      /* SVG régénéré sans propriété « (SVG) » d'origine : ajouté ici. */
+      svgRegeneresSansOrigine(li.__typoRetrouvee, props.map((p) => p.name)).map(
+        (r) =>
+          `<a class="dl" href="${esc(r.url)}" target="_blank" rel="noopener">↓ ${esc(r.libelle)} — régénéré</a>` +
+          `<a class="dl js-zoom" href="${esc(r.url)}" data-zoom="${esc(r.url)}" onclick="return false">👁 Voir le SVG</a>`,
+      ),
+    )
     .join('');
   return `<div class="item">
     ${thumbs}
     <div class="item-body">
       <div class="title">${esc(li.title)}${li.variantTitle ? ` · ${esc(li.variantTitle)}` : ''} <span class="qty mono">× ${esc(li.quantity)}</span></div>
+      ${avertPlanche}
       ${specs}
       ${dls ? `<div>${dls}</div>` : ''}
     </div>
@@ -3398,7 +3424,7 @@ export function productionSheetPage(o: Order, nonce = ''): string {
             imgs.length
               ? imgs
                   .map(
-                    (p) => `<figure><img src="${esc(p.value)}" alt="${esc(p.name)}"><figcaption>${esc(p.name.replace(/^_/, ''))}</figcaption></figure>`,
+                    (p) => `<figure><img src="${esc(pngRegenere(li.__typoRetrouvee, p.name) || p.value)}" alt="${esc(p.name)}"><figcaption>${esc(p.name.replace(/^_/, ''))}${pngRegenere(li.__typoRetrouvee, p.name) ? ' (redessiné)' : ''}</figcaption></figure>`,
                   )
                   .join('')
               : '<p class="ps-none">Aucun visuel fourni.</p>'

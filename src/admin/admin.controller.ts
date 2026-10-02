@@ -31,7 +31,7 @@ import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
 import { dateBoutique } from './periodes';
 import { lireCorpsBorne } from '../shared/lecture-bornee';
-import { svgRegenere } from '../shared/zones-texte';
+import { pngRegenere, svgRegenere, svgRegeneresSansOrigine } from '../shared/zones-texte';
 import {
   loginPage,
   dashboardPage,
@@ -978,6 +978,13 @@ export class AdminController {
           files.push({ name: `${i + 1}-${label}`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.svg', url: regenere });
           return;
         }
+        /* Visuel de texte redessiné dans la bonne police : remplace l'original. */
+        const png = pngRegenere((order as any).typoRetrouvee?.[i], p.name);
+        if (png) {
+          const label = `${String(p.name || 'fichier').replace(/^_/, '')} regenere`;
+          files.push({ name: `${i + 1}-${label}`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.png', url: png });
+          return;
+        }
         const label = String(p.name || 'fichier').replace(/^_/, '');
         const ext = (p.value.split('?')[0].match(/\.(\w{3,4})$/) || [
           '',
@@ -988,6 +995,16 @@ export class AdminController {
           .slice(0, 60);
         files.push({ name: `${safe}.${ext}`, url: p.value });
       });
+      // Fichiers de découpe régénérés sans propriété « (SVG) » d'origine.
+      for (const r of svgRegeneresSansOrigine(
+        (order as any).typoRetrouvee?.[i],
+        props.map((p) => p.name),
+      )) {
+        files.push({
+          name: `${i + 1}-${r.libelle} regenere`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.svg',
+          url: r.url,
+        });
+      }
     });
 
     const label = String(order.orderNumber || order.shopifyOrderId).replace(
