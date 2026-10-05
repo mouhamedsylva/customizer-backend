@@ -75,3 +75,16 @@ export function aDesTextesRegeneres(parZone: unknown): boolean {
   return !!parZone && typeof parZone === 'object' &&
     Object.values(parZone as Record<string, any>).some((t) => cloudinaire(t?.pngPropre));
 }
+
+/**
+ * Fichiers RATTACHÉS après coup à une ligne (`typoRetrouvee[ligne].__assets`,
+ * scripts/retrouver-logos-commande) : un logo hébergé mais absent de la
+ * commande. Seules les URL Cloudinary https sont retenues.
+ */
+export function assetsRattaches(parLigne: unknown): Array<{ label: string; url: string }> {
+  const liste = (parLigne as any)?.__assets;
+  if (!Array.isArray(liste)) return [];
+  return liste
+    .filter((a: any) => a && typeof a.label === 'string' && cloudinaire(a.url))
+    .map((a: any) => ({ label: a.label.slice(0, 60), url: a.url }));
+}

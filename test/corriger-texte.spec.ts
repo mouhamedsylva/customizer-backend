@@ -62,3 +62,19 @@ describe('dashboard : textes redessinés', () => {
     expect(svgRegeneresSansOrigine(corrige, ['_Texte face (SVG)'])).toEqual([]);
   });
 });
+
+describe('fichiers rattachés après coup', () => {
+  const { assetsRattaches } = require('../src/shared/zones-texte');
+  it('ne garde que les URL Cloudinary https avec un libellé', () => {
+    expect(
+      assetsRattaches({
+        __assets: [
+          { label: 'Logo cœur', url: 'https://res.cloudinary.com/c/image/upload/l.png' },
+          { label: 'Pirate', url: 'https://evil.com/x.png' },
+          { url: 'https://res.cloudinary.com/c/image/upload/sans-libelle.png' },
+        ],
+      }),
+    ).toEqual([{ label: 'Logo cœur', url: 'https://res.cloudinary.com/c/image/upload/l.png' }]);
+    expect(assetsRattaches(undefined)).toEqual([]);
+  });
+});

@@ -31,7 +31,7 @@ import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
 import { dateBoutique } from './periodes';
 import { lireCorpsBorne } from '../shared/lecture-bornee';
-import { pngRegenere, svgRegenere, svgRegeneresSansOrigine } from '../shared/zones-texte';
+import { assetsRattaches, pngRegenere, svgRegenere, svgRegeneresSansOrigine } from '../shared/zones-texte';
 import {
   loginPage,
   dashboardPage,
@@ -995,6 +995,14 @@ export class AdminController {
           .slice(0, 60);
         files.push({ name: `${safe}.${ext}`, url: p.value });
       });
+      // Fichiers rattachés après coup (scripts/retrouver-logos-commande).
+      for (const a of assetsRattaches((order as any).typoRetrouvee?.[i])) {
+        const ext = (a.url.split('?')[0].match(/\.(\w{3,4})$/) || ['', 'png'])[1];
+        files.push({
+          name: `${i + 1}-${a.label} retrouve`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.' + ext,
+          url: a.url,
+        });
+      }
       // Fichiers de découpe régénérés sans propriété « (SVG) » d'origine.
       for (const r of svgRegeneresSansOrigine(
         (order as any).typoRetrouvee?.[i],

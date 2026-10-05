@@ -20,6 +20,7 @@ import {
 import type { PricingPayload } from './pricing.service';
 import {
   aDesTextesRegeneres,
+  assetsRattaches,
   pngRegenere,
   svgRegenere,
   svgRegeneresSansOrigine,
@@ -2407,7 +2408,10 @@ function specsTypo(props: Array<{ name: string; value: string }>): string {
 
 function itemRow(li: any): string {
   const props: Array<{ name: string; value: string }> = Array.isArray(li.properties) ? li.properties : [];
-  const imgs = props.filter((p) => isImg(p.value));
+  /* + fichiers rattachés après coup (scripts/retrouver-logos-commande). */
+  const imgs = props
+    .filter((p) => isImg(p.value))
+    .concat(assetsRattaches(li.__typoRetrouvee).map((a) => ({ name: `_${a.label} (retrouvé)`, value: a.url })));
   const links = props.filter((p) => !isImg(p.value) && isUrl(p.value));
   /* Les `_Texte*` sont regroupés par specsTypo — même test que la fiche. */
   const estTypo = (p: { name: string }) => /^_Texte[A-Z]/.test(String(p.name || ''));
@@ -3401,7 +3405,10 @@ export function productionSheetPage(o: Order, nonce = ''): string {
   const itemsHtml = sheetItems
     .map((li: any, idx: number) => {
       const props: Array<{ name: string; value: string }> = Array.isArray(li.properties) ? li.properties : [];
-      const imgs = props.filter((p) => isImg(p.value));
+      /* + fichiers rattachés après coup (scripts/retrouver-logos-commande). */
+  const imgs = props
+    .filter((p) => isImg(p.value))
+    .concat(assetsRattaches(li.__typoRetrouvee).map((a) => ({ name: `_${a.label} (retrouvé)`, value: a.url })));
       /* Les _Texte* sont sorties du lot : mêlées aux spécifications, elles
          noyaient couleur et taille sous vingt lignes techniques, préfixe « _ »
          apparent. Elles ont leur bloc, juste en dessous. */
