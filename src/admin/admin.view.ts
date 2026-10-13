@@ -18,6 +18,8 @@ import {
   prixFamille,
 } from '../quotes/prix-catalogue';
 import type { PricingPayload } from './pricing.service';
+import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
+import { documentsDuDevis } from '../quotes/pieces-jointes';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -2795,6 +2797,31 @@ function typoCell(tp: any): string {
      (rapproché via Quote.paidOrderId). Sert à afficher la liste des personnes
      d'une commande de groupe : sans ce lien, l'atelier devrait retrouver le
      devis à la main pour connaître les tailles et les noms floqués. */
+/**
+ * Documents joints au devis d'origine (BAT, maquette…) : images en vignettes
+ * cliquables, PDF et autres en liens. '' s'il n'y en a pas.
+ * @param fiche  rendu de la fiche de production (classes ps-*, sans zoom).
+ */
+function blocDocumentsDevis(srcQuote: Quote | null | undefined, fiche = false): string {
+  const docs = documentsDuDevis(srcQuote);
+  if (!docs.length) return '';
+  const images = docs.filter((d) => d.estImage);
+  if (fiche) {
+    const autres = docs.filter((d) => !d.estImage);
+    return `<div class="ps-block"><div class="ps-lbl">Documents du devis (BAT…)</div>
+      ${images.length ? `<div class="ps-visuals">${images.map((d) => `<figure><img src="${esc(d.url)}" alt="${esc(d.name)}"><figcaption>${esc(d.name)}</figcaption></figure>`).join('')}</div>` : ''}
+      ${autres.map((d) => `<div>📄 <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a></div>`).join('')}
+    </div>`;
+  }
+  return `<div class="section-lbl lbl">Documents du devis (BAT…)</div>
+    <div class="item">
+      ${images.length ? `<div class="thumbs">${images.map((d) => `<img class="thumb js-zoom" src="${esc(d.url)}" title="${esc(d.name)}" data-zoom="${esc(d.url)}" alt="${esc(d.name)}">`).join('')}</div>` : ''}
+      <div class="item-body">${docs
+        .map((d) => `<a class="dl" href="${esc(d.url)}" target="_blank" rel="noopener">${d.estImage ? '🖼' : '📄'} ${esc(d.name)}</a>`)
+        .join('')}</div>
+    </div>`;
+}
+
 function orderCard(o: Order, srcQuote?: Quote): string {
   const items = Array.isArray(o.lineItems) ? o.lineItems : [];
   const nbItems = items.reduce((s: number, li: any) => s + (li.quantity || 0), 0);
@@ -2811,7 +2838,10 @@ function orderCard(o: Order, srcQuote?: Quote): string {
   const groupBlock = groupBlockForOrder(srcQuote, items);
   const isGroup = !!groupBlock;
 
-  return `<div class="card" data-search="${search}" data-prod="${esc(prod)}" data-group="${isGroup}" id="card-${id}">
+  // Familles d'articles (patchs, textiles…) : filtre « par article ».
+  const familles = famillesDeCommande(items).join(' ');
+
+  return `<div class="card" data-search="${search}" data-prod="${esc(prod)}" data-group="${isGroup}" data-articles="${esc(familles)}" id="card-${id}">
     <div class="head" onclick="toggleCard(this)">
       <div class="avatar">${esc(initials(o.customerName))}</div>
       <div>
@@ -2863,6 +2893,8 @@ function orderCard(o: Order, srcQuote?: Quote): string {
           '<div class="kv"><span class="empty">Aucun article.</span></div>'
         );
       })()}
+
+      ${blocDocumentsDevis(srcQuote)}
 
       <!-- Note interne -->
       <div class="section-lbl lbl">Note interne</div>
@@ -3387,7 +3419,7 @@ function designCard(d: Design, frontendUrl: string): string {
 }
 
 /* ════════════ FICHE DE PRODUCTION (imprimable A4) ════════════ */
-export function productionSheetPage(o: Order, nonce = ''): string {
+export function productionSheetPage(o: Order, nonce = '', srcQuote?: Quote | null): string {
   const items = Array.isArray(o.lineItems) ? o.lineItems : [];
   const info: any = o.customerInfo || {};
   const s = info.shipping || info.billing || {};
@@ -3544,6 +3576,8 @@ export function productionSheetPage(o: Order, nonce = ''): string {
         ${addr ? `<div class="wide"><b>Adresse</b>${addr}</div>` : ''}
       </div>
     </div>
+
+    ${blocDocumentsDevis(srcQuote, true)}
 
     ${
       o.internalNote
@@ -3985,6 +4019,11 @@ export function dashboardPage(
     });
   };
   const nbOrderGroup = orders.filter(orderIsGroup).length;
+  // Commandes par famille d'article (une commande mixte compte dans chacune).
+  const articleCounts: Record<string, number> = {};
+  orders.forEach((o) => {
+    for (const fam of famillesDeCommande(o.lineItems)) articleCounts[fam] = (articleCounts[fam] || 0) + 1;
+  });
   // Commandes encore à fabriquer (indicateur du bandeau de stats).
   const nbToMake = orders.filter(
     (o) => (o.productionStatus || 'to_produce') !== 'shipped',
@@ -4205,6 +4244,25 @@ export function dashboardPage(
                    id: 'order-status',
                    onPick: 'filterOrders',
                    label: 'Filtrer par statut de production',
+                 },
+               )}
+               <!-- Article (patchs, textiles…) : filtre CLIENT, combiné au statut. -->
+               ${selectFilter(
+                 '',
+                 [
+                   ['all', `Tous les articles (${orders.length})`],
+                   ...FAMILLES_ARTICLES.map(
+                     (fam) => [fam.cle, `${fam.libelle} (${articleCounts[fam.cle] || 0})`] as [string, string],
+                   ),
+                   ...(articleCounts.autre
+                     ? [['autre', `Autres (${articleCounts.autre})`] as [string, string]]
+                     : []),
+                 ],
+                 'all',
+                 {
+                   id: 'order-article',
+                   onPick: 'filterArticles',
+                   label: 'Filtrer par article',
                  },
                )}
                <!-- Période : filtre serveur, aligné avec le statut. -->
@@ -4894,6 +4952,13 @@ export function dashboardPage(
     /* Statut de production : appelé par le menu .dd (data-value = le filtre). */
     function filterOrders(dd){
       orderFilter=(dd && dd.getAttribute('data-value')) || 'all';
+      filterCards(true);
+    }
+
+    /* Famille d'article (patchs, textiles…) : combinée au statut. */
+    var articleFilter='all';
+    function filterArticles(dd){
+      articleFilter=(dd && dd.getAttribute('data-value')) || 'all';
       filterCards(true);
     }
 
@@ -5877,7 +5942,12 @@ export function dashboardPage(
             matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;
           }
         }
-        if(matchText && matchStatus) matched.push(c); else c.style.display='none';
+        var matchArticle = true;
+        if(isOrders && articleFilter!=='all'){
+          var fams=' '+(c.getAttribute('data-articles')||'')+' ';
+          matchArticle = fams.indexOf(' '+articleFilter+' ')!==-1;
+        }
+        if(matchText && matchStatus && matchArticle) matched.push(c); else c.style.display='none';
       });
 
       // 2) Pagination sur les cartes filtrées.
@@ -7145,6 +7215,7 @@ export function dashboardPage(
           onglet: onglet ? onglet.getAttribute('data-tab') : null,
           quoteFilter: quoteFilter,
           orderFilter: orderFilter,
+          articleFilter: articleFilter,
           pages: pageByPanel,
           ouvertes: ouvertes,
           scrollY: window.scrollY || 0,
@@ -7174,6 +7245,10 @@ export function dashboardPage(
       if(v.orderFilter && v.orderFilter!=='all'){
         var opt=document.querySelector('.dd[data-onpick="filterOrders"] .dd-item[data-value="'+v.orderFilter+'"]');
         if(opt) ddPick(opt);
+      }
+      if(v.articleFilter && v.articleFilter!=='all'){
+        var optA=document.querySelector('.dd[data-onpick="filterArticles"] .dd-item[data-value="'+v.articleFilter+'"]');
+        if(optA) ddPick(optA);
       }
       if(v.pages && typeof v.pages==='object'){
         Object.keys(pageByPanel).forEach(function(k){

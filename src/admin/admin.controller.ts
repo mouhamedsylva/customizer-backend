@@ -26,7 +26,7 @@ import {
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
-import { avecPiecesJointes, piecesValides } from '../quotes/pieces-jointes';
+import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
 import { dateBoutique } from './periodes';
@@ -886,7 +886,9 @@ export class AdminController {
       res.status(404).type('text').send('Commande introuvable.');
       return;
     }
-    res.type('html').send(productionSheetPage(order, nonceOf(req)));
+    // Devis d'origine : ses documents (BAT…) figurent sur la fiche.
+    const devis = await this.data.getQuoteDeCommande(order).catch(() => null);
+    res.type('html').send(productionSheetPage(order, nonceOf(req), devis));
   }
 
   /**
@@ -1014,6 +1016,17 @@ export class AdminController {
         });
       }
     });
+
+    // Documents du devis d'origine (BAT…), envoyés au client avec la facture.
+    const devisZip = await this.data.getQuoteDeCommande(order).catch(() => null);
+    for (const d of documentsDuDevis(devisZip)) {
+      const ext = (d.url.split('?')[0].match(/\.(\w{3,4})$/) || ['', 'pdf'])[1];
+      const base = d.name.replace(/\.\w{2,4}$/, '');
+      files.push({
+        name: `devis-${base}`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.' + ext,
+        url: d.url,
+      });
+    }
 
     const label = String(order.orderNumber || order.shopifyOrderId).replace(
       '#',

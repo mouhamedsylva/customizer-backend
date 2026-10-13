@@ -86,7 +86,14 @@ export class CleanupService implements OnModuleInit, OnModuleDestroy {
     try {
       const cloudName = this.config.get<string>('CLOUDINARY_CLOUD_NAME') || undefined;
       const devis = await this.quotes.find({
-        where: { tempAttachments: Not(IsNull()) },
+        /* Devis PAYÉS exclus : leurs pièces (BAT…) sont les documents de
+           production de la commande — dashboard, fiche, ZIP. Les supprimer
+           priverait l'atelier du BAT signé. Seuls les devis restés impayés
+           sont nettoyés. */
+        where: [
+          { tempAttachments: Not(IsNull()), draftStatus: IsNull() },
+          { tempAttachments: Not(IsNull()), draftStatus: Not('completed') },
+        ],
         select: { id: true, tempAttachments: true },
         take: LOT_NETTOYAGE,
       });

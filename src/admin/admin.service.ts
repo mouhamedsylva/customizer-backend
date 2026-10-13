@@ -455,6 +455,19 @@ export class AdminService implements OnModuleInit {
   }
 
   /** Un devis par son id (pour l'envoi de facture). */
+  /**
+   * Devis d'origine d'une commande : lien direct (`Order.quoteId`), puis repli
+   * sur `Quote.paidOrderId` (historique). Même règle que le dashboard
+   * (`devisDeLaCommande`, admin.view.ts).
+   */
+  async getQuoteDeCommande(order: Order): Promise<Quote | null> {
+    if (order.quoteId) {
+      const q = await this.quotes.findOne({ where: { id: order.quoteId } });
+      if (q) return q;
+    }
+    return this.quotes.findOne({ where: { paidOrderId: String(order.shopifyOrderId) } });
+  }
+
   async getQuote(id: string): Promise<Quote | null> {
     return this.quotes.findOne({ where: { id } });
   }

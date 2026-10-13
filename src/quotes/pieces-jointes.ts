@@ -77,3 +77,21 @@ export function avecPiecesJointes(message: string, pieces: unknown): string {
   if (!bloc) return message;
   return message ? `${message.replace(/\s+$/, '')}\n\n${bloc}` : bloc;
 }
+
+/**
+ * Documents joints au devis (BAT, maquette…), tels que l'atelier doit les voir
+ * sur la commande issue de ce devis : carte du dashboard, fiche de production,
+ * archive ZIP. Ce sont les pièces du DERNIER envoi de facture
+ * (`Quote.tempAttachments`), filtrées comme pour l'e-mail.
+ */
+export function documentsDuDevis(
+  quote: { tempAttachments?: unknown } | null | undefined,
+): Array<{ name: string; url: string; estImage: boolean }> {
+  return piecesValides(quote?.tempAttachments).map((p) => ({
+    name: p.name,
+    url: p.url,
+    estImage:
+      /^image\//i.test(p.type || '') ||
+      /\.(png|jpe?g|webp|gif)(\?|$)/i.test(p.url),
+  }));
+}
