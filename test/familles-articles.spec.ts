@@ -63,3 +63,16 @@ describe('dashboard : menu « par article »', () => {
     expect(html).toContain('data-onpick="filterArticles"');
   });
 });
+
+describe('dashboard : retour visuel des filtres', () => {
+  it('embarque l’animation des filtres et le chargement du filtre de période', () => {
+    const html = dashboardPage(
+      [{ shopifyOrderId: '1', orderNumber: '#1', lineItems: [{ title: 'Patch personnalisé', quantity: 1, properties: [] }], productionStatus: 'to_produce', totalPrice: '1', receivedAt: new Date() } as any],
+      [], [], 'https://x', '',
+    );
+    expect(html).toContain('function signalerFiltre(dd)');
+    expect(html).toContain('function afficherResultat(panel, total)');
+    expect(html).toContain('.dd.f-pulse');
+    expect(html).toContain("dd.classList.add('f-loading')");
+  });
+});

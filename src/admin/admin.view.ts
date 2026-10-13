@@ -1022,6 +1022,35 @@ body{
 .dd-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .dd-caret{flex:none;color:var(--muted);transition:transform .18s}
 .dd.open .dd-caret{transform:rotate(180deg)}
+/* ── Retour visuel des filtres ──
+   Filtres dans la page (statut, article) : halo sur le menu, cartes en fondu
+   et en cascade, pastille du nombre de résultats. Filtre serveur (période) :
+   spinner sur le menu et liste estompée jusqu'au rechargement. */
+@keyframes fPulse{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent)}
+  100%{box-shadow:0 0 0 10px transparent}
+}
+@keyframes fIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dd.f-pulse .dd-btn{border-color:var(--accent);animation:fPulse .6s ease-out}
+.card.f-in{animation:fIn .32s ease-out both}
+.dd.f-loading .dd-caret{
+  width:14px;height:14px;border-radius:50%;
+  border:2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color:var(--accent);animation:pgspin .7s linear infinite;
+}
+.dd.f-loading .dd-caret path{display:none}
+.panel.f-attente{opacity:.45;pointer-events:none;transition:opacity .2s}
+.f-resultat{
+  display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;
+  padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--accent-soft);color:var(--accent);animation:fIn .25s ease-out;
+}
+.f-resultat.vide{background:var(--raise);color:var(--muted)}
+@media (prefers-reduced-motion: reduce){
+  .dd.f-pulse .dd-btn,.card.f-in,.f-resultat{animation:none}
+  .dd.f-loading .dd-caret{animation:none}
+  .panel.f-attente{transition:none}
+}
 
 .dd-menu{
   position:absolute;z-index:60;top:calc(100% + 6px);left:0;
@@ -4959,14 +4988,37 @@ export function dashboardPage(
     /* Statut de production : appelé par le menu .dd (data-value = le filtre). */
     function filterOrders(dd){
       orderFilter=(dd && dd.getAttribute('data-value')) || 'all';
-      filterCards(true);
+      signalerFiltre(dd);
+      filterCards(true, true);
+    }
+
+    /* Halo bref sur le menu choisi : le filtre a bien été pris en compte. */
+    function signalerFiltre(dd){
+      if(!dd) return;
+      dd.classList.remove('f-pulse'); void dd.offsetWidth;
+      dd.classList.add('f-pulse');
+      setTimeout(function(){ dd.classList.remove('f-pulse'); }, 700);
+    }
+
+    /* Pastille « 12 commandes » au-dessus de la liste, après un filtre. */
+    function afficherResultat(panel, total){
+      if(!panel) return;
+      var barre=panel.querySelector('.subfilters');
+      if(!barre) return;
+      var p=panel.querySelector('.f-resultat');
+      if(!p){ p=document.createElement('div'); p.className='f-resultat'; barre.insertAdjacentElement('afterend', p); }
+      var mot=panel.id==='p-quotes' ? 'devis' : (total>1 ? 'commandes' : 'commande');
+      p.textContent = total ? (total+' '+mot) : (panel.id==='p-quotes' ? 'Aucun devis' : 'Aucune commande');
+      p.classList.toggle('vide', !total);
+      p.style.animation='none'; void p.offsetWidth; p.style.animation='';
     }
 
     /* Famille d'article (patchs, textiles…) : combinée au statut. */
     var articleFilter='all';
     function filterArticles(dd){
       articleFilter=(dd && dd.getAttribute('data-value')) || 'all';
-      filterCards(true);
+      signalerFiltre(dd);
+      filterCards(true, true);
     }
 
     /* ── Suivi de production ── */
@@ -5158,7 +5210,13 @@ export function dashboardPage(
        On lit tous les .filter-sel de la page, car ils ne sont plus tous dans
        #filters (la période est descendue près du filtre de statut). Le select de
        statut n'a pas d'attribut name : il est purement client, donc ignoré. */
-    function applyFilters(){
+    function applyFilters(dd){
+      /* Filtre SERVEUR (période…) : la page se recharge. En attendant, spinner
+         sur le menu et liste estompée — sinon rien ne bouge pendant le
+         chargement et le clic semble ignoré. */
+      if(dd && dd.classList) dd.classList.add('f-loading');
+      var actif=document.querySelector('.panel.active');
+      if(actif) actif.classList.add('f-attente');
       var p=new URLSearchParams();
       // Les menus .dd portent leur clé (data-name) et leur valeur (data-value).
       // Ceux sans data-name sont des filtres client : on les ignore ici.
@@ -5919,7 +5977,7 @@ export function dashboardPage(
     var PAGE_SIZE=10;
     var pageByPanel={ 'p-orders':1, 'p-quotes':1, 'p-designs':1 };
 
-    function filterCards(resetPage){
+    function filterCards(resetPage, anime){
       var q=document.getElementById('search').value.toLowerCase().trim();
       var panel=document.querySelector('.panel.active');
       var isQuotes = panel.id==='p-quotes';
@@ -5964,6 +6022,19 @@ export function dashboardPage(
       pageByPanel[panel.id]=page;
       var start=(page-1)*PAGE_SIZE, end=start+PAGE_SIZE;
       matched.forEach(function(c,i){ c.style.display=(i>=start && i<end)?'':'none'; });
+
+      /* Animation de retour, seulement sur un CHANGEMENT DE FILTRE (pas à la
+         frappe, ni à la pagination, ni au chargement) : cartes en fondu, en
+         cascade sur les 12 premières, puis pastille du nombre de résultats. */
+      if(anime){
+        var visibles=matched.slice(start,end);
+        visibles.forEach(function(c,i){
+          c.classList.remove('f-in'); void c.offsetWidth;
+          c.style.animationDelay=(Math.min(i,12)*30)+'ms';
+          c.classList.add('f-in');
+        });
+        afficherResultat(panel, total);
+      }
 
       // 3) Barre de pagination.
       renderPager(panel.id, page, pages, total);
@@ -7232,6 +7303,12 @@ export function dashboardPage(
       }catch(e){ /* stockage indisponible (navigation privée) : vue par défaut */ }
     }
     window.addEventListener('pagehide', function(){ memoriserVue(); });
+    /* Retour arrière (page restaurée depuis le cache du navigateur) : on retire
+       l'état « chargement » laissé par applyFilters. */
+    window.addEventListener('pageshow', function(){
+      document.querySelectorAll('.f-loading').forEach(function(d){ d.classList.remove('f-loading'); });
+      document.querySelectorAll('.f-attente').forEach(function(d){ d.classList.remove('f-attente'); });
+    });
 
     function restaurerVue(){
       var v=null;
