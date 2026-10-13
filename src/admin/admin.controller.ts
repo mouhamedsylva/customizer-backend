@@ -31,7 +31,13 @@ import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
 import { dateBoutique } from './periodes';
 import { lireCorpsBorne } from '../shared/lecture-bornee';
-import { assetsRattaches, pngRegenere, svgRegenere, svgRegeneresSansOrigine } from '../shared/zones-texte';
+import {
+  assetsRattaches,
+  pngRegenere,
+  pngRegeneresSansOrigine,
+  svgRegenere,
+  svgRegeneresSansOrigine,
+} from '../shared/zones-texte';
 import {
   loginPage,
   dashboardPage,
@@ -997,6 +1003,13 @@ export class AdminController {
           .slice(0, 60);
         files.push({ name: `${safe}.${ext}`, url: p.value });
       });
+      // Visuels de texte retrouvés, sans propriété « _Texte … » d'origine.
+      for (const t of pngRegeneresSansOrigine(
+        (order as any).typoRetrouvee?.[i],
+        props.map((p) => p.name),
+      )) {
+        files.push({ name: `${i + 1}-${t.libelle}`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.png', url: t.url });
+      }
       // Fichiers rattachés après coup (scripts/retrouver-logos-commande).
       for (const a of assetsRattaches((order as any).typoRetrouvee?.[i])) {
         const ext = (a.url.split('?')[0].match(/\.(\w{3,4})$/) || ['', 'png'])[1];

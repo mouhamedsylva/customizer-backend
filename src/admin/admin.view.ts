@@ -23,6 +23,7 @@ import { documentsDuDevis } from '../quotes/pieces-jointes';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
+  pngRegeneresSansOrigine,
   pngRegenere,
   svgRegenere,
   svgRegeneresSansOrigine,
@@ -2413,7 +2414,10 @@ function itemRow(li: any): string {
   /* + fichiers rattachés après coup (scripts/retrouver-logos-commande). */
   const imgs = props
     .filter((p) => isImg(p.value))
-    .concat(assetsRattaches(li.__typoRetrouvee).map((a) => ({ name: `_${a.label} (retrouvé)`, value: a.url })));
+    .concat(assetsRattaches(li.__typoRetrouvee).map((a) => ({ name: `_${a.label} (retrouvé)`, value: a.url })))
+    .concat(
+      pngRegeneresSansOrigine(li.__typoRetrouvee, props.map((p) => p.name)).map((t) => ({ name: `_${t.libelle}`, value: t.url })),
+    );
   const links = props.filter((p) => !isImg(p.value) && isUrl(p.value));
   /* Les `_Texte*` sont regroupés par specsTypo — même test que la fiche. */
   const estTypo = (p: { name: string }) => /^_Texte[A-Z]/.test(String(p.name || ''));
@@ -3440,7 +3444,10 @@ export function productionSheetPage(o: Order, nonce = '', srcQuote?: Quote | nul
       /* + fichiers rattachés après coup (scripts/retrouver-logos-commande). */
   const imgs = props
     .filter((p) => isImg(p.value))
-    .concat(assetsRattaches(li.__typoRetrouvee).map((a) => ({ name: `_${a.label} (retrouvé)`, value: a.url })));
+    .concat(assetsRattaches(li.__typoRetrouvee).map((a) => ({ name: `_${a.label} (retrouvé)`, value: a.url })))
+    .concat(
+      pngRegeneresSansOrigine(li.__typoRetrouvee, props.map((p) => p.name)).map((t) => ({ name: `_${t.libelle}`, value: t.url })),
+    );
       /* Les _Texte* sont sorties du lot : mêlées aux spécifications, elles
          noyaient couleur et taille sous vingt lignes techniques, préfixe « _ »
          apparent. Elles ont leur bloc, juste en dessous. */

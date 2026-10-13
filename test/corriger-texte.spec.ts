@@ -78,3 +78,38 @@ describe('fichiers rattachés après coup', () => {
     expect(assetsRattaches(undefined)).toEqual([]);
   });
 });
+
+describe('textes retrouvés sur Cloudinary (#20318)', () => {
+  const z = require('../src/shared/zones-texte');
+  const { dashboardPage } = require('../src/admin/admin.view');
+  const PNG = 'https://res.cloudinary.com/c/image/upload/v1/customizer/text/tshirt/text_chest-right_1758791000000.png';
+  const SVG = 'https://res.cloudinary.com/c/raw/upload/v1/customizer/text/tshirt/text_chest-right_1758791000000.svg';
+  const retrouve = { fr: { texte: 'TAURAATUA', police: 'Arial', taillePx: 12, couleur: '#ffffff', source: 'retrouve', pngPropre: PNG, svgPropre: SVG } };
+
+  it('déduit la zone du nom de fichier', () => {
+    expect(z.zoneDuFichierTexte(PNG)).toBe('fr');
+    expect(z.zoneDuFichierTexte('…/text_front_123.png')).toBe('f');
+    expect(z.zoneDuFichierTexte('…/logo_front_123.png')).toBeNull();
+  });
+
+  it('donne le visuel quand la ligne n’a pas de propriété texte, sans avertir sur la planche', () => {
+    expect(z.pngRegeneresSansOrigine(retrouve, ['Détails'])).toEqual([
+      { zone: 'fr', libelle: 'Texte poitrine droite (retrouvé)', url: PNG },
+    ]);
+    expect(z.pngRegeneresSansOrigine(retrouve, ['_Texte poitrine droite'])).toEqual([]);
+    expect(z.aDesTextesRegeneres(retrouve)).toBe(false);
+  });
+
+  it('affiche visuel, SVG et typo sur la carte de la commande', () => {
+    const o = {
+      shopifyOrderId: '7', orderNumber: '#20318', productionStatus: 'producing', totalPrice: '37.00',
+      receivedAt: new Date(), typoRetrouvee: { 0: retrouve },
+      lineItems: [{ title: 'Textile - T-shirt Polyester', quantity: 1, properties: [{ name: 'Détails', value: 'Couleur : Noir' }] }],
+    };
+    const html = dashboardPage([o], [], [], 'https://x', '');
+    expect(html).toContain(PNG);
+    expect(html).toContain(SVG);
+    expect(html).toContain('Arial');
+    expect(html).not.toContain('police du texte incorrecte');
+  });
+});

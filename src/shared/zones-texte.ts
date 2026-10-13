@@ -73,7 +73,12 @@ export function svgRegeneresSansOrigine(
 /** La ligne a-t-elle un visuel de texte régénéré (donc une planche d'aperçu périmée) ? */
 export function aDesTextesRegeneres(parZone: unknown): boolean {
   return !!parZone && typeof parZone === 'object' &&
-    Object.values(parZone as Record<string, any>).some((t) => cloudinaire(t?.pngPropre));
+    /* Seulement un texte REDESSINÉ (police corrigée) : la planche, figée, garde
+       l'ancienne police. Un texte simplement RETROUVÉ (source 'retrouve') est
+       le fichier d'origine : la planche est juste. */
+    Object.values(parZone as Record<string, any>).some(
+      (t) => cloudinaire(t?.pngPropre) && t?.source !== 'retrouve',
+    );
 }
 
 /**
@@ -87,4 +92,27 @@ export function assetsRattaches(parLigne: unknown): Array<{ label: string; url: 
   return liste
     .filter((a: any) => a && typeof a.label === 'string' && cloudinaire(a.url))
     .map((a: any) => ({ label: a.label.slice(0, 60), url: a.url }));
+}
+
+/**
+ * Visuels PNG de texte rattachés après coup à une ligne qui n'a PAS de
+ * propriété « _Texte … » d'origine (texte perdu par l'ancien thème, retrouvé
+ * sur Cloudinary par scripts/retrouver-logos-commande).
+ */
+export function pngRegeneresSansOrigine(
+  parZone: unknown,
+  nomsProprietes: unknown[],
+): Array<{ zone: string; libelle: string; url: string }> {
+  if (!parZone || typeof parZone !== 'object') return [];
+  const presentes = new Set(nomsProprietes.map((n) => zoneDuPng(n)).filter(Boolean));
+  const LIBELLES: Record<string, string> = { f: 'Texte face', fr: 'Texte poitrine droite', b: 'Texte dos' };
+  return Object.keys(LIBELLES)
+    .filter((z) => !presentes.has(z) && cloudinaire((parZone as any)[z]?.pngPropre))
+    .map((z) => ({ zone: z, libelle: `${LIBELLES[z]} (retrouvé)`, url: (parZone as any)[z].pngPropre }));
+}
+
+/** Zone d'un fichier texte d'après son nom (text_chest-right_<ms>…). */
+export function zoneDuFichierTexte(url: unknown): string | null {
+  const m = /text_(front|chest-right|back)_\d+/.exec(String(url ?? ''));
+  return m ? ({ front: 'f', 'chest-right': 'fr', back: 'b' } as Record<string, string>)[m[1]] : null;
 }
