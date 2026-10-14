@@ -113,3 +113,32 @@ describe('textes retrouvés sur Cloudinary (#20318)', () => {
     expect(html).not.toContain('police du texte incorrecte');
   });
 });
+
+describe('drapeau FR rattaché après coup', () => {
+  const z = require('../src/shared/zones-texte');
+  const { dashboardPage } = require('../src/admin/admin.view');
+  const FLAG = 'https://massacre-officiel.com/cdn/shop/t/18/assets/france_flag.png';
+
+  it('reconnaît le repère « (manquant) »', () => {
+    expect(z.logoManquant('_Logo manche droite (manquant)')).toBe('Logo manche droite');
+    expect(z.logoManquant('Logo cœur')).toBeNull();
+  });
+
+  it('accepte le fichier du thème, refuse un autre domaine', () => {
+    expect(z.assetsRattaches({ __assets: [{ label: 'Logo manche droite', url: FLAG }] })).toHaveLength(1);
+    expect(z.assetsRattaches({ __assets: [{ label: 'X', url: 'https://evil.com/cdn/shop/x.png' }] })).toEqual([]);
+  });
+
+  it('affiche le drapeau et masque le repère « (manquant) »', () => {
+    const o = {
+      shopifyOrderId: '9', orderNumber: '#20884', productionStatus: 'producing', totalPrice: '1', receivedAt: new Date(),
+      typoRetrouvee: { 0: { __assets: [{ label: 'Logo manche droite', url: FLAG }] } },
+      lineItems: [{ title: 'Textile - Sweatshirt', quantity: 1, properties: [
+        { name: '_Logo manche droite (manquant)', value: 'Fichier non transmis — voir la planche' },
+      ] }],
+    };
+    const html = dashboardPage([o], [], [], 'https://x', '');
+    expect(html).toContain(FLAG);
+    expect(html).not.toContain('Fichier non transmis');
+  });
+});

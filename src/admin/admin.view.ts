@@ -23,6 +23,7 @@ import { documentsDuDevis } from '../quotes/pieces-jointes';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
+  logoManquant,
   pngRegeneresSansOrigine,
   pngRegenere,
   svgRegenere,
@@ -2454,7 +2455,11 @@ function itemRow(li: any): string {
   const links = props.filter((p) => !isImg(p.value) && isUrl(p.value));
   /* Les `_Texte*` sont regroupés par specsTypo — même test que la fiche. */
   const estTypo = (p: { name: string }) => /^_Texte[A-Z]/.test(String(p.name || ''));
-  const texts = props.filter((p) => !isUrl(p.value) && !estTypo(p));
+  /* « Logo … (manquant) » masqué une fois le fichier rattaché après coup. */
+  const rattaches = assetsRattaches(li.__typoRetrouvee).map((r) => r.label);
+  const texts = props.filter(
+    (p) => !isUrl(p.value) && !estTypo(p) && !rattaches.includes(logoManquant(p.name) ?? ''),
+  );
   /* Visuel de texte REDESSINÉ dans la bonne police (scripts/corriger-texte-
      commande) : il remplace l'original, sorti en police par défaut. */
   const thumbs = imgs.length
@@ -3486,7 +3491,11 @@ export function productionSheetPage(o: Order, nonce = '', srcQuote?: Quote | nul
          apparent. Elles ont leur bloc, juste en dessous. */
       const estTypo = (p: { name: string }) =>
         /^_Texte[A-Z]/.test(String(p.name || ''));
-      const texts = props.filter((p) => !isUrl(p.value) && !estTypo(p));
+      /* « Logo … (manquant) » masqué une fois le fichier rattaché après coup. */
+  const rattaches = assetsRattaches(li.__typoRetrouvee).map((r) => r.label);
+  const texts = props.filter(
+    (p) => !isUrl(p.value) && !estTypo(p) && !rattaches.includes(logoManquant(p.name) ?? ''),
+  );
       const typo = props.filter((p) => !isUrl(p.value) && estTypo(p));
 
       return `<section class="ps-item">

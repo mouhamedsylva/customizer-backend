@@ -86,11 +86,22 @@ export function aDesTextesRegeneres(parZone: unknown): boolean {
  * scripts/retrouver-logos-commande) : un logo hébergé mais absent de la
  * commande. Seules les URL Cloudinary https sont retenues.
  */
+/** Fichier du THÈME publié sur la boutique (drapeau FR…) : https, domaine de
+    la boutique, dossier /cdn/shop/. */
+const assetDuTheme = (u: unknown): u is string =>
+  typeof u === 'string' && /^https:\/\/(www\.)?massacre-officiel\.com\/cdn\/shop\//.test(u);
+
+/** « _Logo manche droite (manquant) » → « Logo manche droite » ; sinon null. */
+export function logoManquant(nom: unknown): string | null {
+  const m = /^_?(Logo [^()]+?)\s*\(manquant\)$/i.exec(String(nom ?? '').trim());
+  return m ? m[1] : null;
+}
+
 export function assetsRattaches(parLigne: unknown): Array<{ label: string; url: string }> {
   const liste = (parLigne as any)?.__assets;
   if (!Array.isArray(liste)) return [];
   return liste
-    .filter((a: any) => a && typeof a.label === 'string' && cloudinaire(a.url))
+    .filter((a: any) => a && typeof a.label === 'string' && (cloudinaire(a.url) || assetDuTheme(a.url)))
     .map((a: any) => ({ label: a.label.slice(0, 60), url: a.url }));
 }
 
