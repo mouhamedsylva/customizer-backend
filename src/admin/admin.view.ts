@@ -1024,7 +1024,7 @@ body{
 .dd.open .dd-caret{transform:rotate(180deg)}
 /* ── Retour visuel des filtres ──
    Filtres dans la page (statut, article) : halo sur le menu, cartes en fondu
-   et en cascade, pastille du nombre de résultats. Filtre serveur (période) :
+   et en cascade. Filtre serveur (période) :
    spinner sur le menu et liste estompée jusqu'au rechargement. */
 @keyframes fPulse{
   0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent)}
@@ -1040,14 +1040,18 @@ body{
 }
 .dd.f-loading .dd-caret path{display:none}
 .panel.f-attente{opacity:.45;pointer-events:none;transition:opacity .2s}
-.f-resultat{
-  display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;
-  padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;
-  background:var(--accent-soft);color:var(--accent);animation:fIn .25s ease-out;
-}
-.f-resultat.vide{background:var(--raise);color:var(--muted)}
+/* Changement d'onglet : sortie puis entrée, en fondu + glissement latéral. */
+@keyframes tabOutG{to{opacity:0;transform:translateX(-16px)}}
+@keyframes tabOutD{to{opacity:0;transform:translateX(16px)}}
+@keyframes tabInD{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+@keyframes tabInG{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+.panel.tab-out-gauche{animation:tabOutG .14s ease-in forwards}
+.panel.tab-out-droite{animation:tabOutD .14s ease-in forwards}
+.panel.tab-in-droite{animation:tabInD .25s ease-out}
+.panel.tab-in-gauche{animation:tabInG .25s ease-out}
 @media (prefers-reduced-motion: reduce){
-  .dd.f-pulse .dd-btn,.card.f-in,.f-resultat{animation:none}
+  .panel.tab-out-gauche,.panel.tab-out-droite,.panel.tab-in-droite,.panel.tab-in-gauche{animation:none}
+  .dd.f-pulse .dd-btn,.card.f-in{animation:none}
   .dd.f-loading .dd-caret{animation:none}
   .panel.f-attente{transition:none}
 }
@@ -4967,11 +4971,40 @@ export function dashboardPage(
        correspondant levait une TypeError — et la barre principale se
        retrouvait sans onglet actif, tous ses panneaux masqués. */
     var tabs=document.querySelectorAll('.tab[data-tab]');
-    tabs.forEach(function(t){t.addEventListener('click',function(){
+    /* Changement d'onglet ANIMÉ : l'ancien contenu sort en glissant vers le
+       côté opposé, le nouveau entre du côté de l'onglet choisi (Commandes →
+       Devis : sortie à gauche, entrée par la droite ; l'inverse au retour).
+       Sans animation pour un clic programmé (restauration de la vue au
+       chargement : event.isTrusted faux) et si « réduire les animations ». */
+    var ongletAnime=0;
+    var sansAnim=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function afficherOnglet(t){
       tabs.forEach(function(x){x.classList.remove('active')});t.classList.add('active');
-      document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active')});
+      document.querySelectorAll('.panel').forEach(function(p){
+        p.classList.remove('active','tab-in-droite','tab-in-gauche','tab-out-gauche','tab-out-droite');
+      });
       document.getElementById('p-'+t.dataset.tab).classList.add('active');
       var s=document.getElementById('search');s.value='';filterCards(true);
+    }
+    tabs.forEach(function(t){t.addEventListener('click',function(ev){
+      var actuel=document.querySelector('.tab[data-tab].active');
+      var ancien=document.querySelector('.panel.active');
+      if(actuel===t) return;
+      if(!ev || !ev.isTrusted || sansAnim || !ancien || !actuel){ afficherOnglet(t); return; }
+
+      var liste=Array.prototype.slice.call(tabs);
+      var versDroite=liste.indexOf(t) > liste.indexOf(actuel);
+      var jeton=++ongletAnime;
+      ancien.classList.add(versDroite ? 'tab-out-gauche' : 'tab-out-droite');
+      setTimeout(function(){
+        if(jeton!==ongletAnime) return;   // un autre clic a pris le relais
+        afficherOnglet(t);
+        var nouveau=document.getElementById('p-'+t.dataset.tab);
+        if(nouveau) nouveau.classList.add(versDroite ? 'tab-in-droite' : 'tab-in-gauche');
+        setTimeout(function(){
+          if(nouveau) nouveau.classList.remove('tab-in-droite','tab-in-gauche');
+        }, 300);
+      }, 140);
     });});
     /* Filtre courant de l'onglet Devis : 'open' (à traiter), 'group', 'all'. */
     var quoteFilter='open';
@@ -5000,18 +5033,6 @@ export function dashboardPage(
       setTimeout(function(){ dd.classList.remove('f-pulse'); }, 700);
     }
 
-    /* Pastille « 12 commandes » au-dessus de la liste, après un filtre. */
-    function afficherResultat(panel, total){
-      if(!panel) return;
-      var barre=panel.querySelector('.subfilters');
-      if(!barre) return;
-      var p=panel.querySelector('.f-resultat');
-      if(!p){ p=document.createElement('div'); p.className='f-resultat'; barre.insertAdjacentElement('afterend', p); }
-      var mot=panel.id==='p-quotes' ? 'devis' : (total>1 ? 'commandes' : 'commande');
-      p.textContent = total ? (total+' '+mot) : (panel.id==='p-quotes' ? 'Aucun devis' : 'Aucune commande');
-      p.classList.toggle('vide', !total);
-      p.style.animation='none'; void p.offsetWidth; p.style.animation='';
-    }
 
     /* Famille d'article (patchs, textiles…) : combinée au statut. */
     var articleFilter='all';
@@ -6025,7 +6046,7 @@ export function dashboardPage(
 
       /* Animation de retour, seulement sur un CHANGEMENT DE FILTRE (pas à la
          frappe, ni à la pagination, ni au chargement) : cartes en fondu, en
-         cascade sur les 12 premières, puis pastille du nombre de résultats. */
+         cascade sur les 12 premières. */
       if(anime){
         var visibles=matched.slice(start,end);
         visibles.forEach(function(c,i){
@@ -6033,7 +6054,6 @@ export function dashboardPage(
           c.style.animationDelay=(Math.min(i,12)*30)+'ms';
           c.classList.add('f-in');
         });
-        afficherResultat(panel, total);
       }
 
       // 3) Barre de pagination.

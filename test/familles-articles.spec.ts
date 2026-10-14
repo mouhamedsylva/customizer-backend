@@ -71,7 +71,6 @@ describe('dashboard : retour visuel des filtres', () => {
       [], [], 'https://x', '',
     );
     expect(html).toContain('function signalerFiltre(dd)');
-    expect(html).toContain('function afficherResultat(panel, total)');
     expect(html).toContain('.dd.f-pulse');
     expect(html).toContain("dd.classList.add('f-loading')");
   });
