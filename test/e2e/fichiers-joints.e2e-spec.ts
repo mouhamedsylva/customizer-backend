@@ -96,6 +96,33 @@ describe('Fichiers joints aux commandes', () => {
     expect(sheet.text).not.toContain('maquette.png');
   });
 
+  it('ouvre un PDF joint par l’API signée, réservé aux admins', async () => {
+    const cookie = await connexion();
+    const a = await request(srv())
+      .post('/api/admin/orders/123/fichiers')
+      .set('X-Forwarded-For', freshIp())
+      .set('Cookie', cookie)
+      .attach('file', PDF, { filename: 'BAT signé.pdf', contentType: 'application/pdf' });
+    const lien = `/api/admin/orders/123/fichiers/${a.body.fichier.id}`;
+
+    const anonyme = await request(srv()).get(lien).set('X-Forwarded-For', freshIp());
+    expect(anonyme.status).toBe(302);
+    expect(anonyme.headers.location).toBe('/api/admin');
+
+    const r = await request(srv()).get(lien).set('X-Forwarded-For', freshIp()).set('Cookie', cookie);
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toContain('application/pdf');
+    expect(r.headers['content-disposition']).toContain('inline');
+    expect(r.headers['content-disposition']).toContain("filename*=UTF-8''BAT%20sign%C3%A9.pdf");
+    expect(h.cloudinary.callsTo('telechargerFichier')[0].args).toEqual(['customizer/commandes/20500/bat.pdf', 'raw']);
+
+    const inconnu = await request(srv())
+      .get('/api/admin/orders/123/fichiers/inconnu')
+      .set('X-Forwarded-For', freshIp())
+      .set('Cookie', cookie);
+    expect(inconnu.status).toBe(404);
+  });
+
   it('refuse un contenu qui ne correspond pas au type annoncé', async () => {
     const cookie = await connexion();
     const r = await request(srv())

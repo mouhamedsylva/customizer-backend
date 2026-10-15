@@ -881,6 +881,26 @@ export class CloudinaryService implements OnModuleInit {
   }
 
   /**
+   * Lit un fichier par l'API AUTHENTIFIÉE (lien de téléchargement signé,
+   * valable 60 s), et non par l'URL publique.
+   *
+   * Les comptes Cloudinary récents bloquent la livraison publique des PDF et
+   * ZIP (401) tant que « Allow delivery of PDF and ZIP files » n'est pas coché :
+   * l'API signée n'y est pas soumise. Sert les fichiers joints aux commandes.
+   */
+  async telechargerFichier(publicId: string, resourceType: TypeRessource, format = ''): Promise<Buffer> {
+    // En `raw`, l'extension fait partie du public_id : `format` reste vide.
+    const url = cloudinary.utils.private_download_url(publicId, format, {
+      resource_type: resourceType,
+      type: 'upload',
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`Cloudinary a répondu ${r.status}`);
+    return lireCorpsBorne(r, 15 * 1024 * 1024);
+  }
+
+  /**
    * Supprime une ressource de Cloudinary par son public_id.
    * Utilisé pour le nettoyage des pièces jointes temporaires.
    */

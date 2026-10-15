@@ -70,14 +70,20 @@ describe('fichiers joints : affichage', () => {
     const html = dashboardPage([commande([bat])], [], [], 'https://x', '', {});
     expect(html).toContain('Fichiers joints (BAT signé, maquette…)');
     expect(html).toContain('+ Joindre un fichier');
-    expect(html).toContain(PDF);
+    expect(html).toContain(`/api/admin/orders/42/fichiers/${bat.id}`);
+  });
+
+  it('liens d’ouverture : par le backend, jamais l’URL Cloudinary directe', () => {
+    const html = listeFichiersJoints([bat], '42');
+    expect(html).toContain(`href="/api/admin/orders/42/fichiers/${bat.id}"`);
+    expect(html).not.toContain(`href="${PDF}"`);
   });
 
   it('fiche de production : images en grand, documents en liens', () => {
     const html = productionSheetPage(commande([bat, maq]), '');
     expect(html).toContain('Fichiers joints');
     expect(html).toContain(`<img src="${PNG}"`);
-    expect(html).toContain(`<a href="${PDF}"`);
+    expect(html).toContain(`<a href="/api/admin/orders/42/fichiers/${bat.id}"`);
     expect(productionSheetPage(commande(null), '')).not.toContain('Fichiers joints');
   });
 });

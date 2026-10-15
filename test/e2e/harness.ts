@@ -297,6 +297,11 @@ export class FakeCloudinary {
     };
   }
 
+  async telechargerFichier(...args: unknown[]) {
+    this.record('telechargerFichier', args);
+    return Buffer.from('%PDF-1.4\n%doublure\n');
+  }
+
   async deleteResource(...args: unknown[]) {
     this.record('deleteResource', args);
   }

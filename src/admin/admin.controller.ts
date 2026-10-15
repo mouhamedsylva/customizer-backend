@@ -988,6 +988,55 @@ export class AdminController {
   }
 
   /**
+   * GET /api/admin/orders/:id/fichiers/:fichierId — ouvre un fichier joint.
+   *
+   * Les documents (`raw` : PDF, Word…) sont relus par l'API signée de
+   * Cloudinary et servis ici : un compte qui bloque la livraison publique des
+   * PDF (401) ne les rend donc pas inaccessibles, et le lien reste réservé aux
+   * admins connectés. Les images, jamais bloquées, sont redirigées.
+   */
+  @Get('orders/:id/fichiers/:fichierId')
+  async ouvrirFichier(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Param('fichierId') fichierId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.redirect('/api/admin');
+      return;
+    }
+    const order = await this.data.getOrder(orderId);
+    const f = fichiersJointsValides(order?.fichiersJoints).find((x) => x.id === fichierId);
+    if (!f) {
+      res.status(404).type('text').send('Fichier introuvable.');
+      return;
+    }
+    if (!f.publicId || f.resourceType !== 'raw') {
+      res.redirect(f.url);
+      return;
+    }
+    let buf: Buffer;
+    try {
+      buf = await this.cloudinary.telechargerFichier(f.publicId, 'raw');
+    } catch (e) {
+      // Repli : le lien public fonctionne si la livraison des PDF est permise.
+      this.logger.warn(`Fichier joint ${orderId}/${fichierId} : ${(e as Error).message}`);
+      res.redirect(f.url);
+      return;
+    }
+    const nom = f.nom.replace(/[\r\n"]+/g, '_');
+    res.setHeader('Content-Type', f.type || 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${nom.replace(/[^\x20-\x7e]+/g, '_')}"; filename*=UTF-8''${encodeURIComponent(nom)}`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(buf);
+  }
+
+  /**
    * GET /api/admin/orders/:id/sheet — fiche de production imprimable (A4).
    * Page autonome, pensée pour l'atelier : design en grand + specs + client.
    */
@@ -1082,7 +1131,9 @@ export class AdminController {
     }
 
     // Collecte toutes les URLs de fichiers portées par les lignes de commande.
-    const files: Array<{ name: string; url: string }> = [];
+    /* `rawId` : document joint lu par l'API signée (livraison publique des PDF
+       éventuellement bloquée par Cloudinary). */
+    const files: Array<{ name: string; url: string; rawId?: string }> = [];
     const items = Array.isArray(order.lineItems) ? order.lineItems : [];
     items.forEach((li: any, i: number) => {
       const props: Array<{ name: string; value: string }> = Array.isArray(
@@ -1162,6 +1213,7 @@ export class AdminController {
       files.push({
         name: `joint-${n + 1}-${base}`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.' + ext,
         url: f.url,
+        ...(f.publicId && f.resourceType === 'raw' ? { rawId: f.publicId } : {}),
       });
     });
 
@@ -1208,6 +1260,16 @@ export class AdminController {
       await Promise.all(
         allowed.slice(i, i + BATCH).map(async (f) => {
           try {
+            if (f.rawId) {
+              const signe = await this.cloudinary.telechargerFichier(f.rawId, 'raw').catch(() => null);
+              if (signe) {
+                if (totalZip + signe.length > ZIP_MAX_TOTAL) return;
+                totalZip += signe.length;
+                fetched.push({ name: f.name, buf: signe });
+                return;
+              }
+              // Échec : repli sur l'URL publique ci-dessous.
+            }
             const r = await fetch(f.url, {
               redirect: 'manual',
               signal: AbortSignal.timeout(15000),

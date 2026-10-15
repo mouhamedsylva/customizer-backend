@@ -2885,6 +2885,12 @@ function blocDocumentsDevis(srcQuote: Quote | null | undefined, fiche = false): 
     </div>`;
 }
 
+/** Lien d'ouverture : passe par le backend (API signée de Cloudinary), qui
+ *  sert les PDF même si leur livraison publique est bloquée (401). */
+function lienFichierJoint(orderId: string, f: FichierJoint): string {
+  return `/api/admin/orders/${encodeURIComponent(orderId)}/fichiers/${encodeURIComponent(f.id)}`;
+}
+
 /** « ajouté par x le 15/10/2026 à 14:02 ». */
 function mentionAjout(f: FichierJoint): string {
   const d = new Date(f.ajouteLe);
@@ -2907,7 +2913,7 @@ export function listeFichiersJoints(brut: unknown, orderId: string): string {
       (f) => `<div class="fj-ligne">
         ${estImageJointe(f) ? `<img class="fj-vignette js-zoom" src="${esc(f.url)}" data-zoom="${esc(f.url)}" alt="${esc(f.libelle)}">` : '<span class="fj-ico">📄</span>'}
         <div class="fj-infos">
-          <a class="fj-lien" href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.libelle)}</a>
+          <a class="fj-lien" href="${esc(lienFichierJoint(orderId, f))}" target="_blank" rel="noopener">${esc(f.libelle)}</a>
           <span class="fj-meta">${f.libelle !== f.nom ? esc(f.nom) + ' · ' : ''}${mentionAjout(f)}</span>
         </div>
         <button type="button" class="fj-suppr" title="Retirer ce fichier" data-order="${esc(orderId)}" data-fichier="${esc(f.id)}" data-libelle="${esc(f.libelle)}">🗑</button>
@@ -2940,7 +2946,7 @@ function blocFichiersJointsFiche(o: Order): string {
   const autres = fichiers.filter((f) => !estImageJointe(f));
   return `<div class="ps-block"><div class="ps-lbl">Fichiers joints</div>
       ${images.length ? `<div class="ps-visuals">${images.map((f) => `<figure><img src="${esc(f.url)}" alt="${esc(f.libelle)}"><figcaption>${esc(f.libelle)}</figcaption></figure>`).join('')}</div>` : ''}
-      ${autres.map((f) => `<div>📄 <a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.libelle)}</a>${f.libelle !== f.nom ? ` <span class="ps-muted">(${esc(f.nom)})</span>` : ''}</div>`).join('')}
+      ${autres.map((f) => `<div>📄 <a href="${esc(lienFichierJoint(o.shopifyOrderId, f))}" target="_blank" rel="noopener">${esc(f.libelle)}</a>${f.libelle !== f.nom ? ` <span class="ps-muted">(${esc(f.nom)})</span>` : ''}</div>`).join('')}
     </div>`;
 }
 
