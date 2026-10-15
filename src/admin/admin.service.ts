@@ -1,3 +1,4 @@
+import { FichierJoint, fichiersJointsValides } from './fichiers-joints';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -581,6 +582,29 @@ export class AdminService implements OnModuleInit {
     note: string,
   ): Promise<void> {
     await this.orders.update(shopifyOrderId, { internalNote: note || null });
+  }
+
+  /** Ajoute un fichier joint ; renvoie la liste à jour. `update` sur la
+   *  seule colonne : le reste de la commande n'est pas réécrit. */
+  async ajouterFichierJoint(shopifyOrderId: string, fichier: FichierJoint): Promise<FichierJoint[]> {
+    const o = await this.orders.findOne({ where: { shopifyOrderId }, select: { shopifyOrderId: true, fichiersJoints: true } });
+    const liste = [...fichiersJointsValides(o?.fichiersJoints), fichier];
+    await this.orders.update(shopifyOrderId, { fichiersJoints: liste as any });
+    return liste;
+  }
+
+  /** Retire un fichier joint ; null s'il n'existe pas. */
+  async retirerFichierJoint(
+    shopifyOrderId: string,
+    fichierId: string,
+  ): Promise<{ retire: FichierJoint; fichiers: FichierJoint[] } | null> {
+    const o = await this.orders.findOne({ where: { shopifyOrderId }, select: { shopifyOrderId: true, fichiersJoints: true } });
+    const liste = fichiersJointsValides(o?.fichiersJoints);
+    const retire = liste.find((f) => f.id === fichierId);
+    if (!retire) return null;
+    const fichiers = liste.filter((f) => f.id !== fichierId);
+    await this.orders.update(shopifyOrderId, { fichiersJoints: (fichiers.length ? fichiers : null) as any });
+    return { retire, fichiers };
   }
 
   async getDesigns(): Promise<Design[]> {

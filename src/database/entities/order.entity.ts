@@ -134,6 +134,14 @@ export class Order {
   @Column({ type: 'json', nullable: true })
   typoRetrouvee: Record<string, Record<string, any>> | null;
 
+  /**
+   * Fichiers joints par l'admin (BAT signé, maquette…), affichés sur la
+   * fiche de production. Voir src/admin/fichiers-joints.ts. Colonne à part,
+   * pour la même raison que `typoRetrouvee` : la synchro réécrit `lineItems`.
+   */
+  @Column({ type: 'json', nullable: true })
+  fichiersJoints: Array<Record<string, unknown>> | null;
+
   /** Note interne de l'équipe (invisible du client). */
   @Column({ type: 'text', nullable: true })
   internalNote: string | null;

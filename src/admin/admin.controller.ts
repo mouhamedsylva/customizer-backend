@@ -8,7 +8,12 @@ import {
   Body,
   Param,
   Logger,
+  UseInterceptors,
+  UploadedFile,
+  UseGuards,
 } from '@nestjs/common';
+import { AdminSessionGuard } from './admin-session.guard';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -25,6 +30,14 @@ import {
   QUOTE_ONLY_KEYS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
+import { CloudinaryService } from '../shared/cloudinary.service';
+import { TYPES_DOCUMENTS_DEVIS, contenuConforme, filtreTypes, nomFichierUtf8 } from '../uploads/type-fichier';
+import {
+  MAX_FICHIERS_JOINTS,
+  TAILLE_MAX_FICHIER_JOINT,
+  fichiersJointsValides,
+  nouveauFichierJoint,
+} from './fichiers-joints';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
@@ -43,6 +56,7 @@ import {
   dashboardPage,
   productionSheetPage,
   groupSheetPage,
+  listeFichiersJoints,
 } from './admin.view';
 
 // JSZip : construction d'archives en mémoire, API stable et sans streams.
@@ -85,6 +99,7 @@ export class AdminController {
     private readonly messageTemplates: MessageTemplateService,
     private readonly shopify: ShopifyService,
     private readonly config: ConfigService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   /**
@@ -874,6 +889,105 @@ export class AdminController {
   }
 
   /**
+   * POST /api/admin/orders/:id/fichiers — joint un fichier (BAT signé,
+   * maquette…) à la commande. Multipart : `file`, `libelle` (facultatif).
+   * Renvoie la liste à jour. Voir fichiers-joints.ts.
+   */
+  @Post('orders/:id/fichiers')
+  // Garde AVANT l'intercepteur : sans session, le fichier n'est même pas lu.
+  @UseGuards(AdminSessionGuard)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      fileFilter: filtreTypes(TYPES_DOCUMENTS_DEVIS),
+      limits: { fileSize: TAILLE_MAX_FICHIER_JOINT, files: 1 },
+    }),
+  )
+  async joindreFichier(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string; size: number } | undefined,
+    @Body('libelle') libelle: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    const admin = await this.currentAdmin(req);
+    if (!admin) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const order = await this.data.getOrder(orderId);
+    if (!order) {
+      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
+      return;
+    }
+    if (!file || !file.buffer || !file.size) {
+      res.status(400).json({ ok: false, error: 'Aucun fichier reçu.' });
+      return;
+    }
+    if (file.size > TAILLE_MAX_FICHIER_JOINT) {
+      res.status(400).json({ ok: false, error: 'Fichier trop lourd (10 Mo maximum).' });
+      return;
+    }
+    if (!contenuConforme(file.buffer, file.mimetype)) {
+      res.status(400).json({ ok: false, error: 'Le contenu du fichier ne correspond pas à son type.' });
+      return;
+    }
+    if (fichiersJointsValides(order.fichiersJoints).length >= MAX_FICHIERS_JOINTS) {
+      res.status(400).json({ ok: false, error: `${MAX_FICHIERS_JOINTS} fichiers au plus par commande.` });
+      return;
+    }
+    const nom = nomFichierUtf8(file.originalname || 'fichier');
+    const numero = String(order.orderNumber || order.shopifyOrderId).replace(/^#/, '');
+    let envoi: Awaited<ReturnType<CloudinaryService['uploadFichierCommande']>>;
+    try {
+      envoi = await this.cloudinary.uploadFichierCommande(file.buffer, nom, file.mimetype, numero);
+    } catch (e) {
+      this.logger.error(`Fichier joint ${orderId} : ${(e as Error).message}`);
+      res.status(502).json({ ok: false, error: "Échec de l'envoi du fichier. Réessayez." });
+      return;
+    }
+    const fichier = nouveauFichierJoint({
+      libelle,
+      nom,
+      url: envoi.url,
+      type: file.mimetype,
+      taille: file.size,
+      publicId: envoi.publicId,
+      resourceType: envoi.resourceType,
+      ajoutePar: (admin as any).email || 'admin',
+    });
+    // Relecture APRÈS l'envoi : un autre fichier a pu être joint entre-temps.
+    const liste = await this.data.ajouterFichierJoint(orderId, fichier);
+    res.json({ ok: true, fichier, fichiers: liste, html: listeFichiersJoints(liste, orderId) });
+  }
+
+  /** DELETE /api/admin/orders/:id/fichiers/:fichierId — retire un fichier joint. */
+  @Delete('orders/:id/fichiers/:fichierId')
+  async retirerFichier(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Param('fichierId') fichierId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const r = await this.data.retirerFichierJoint(orderId, fichierId);
+    if (!r) {
+      res.status(404).json({ ok: false, error: 'Fichier introuvable.' });
+      return;
+    }
+    // Suppression Cloudinary après la base : un échec ici laisse un fichier
+    // orphelin, jamais une entrée pointant vers un fichier effacé.
+    if (r.retire.publicId) {
+      await this.cloudinary
+        .deleteResource(r.retire.publicId, r.retire.resourceType || 'image')
+        .catch((e) => this.logger.warn(`Suppression Cloudinary ${r.retire.publicId} : ${(e as Error).message}`));
+    }
+    res.json({ ok: true, fichiers: r.fichiers, html: listeFichiersJoints(r.fichiers, orderId) });
+  }
+
+  /**
    * GET /api/admin/orders/:id/sheet — fiche de production imprimable (A4).
    * Page autonome, pensée pour l'atelier : design en grand + specs + client.
    */
@@ -1040,6 +1154,16 @@ export class AdminController {
         url: d.url,
       });
     }
+
+    // Fichiers joints par l'admin (BAT signé, maquette…).
+    fichiersJointsValides(order.fichiersJoints).forEach((f, n) => {
+      const ext = (f.nom.match(/\.(\w{2,5})$/) || f.url.split('?')[0].match(/\.(\w{2,5})$/) || ['', 'bin'])[1].toLowerCase();
+      const base = f.libelle.replace(/\.\w{2,5}$/, '');
+      files.push({
+        name: `joint-${n + 1}-${base}`.replace(/[^\w\-. ]+/g, '_').slice(0, 60) + '.' + ext,
+        url: f.url,
+      });
+    });
 
     const label = String(order.orderNumber || order.shopifyOrderId).replace(
       '#',

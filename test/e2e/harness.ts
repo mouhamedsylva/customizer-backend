@@ -281,6 +281,26 @@ export class FakeCloudinary {
     ];
   }
 
+  async uploadFichierCommande(...args: unknown[]) {
+    this.record('uploadFichierCommande', args);
+    const pdf = String(args[2] || '') === 'application/pdf';
+    return {
+      url: pdf
+        ? 'https://res.cloudinary.com/demo/raw/upload/v1/customizer/commandes/20500/bat.pdf'
+        : 'https://res.cloudinary.com/demo/image/upload/v1/customizer/commandes/20500/maquette.png',
+      publicId: pdf ? 'customizer/commandes/20500/bat.pdf' : 'customizer/commandes/20500/maquette',
+      width: 0,
+      height: 0,
+      format: pdf ? 'pdf' : 'png',
+      bytes: 10,
+      resourceType: pdf ? 'raw' : 'image',
+    };
+  }
+
+  async deleteResource(...args: unknown[]) {
+    this.record('deleteResource', args);
+  }
+
   async deleteImage(publicId: unknown) {
     this.record('deleteImage', [publicId]);
     return true;

@@ -20,6 +20,7 @@ import {
 import type { PricingPayload } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
+import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -940,6 +941,26 @@ body{
 .dl{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--accent);text-decoration:none;
   border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin:4px 4px 0 0}
 .dl:hover{background:var(--accent-soft)}
+
+/* Fichiers joints par l'admin */
+.fj{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.fj-ligne{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;transition:opacity .2s}
+.fj-ligne.fj-retrait{opacity:.4}
+.fj-vignette{width:44px;height:44px;object-fit:contain;border-radius:6px;background:var(--raise);cursor:zoom-in}
+.fj-ico{width:44px;text-align:center;font-size:22px}
+.fj-infos{flex:1;min-width:0;display:flex;flex-direction:column}
+.fj-lien{font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fj-lien:hover{text-decoration:underline}
+.fj-meta{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fj-suppr{border:0;background:none;cursor:pointer;font-size:15px;padding:4px 6px;border-radius:6px}
+.fj-suppr:hover{background:var(--accent-soft)}
+.fj-ajout{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fj-libelle{flex:1;min-width:180px;font:inherit;font-size:12.5px;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);outline:none}
+.fj-libelle:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.fj-btn{cursor:pointer}
+.fj.fj-envoi .fj-btn{opacity:.5;pointer-events:none}
+.fj-barre{height:4px;border-radius:2px;background:var(--raise);overflow:hidden}
+.fj-barre span{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
 
 /* Empty */
 .empty-state{text-align:center;padding:70px 24px;color:var(--muted)}
@@ -2864,6 +2885,65 @@ function blocDocumentsDevis(srcQuote: Quote | null | undefined, fiche = false): 
     </div>`;
 }
 
+/** « ajouté par x le 15/10/2026 à 14:02 ». */
+function mentionAjout(f: FichierJoint): string {
+  const d = new Date(f.ajouteLe);
+  const quand = isNaN(d.getTime())
+    ? ''
+    : ` le ${d.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })} à ${d.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' })}`;
+  return `ajouté par ${esc(f.ajoutePar)}${quand}`;
+}
+
+/**
+ * Liste des fichiers joints par l'admin, pour la CARTE (vignette ou 📄, lien,
+ * auteur, 🗑). Exportée : les routes d'ajout et de retrait la renvoient, la page
+ * remplace la liste sans se recharger.
+ */
+export function listeFichiersJoints(brut: unknown, orderId: string): string {
+  const fichiers = fichiersJointsValides(brut);
+  if (!fichiers.length) return '<span class="hint">Aucun fichier joint.</span>';
+  return fichiers
+    .map(
+      (f) => `<div class="fj-ligne">
+        ${estImageJointe(f) ? `<img class="fj-vignette js-zoom" src="${esc(f.url)}" data-zoom="${esc(f.url)}" alt="${esc(f.libelle)}">` : '<span class="fj-ico">📄</span>'}
+        <div class="fj-infos">
+          <a class="fj-lien" href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.libelle)}</a>
+          <span class="fj-meta">${f.libelle !== f.nom ? esc(f.nom) + ' · ' : ''}${mentionAjout(f)}</span>
+        </div>
+        <button type="button" class="fj-suppr" title="Retirer ce fichier" data-order="${esc(orderId)}" data-fichier="${esc(f.id)}" data-libelle="${esc(f.libelle)}">🗑</button>
+      </div>`,
+    )
+    .join('');
+}
+
+/** Bloc « Fichiers joints » de la carte : liste + ajout. */
+function blocFichiersJointsCarte(o: Order): string {
+  const id = esc(o.shopifyOrderId);
+  return `<div class="section-lbl lbl">Fichiers joints (BAT signé, maquette…)</div>
+    <div class="fj" data-order="${id}">
+      <div class="fj-liste" id="fj-liste-${id}">${listeFichiersJoints(o.fichiersJoints, o.shopifyOrderId)}</div>
+      <div class="fj-ajout">
+        <input type="text" class="fj-libelle" id="fj-libelle-${id}" maxlength="80" placeholder="Libellé (facultatif) : BAT signé, consignes…">
+        <label class="btn fj-btn">+ Joindre un fichier<input type="file" class="fj-file" data-order="${id}" hidden
+          accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx,.txt"></label>
+      </div>
+      <div class="fj-barre" id="fj-barre-${id}" hidden><span></span></div>
+      <span class="hint" id="fj-statut-${id}"></span>
+    </div>`;
+}
+
+/** Bloc « Fichiers joints » de la fiche de production (lecture seule, en grand). */
+function blocFichiersJointsFiche(o: Order): string {
+  const fichiers = fichiersJointsValides(o.fichiersJoints);
+  if (!fichiers.length) return '';
+  const images = fichiers.filter(estImageJointe);
+  const autres = fichiers.filter((f) => !estImageJointe(f));
+  return `<div class="ps-block"><div class="ps-lbl">Fichiers joints</div>
+      ${images.length ? `<div class="ps-visuals">${images.map((f) => `<figure><img src="${esc(f.url)}" alt="${esc(f.libelle)}"><figcaption>${esc(f.libelle)}</figcaption></figure>`).join('')}</div>` : ''}
+      ${autres.map((f) => `<div>📄 <a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.libelle)}</a>${f.libelle !== f.nom ? ` <span class="ps-muted">(${esc(f.nom)})</span>` : ''}</div>`).join('')}
+    </div>`;
+}
+
 function orderCard(o: Order, srcQuote?: Quote): string {
   const items = Array.isArray(o.lineItems) ? o.lineItems : [];
   const nbItems = items.reduce((s: number, li: any) => s + (li.quantity || 0), 0);
@@ -2937,6 +3017,8 @@ function orderCard(o: Order, srcQuote?: Quote): string {
       })()}
 
       ${blocDocumentsDevis(srcQuote)}
+
+      ${blocFichiersJointsCarte(o)}
 
       <!-- Note interne -->
       <div class="section-lbl lbl">Note interne</div>
@@ -3569,6 +3651,7 @@ export function productionSheetPage(o: Order, nonce = '', srcQuote?: Quote | nul
   .ps-typo-grid span{display:inline-flex;align-items:center;gap:5px}
   .ps-typo-dot{width:11px;height:11px;border-radius:50%;border:1px solid rgba(0,0,0,.2)}
   .ps-visuals{display:flex;gap:14px;flex-wrap:wrap}
+  .ps-muted{color:#8a857c;font-size:.9em}
   .ps-visuals figure{width:190px}
   .ps-visuals img{width:100%;height:190px;object-fit:contain;border:1px solid #e4e0d9;
     border-radius:8px;background:#faf9f7}
@@ -3627,6 +3710,8 @@ export function productionSheetPage(o: Order, nonce = '', srcQuote?: Quote | nul
     </div>
 
     ${blocDocumentsDevis(srcQuote, true)}
+
+    ${blocFichiersJointsFiche(o)}
 
     ${
       o.internalNote
@@ -3710,6 +3795,7 @@ export function groupSheetPage(q: Quote, nonce = ''): string {
   .ps-client b{display:block;font-size:9.5px;font-weight:800;letter-spacing:.07em;
     text-transform:uppercase;color:#a29a8e;margin-bottom:1px}
   .ps-visuals{display:flex;gap:14px;flex-wrap:wrap}
+  .ps-muted{color:#8a857c;font-size:.9em}
   .ps-visuals figure{width:200px}
   .ps-visuals img{width:100%;height:200px;object-fit:contain;border:1px solid #e4e0d9;border-radius:8px;background:#faf9f7}
   .ps-visuals figcaption{font-size:10.5px;color:#8b8478;text-align:center;margin-top:5px;font-weight:600}
@@ -5214,6 +5300,100 @@ export function dashboardPage(
       })
       .then(function(){ input.dataset.saving=''; });
     }
+
+    /* ── Fichiers joints (BAT signé, maquette…) ──
+       XMLHttpRequest et non fetch : seul lui donne la progression de l'envoi.
+       Le serveur renvoie la liste déjà rendue (html), remplacée sur place. */
+    function fjStatut(orderId, msg, err){
+      var st=document.getElementById('fj-statut-'+orderId);
+      if(!st) return;
+      st.className=err?'hint err':'hint ok'; st.textContent=msg||'';
+      if(!err&&msg) setTimeout(function(){ if(st.textContent===msg) st.textContent=''; },2600);
+    }
+    function fjReponse(xhr){
+      var res=null;
+      try{ res=JSON.parse(xhr.responseText); }catch(e){}
+      if(xhr.status===401) return {ok:false,error:'Session expirée : reconnectez-vous.'};
+      if(xhr.status===413) return {ok:false,error:'Fichier trop lourd (10 Mo maximum).'};
+      if(!res) return {ok:false,error:'Le serveur a répondu '+xhr.status+'.'};
+      if(xhr.status>=400&&res.ok!==false) res.ok=false;
+      if(!res.ok&&!res.error&&res.message) res.error=String(res.message);
+      return res;
+    }
+    function fjEnvoyer(orderId, fichier){
+      var bloc=document.querySelector('.fj[data-order="'+orderId+'"]');
+      var barre=document.getElementById('fj-barre-'+orderId);
+      var lib=document.getElementById('fj-libelle-'+orderId);
+      if(!bloc||bloc.classList.contains('fj-envoi')) return;
+      if(fichier.size>10*1024*1024){ fjStatut(orderId,'Fichier trop lourd (10 Mo maximum).',true); return; }
+      var fd=new FormData();
+      fd.append('file',fichier);
+      fd.append('libelle',lib?lib.value:'');
+      bloc.classList.add('fj-envoi');
+      if(barre){ barre.hidden=false; barre.firstChild.style.width='0%'; }
+      fjStatut(orderId,'Envoi de « '+fichier.name+' »…',false);
+      var xhr=new XMLHttpRequest();
+      xhr.open('POST','/api/admin/orders/'+encodeURIComponent(orderId)+'/fichiers');
+      xhr.withCredentials=true;
+      xhr.upload.onprogress=function(e){
+        if(e.lengthComputable&&barre) barre.firstChild.style.width=Math.round(e.loaded*100/e.total)+'%';
+      };
+      xhr.onload=function(){
+        var res=fjReponse(xhr);
+        if(res.ok){
+          var liste=document.getElementById('fj-liste-'+orderId);
+          if(liste&&res.html) liste.innerHTML=res.html;
+          if(lib) lib.value='';
+          fjStatut(orderId,'Fichier joint.',false);
+        } else fjStatut(orderId,res.error||"Échec de l'envoi.",true);
+      };
+      xhr.onerror=function(){ fjStatut(orderId,'Erreur réseau : fichier non envoyé.',true); };
+      xhr.onloadend=function(){
+        bloc.classList.remove('fj-envoi');
+        if(barre) barre.hidden=true;
+      };
+      xhr.send(fd);
+    }
+    function fjRetirer(btn){
+      var orderId=btn.getAttribute('data-order')||'';
+      var fichierId=btn.getAttribute('data-fichier')||'';
+      if(!window.confirm('Retirer « '+(btn.getAttribute('data-libelle')||'ce fichier')+' » de la commande ?\\nLe fichier sera supprimé définitivement.')) return;
+      var ligne=btn.closest('.fj-ligne');
+      if(ligne) ligne.classList.add('fj-retrait');
+      btn.disabled=true;
+      var xhr=new XMLHttpRequest();
+      xhr.open('DELETE','/api/admin/orders/'+encodeURIComponent(orderId)+'/fichiers/'+encodeURIComponent(fichierId));
+      xhr.withCredentials=true;
+      xhr.onload=function(){
+        var res=fjReponse(xhr);
+        if(res.ok){
+          var liste=document.getElementById('fj-liste-'+orderId);
+          if(liste&&res.html) liste.innerHTML=res.html;
+          fjStatut(orderId,'Fichier retiré.',false);
+        } else {
+          if(ligne) ligne.classList.remove('fj-retrait');
+          btn.disabled=false;
+          fjStatut(orderId,res.error||'Échec du retrait.',true);
+        }
+      };
+      xhr.onerror=function(){
+        if(ligne) ligne.classList.remove('fj-retrait');
+        btn.disabled=false;
+        fjStatut(orderId,'Erreur réseau : fichier non retiré.',true);
+      };
+      xhr.send();
+    }
+    document.addEventListener('change', function(ev){
+      var t=ev.target;
+      if(!t||!t.classList||!t.classList.contains('fj-file')) return;
+      var f=t.files&&t.files[0];
+      if(f) fjEnvoyer(t.getAttribute('data-order')||'', f);
+      t.value='';
+    });
+    document.addEventListener('click', function(ev){
+      var b=ev.target&&ev.target.closest?ev.target.closest('.fj-suppr'):null;
+      if(b){ ev.preventDefault(); fjRetirer(b); }
+    });
 
     /* ── Relance d'un devis impayé ── */
     function remindQuote(quoteId,btn){

@@ -839,6 +839,48 @@ export class CloudinaryService implements OnModuleInit {
   }
 
   /**
+   * Fichier joint à une COMMANDE par l'admin (BAT signé, maquette…).
+   * Mêmes règles que les pièces de devis (documents en `raw` avec leur
+   * extension, images en `image`), mais dans un dossier PERMANENT propre à la
+   * commande : le nettoyage automatique des pièces de devis n'y touche pas.
+   */
+  async uploadFichierCommande(
+    fileBuffer: Buffer,
+    nomOriginal: string,
+    mimetype: string,
+    commande: string,
+  ): Promise<UploadResult & { resourceType: TypeRessource }> {
+    const { resourceType, publicId } = optionsPieceJointe(nomOriginal, mimetype);
+    const dossier = String(commande || 'sans-numero').replace(/[^\w-]+/g, '').slice(0, 40) || 'sans-numero';
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: `customizer/commandes/${dossier}`,
+          public_id: publicId,
+          resource_type: resourceType,
+          tags: ['fichier-commande'],
+        },
+        (error, result?: UploadApiResponse) => {
+          if (error || !result) {
+            reject(error || new Error('Upload Cloudinary sans resultat'));
+            return;
+          }
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+            width: result.width || 0,
+            height: result.height || 0,
+            format: result.format,
+            bytes: result.bytes,
+            resourceType,
+          });
+        },
+      );
+      uploadStream.end(fileBuffer);
+    });
+  }
+
+  /**
    * Supprime une ressource de Cloudinary par son public_id.
    * Utilisé pour le nettoyage des pièces jointes temporaires.
    */
