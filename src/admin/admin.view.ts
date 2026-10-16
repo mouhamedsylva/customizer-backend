@@ -706,50 +706,6 @@ body{
 :root[data-theme="dark"] .stat.t-green{--t:#addb67}
 :root[data-theme="dark"] .stat.t-violet{--t:#c792ea}
 
-/* ── Carte retournable (nombre de commandes : Shopify / manuelles) ──
-   L'enveloppe .stat ne dessine plus rien : ce sont les deux faces qui portent
-   fond, bordure et ombre. Sans transform ni overflow:hidden sur l'enveloppe,
-   sinon la 3D s'aplatit. */
-.stat.stat-flip{
-  padding:0;display:block;overflow:visible;background:none;border:0;box-shadow:none;
-  perspective:900px;outline:none;
-}
-.stat.stat-flip::before{display:none}
-.stat.stat-flip:hover{transform:none;box-shadow:none}
-.flip-in{
-  position:relative;height:100%;transform-style:preserve-3d;
-  transition:transform .55s cubic-bezier(.2,.7,.2,1);
-}
-.stat-flip:hover .flip-in,.stat-flip:focus-within .flip-in{transform:rotateY(180deg)}
-.flip-face{
-  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
-  padding:17px 18px 17px 21px;box-shadow:var(--shadow);
-  -webkit-backface-visibility:hidden;backface-visibility:hidden;
-}
-.flip-recto{
-  position:relative;overflow:hidden;height:100%;
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
-}
-.flip-recto::before{
-  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--t);opacity:.85;
-}
-.flip-verso{
-  position:absolute;inset:0;transform:rotateY(180deg);
-  background:var(--t);border-color:var(--t);color:#fff;
-  box-shadow:0 12px 28px color-mix(in srgb,var(--t) 35%,transparent);
-  display:flex;align-items:center;justify-content:space-evenly;gap:10px;padding:12px 14px;
-}
-.flip-part{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
-.stat .flip-verso .num{color:inherit}
-.stat .flip-verso .cap{color:inherit;opacity:.85}
-.flip-sep{width:1px;align-self:stretch;margin:4px 0;background:currentColor;opacity:.3}
-:root[data-theme="dark"] .flip-verso{color:#011627}
-@media (prefers-reduced-motion: reduce){
-  .flip-in,.stat-flip:hover .flip-in,.stat-flip:focus-within .flip-in{transform:none;transition:none}
-  .flip-verso{transform:none;opacity:0;transition:opacity .2s}
-  .stat-flip:hover .flip-verso,.stat-flip:focus-within .flip-verso{opacity:1}
-}
-
 /* ── Onglets ──────────────────────────────────────────────────────────────
    La gouttière portait un fond trop proche de celui de la page : elle
    était invisible, et l'onglet inactif — sans bordure ni fond propre —
@@ -2047,8 +2003,6 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   .stats{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px}
   /* Le filet coloré occupe 3px à gauche : on décale le contenu d'autant. */
   .stat{padding:13px 13px 13px 15px;gap:8px}
-  .flip-recto{padding:13px 13px 13px 15px;gap:8px}
-  .flip-verso{padding:10px}
   /* Cartes plus compactes ici : un écart intermédiaire, sinon elles s'étirent. */
   .stat-body{min-width:0;gap:7px}
   .stat .num{font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2824,31 +2778,6 @@ function statCard(
       <div class="num mono"${infobulle}>${value}</div>
     </div>
     <div class="stat-ico" aria-hidden="true">${icon}</div>
-  </div>`;
-}
-
-/**
- * Carte « Commandes reçues » RETOURNABLE : au survol (ou au focus, clavier et
- * mobile), elle pivote et montre la répartition Shopify / saisies manuelles.
- * Pur CSS (.stat-flip) ; le verso est masqué des lecteurs d'écran, qui lisent
- * la répartition dans l'aria-label.
- */
-function statCardCommandes(total: number, shopify: number, manuelles: number): string {
-  return `<div class="stat t-blue stat-flip" tabindex="0" aria-label="Commandes reçues : ${total}, dont ${shopify} Shopify et ${manuelles} saisies manuelles">
-    <div class="flip-in">
-      <div class="flip-face flip-recto">
-        <div class="stat-body">
-          <div class="cap">Commandes reçues</div>
-          <div class="num mono">${total}</div>
-        </div>
-        <div class="stat-ico" aria-hidden="true">${ICO_BOX}</div>
-      </div>
-      <div class="flip-face flip-verso" aria-hidden="true">
-        <div class="flip-part"><span class="num mono">${shopify}</span><span class="cap">Shopify</span></div>
-        <span class="flip-sep"></span>
-        <div class="flip-part"><span class="num mono">${manuelles}</span><span class="cap">Manuelles</span></div>
-      </div>
-    </div>
   </div>`;
 }
 
@@ -4552,7 +4481,7 @@ export function dashboardPage(
   <div class="wrap">
     <div class="stats">
       ${statCard(nbToMake, 'À fabriquer', ICO_MAKE, 'accent')}
-      ${statCardCommandes(orders.length, orders.length - nbManuelles, nbManuelles)}
+      ${statCard(orders.length, 'Commandes reçues', ICO_BOX, 't-blue')}
       ${(() => {
         /* Abrégé pour tenir dans la carte, exact au survol. */
         const ca = moneyCompact(revenue);

@@ -164,14 +164,6 @@ describe('commandes manuelles : affichage', () => {
     expect(html).not.toContain('data-fichiers=');
   });
 
-  it('carte « Commandes reçues » : répartition Shopify / manuelles au verso', () => {
-    const html = dashboardPage([manuelle(), shopify], [], [], 'https://x', '', {});
-    expect(html).toContain('class="stat t-blue stat-flip"');
-    expect(html).toContain('aria-label="Commandes reçues : 2, dont 1 Shopify et 1 saisies manuelles"');
-    expect(html).toMatch(/<span class="num mono">1<\/span><span class="cap">Shopify<\/span>/);
-    expect(html).toMatch(/<span class="num mono">1<\/span><span class="cap">Manuelles<\/span>/);
-  });
-
   it('pastille selon la facture Shopify, boutons masqués une fois envoyée', () => {
     const o = manuelle();
     o.customerInfo = { ...o.customerInfo, facture: { statut: 'envoyee', le: '2026-10-16T10:00:00Z', draftOrderId: '99' } };
