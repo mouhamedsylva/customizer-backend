@@ -18,6 +18,7 @@ import {
   ShippingState,
 } from '../shared/shipping-status';
 import { evaluerLignes } from '../shared/reconnaissance-configurateur';
+import { commandeManuelleDeLignes } from '../admin/commandes-manuelles';
 
 @Injectable()
 export class WebhooksService implements OnModuleInit, OnModuleDestroy {
@@ -380,6 +381,16 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     // webhook ne crée pas de doublon.
     await this.orders.save(entity);
 
+    /* Commande née du brouillon d'une COMMANDE MANUELLE (le client a payé sa
+       facture, ou l'admin l'a validée payée) : on lui transfère ce qui n'existe
+       que dans le dashboard, puis la ligne manuelle disparaît. */
+    const manuelle = commandeManuelleDeLignes(lineItems);
+    if (manuelle) {
+      await this.transfererCommandeManuelle(manuelle, shopifyOrderId).catch((e) =>
+        this.logger.warn(`Commande manuelle ${manuelle} non transférée : ${(e as Error).message}`),
+      );
+    }
+
     /* La commande vient d'un devis ET elle est payée : on referme la boucle
        tout de suite, sans attendre la synchro de 10 minutes. */
     if (quoteId && this.estPayee(payload)) {
@@ -395,6 +406,45 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     }
     this.logger.log(
       `Commande ${entity.orderNumber || shopifyOrderId} enregistrée (${lineItems.length} article(s)).`,
+    );
+  }
+
+  /**
+   * Transfère une commande MANUELLE (id négatif) vers la commande Shopify née
+   * de son brouillon : fichiers joints, note interne, suivi de production,
+   * typo retrouvée. Une valeur déjà présente sur la commande Shopify est
+   * conservée. La ligne manuelle est ensuite supprimée (les fichiers Cloudinary
+   * restent : ils suivent la commande).
+   *
+   * Idempotent : rejoué (webhook puis import), il ne trouve plus la ligne
+   * manuelle et ne fait rien.
+   */
+  private async transfererCommandeManuelle(manuelleId: string, shopifyOrderId: string): Promise<void> {
+    const locale = await this.orders.findOne({ where: { shopifyOrderId: manuelleId } });
+    if (!locale) return;
+    const cible = await this.orders.findOne({ where: { shopifyOrderId } });
+    if (!cible) return;
+
+    const fichiers = [
+      ...(Array.isArray(cible.fichiersJoints) ? cible.fichiersJoints : []),
+      ...(Array.isArray(locale.fichiersJoints) ? locale.fichiersJoints : []),
+    ];
+    const note = [locale.internalNote, cible.internalNote].filter(Boolean).join('\n\n') || null;
+    const patch: Partial<Order> = {
+      fichiersJoints: fichiers.length ? fichiers : null,
+      internalNote: note,
+      typoRetrouvee: cible.typoRetrouvee || locale.typoRetrouvee || null,
+      trackingNumber: cible.trackingNumber || locale.trackingNumber || null,
+    };
+    // Suivi : l'atelier a pu avancer la commande manuelle (en production…).
+    if ((cible.productionStatus || 'to_produce') === 'to_produce' && locale.productionStatus && locale.productionStatus !== 'to_produce') {
+      patch.productionStatus = locale.productionStatus;
+      patch.productionUpdatedAt = locale.productionUpdatedAt || new Date();
+    }
+    await this.orders.update({ shopifyOrderId }, patch as any);
+    await this.orders.delete({ shopifyOrderId: manuelleId });
+    this.logger.log(
+      `Commande manuelle ${locale.orderNumber || manuelleId} devenue ${cible.orderNumber || shopifyOrderId} (Shopify).`,
     );
   }
 

@@ -21,7 +21,7 @@ import type { PricingPayload } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
 import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
-import { ARTICLES_SUGGERES, estCommandeManuelle, formulaireDepuisCommande } from './commandes-manuelles';
+import { ARTICLES_SUGGERES, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle, factureDe } from './commandes-manuelles';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -706,6 +706,50 @@ body{
 :root[data-theme="dark"] .stat.t-green{--t:#addb67}
 :root[data-theme="dark"] .stat.t-violet{--t:#c792ea}
 
+/* ── Carte retournable (nombre de commandes : Shopify / manuelles) ──
+   L'enveloppe .stat ne dessine plus rien : ce sont les deux faces qui portent
+   fond, bordure et ombre. Sans transform ni overflow:hidden sur l'enveloppe,
+   sinon la 3D s'aplatit. */
+.stat.stat-flip{
+  padding:0;display:block;overflow:visible;background:none;border:0;box-shadow:none;
+  perspective:900px;outline:none;
+}
+.stat.stat-flip::before{display:none}
+.stat.stat-flip:hover{transform:none;box-shadow:none}
+.flip-in{
+  position:relative;height:100%;transform-style:preserve-3d;
+  transition:transform .55s cubic-bezier(.2,.7,.2,1);
+}
+.stat-flip:hover .flip-in,.stat-flip:focus-within .flip-in{transform:rotateY(180deg)}
+.flip-face{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:17px 18px 17px 21px;box-shadow:var(--shadow);
+  -webkit-backface-visibility:hidden;backface-visibility:hidden;
+}
+.flip-recto{
+  position:relative;overflow:hidden;height:100%;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.flip-recto::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--t);opacity:.85;
+}
+.flip-verso{
+  position:absolute;inset:0;transform:rotateY(180deg);
+  background:var(--t);border-color:var(--t);color:#fff;
+  box-shadow:0 12px 28px color-mix(in srgb,var(--t) 35%,transparent);
+  display:flex;align-items:center;justify-content:space-evenly;gap:10px;padding:12px 14px;
+}
+.flip-part{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.stat .flip-verso .num{color:inherit}
+.stat .flip-verso .cap{color:inherit;opacity:.85}
+.flip-sep{width:1px;align-self:stretch;margin:4px 0;background:currentColor;opacity:.3}
+:root[data-theme="dark"] .flip-verso{color:#011627}
+@media (prefers-reduced-motion: reduce){
+  .flip-in,.stat-flip:hover .flip-in,.stat-flip:focus-within .flip-in{transform:none;transition:none}
+  .flip-verso{transform:none;opacity:0;transition:opacity .2s}
+  .stat-flip:hover .flip-verso,.stat-flip:focus-within .flip-verso{opacity:1}
+}
+
 /* ── Onglets ──────────────────────────────────────────────────────────────
    La gouttière portait un fond trop proche de celui de la page : elle
    était invisible, et l'onglet inactif — sans bordure ni fond propre —
@@ -1115,6 +1159,18 @@ body{
 }
 
 /* Menu d'export */
+/* Tri + export : deux boutons icônes carrés, accolés en un seul groupe. */
+.outils-icones{display:inline-flex;align-items:stretch}
+.outils-icones .dd-btn,.outils-icones .btn-icone{
+  width:44px;height:44px;padding:0;justify-content:center;color:var(--ink);
+}
+.outils-icones .dd .dd-btn{border-radius:10px 0 0 10px}
+.outils-icones .export-wrap .btn-icone{border-radius:0 10px 10px 0;margin-left:-1px}
+.outils-icones .dd-btn:hover,.outils-icones .btn-icone:hover{position:relative;z-index:1;color:var(--accent)}
+.outils-icones .dd-caret{display:none}
+/* Le déclencheur est étroit : le menu prend sa propre largeur, aligné à droite. */
+.dd.dd-icone .dd-menu{min-width:190px;max-width:none;left:auto;right:0}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .export-wrap{position:relative}
 .export-menu{
   display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:230px;
@@ -1227,22 +1283,130 @@ body{
   font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
 }
 .pill.manuelle{background:var(--manuel-soft);color:var(--manuel)}
-/* Formulaire de commande manuelle */
-.modal-box.mn-box{width:min(94vw,640px)}
-.mn-section{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
-  margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--line-soft)}
-.mn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
-.mn-grid .mn-large{grid-column:1/-1}
-.mn-article{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--raise)}
+/* ── Formulaire de commande manuelle : deux étapes ──
+   En-tête (titre + étapes) et pied (actions) fixes, contenu défilant entre
+   les deux : les boutons restent toujours visibles. */
+.modal-box.mn-box{width:min(96vw,760px);padding:0;display:flex;flex-direction:column;overflow:hidden}
+.mn-tete{padding:22px 26px 0;border-bottom:1px solid var(--line-soft);background:var(--surface)}
+.mn-tete h3{margin-bottom:2px}
+.mn-tete p.sub{margin-bottom:14px}
+.mn-etapes{display:flex;gap:6px;margin:0 -2px}
+.mn-etape{
+  flex:1;display:flex;align-items:center;gap:10px;padding:10px 4px 12px;
+  border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);
+  font:inherit;font-size:13px;font-weight:700;text-align:left;cursor:default;
+}
+.mn-etape .num{
+  width:26px;height:26px;border-radius:50%;flex:none;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--raise);color:var(--muted);font-size:12px;font-weight:800;transition:.2s;
+}
+.mn-etape small{display:block;font-size:11px;font-weight:500;color:var(--faint)}
+.mn-etape.on{color:var(--ink);border-bottom-color:var(--manuel)}
+.mn-etape.on .num{background:var(--manuel);color:#fff}
+.mn-etape.fait .num{background:var(--manuel-soft);color:var(--manuel)}
+.mn-corps{padding:18px 26px 6px;overflow-y:auto;flex:1;min-height:0;background:var(--paper)}
+.mn-page[hidden]{display:none}
+.mn-page{animation:mnIn .22s ease-out}
+@keyframes mnIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+.mn-carte{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px 18px;margin-bottom:14px}
+.mn-carte-titre{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.mn-carte-titre .ico{
+  width:30px;height:30px;border-radius:8px;flex:none;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--manuel-soft);color:var(--manuel);
+}
+.mn-carte-titre b{font-size:14px;font-weight:800;display:block}
+.mn-carte-titre small{font-size:11.5px;color:var(--muted)}
+.mn-grille{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
+.mn-grille.trois{grid-template-columns:1fr 1.4fr 1fr}
+.mn-grille .plein{grid-column:1/-1}
+.mn-champ label{display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;letter-spacing:0;text-transform:none}
+.mn-champ label .opt{font-size:11px}
+.mn-champ label .req{color:var(--danger)}
+.mn-input{
+  width:100%;height:40px;padding:0 12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--surface);color:var(--ink);font:inherit;font-size:13.5px;font-weight:500;outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;resize:vertical}
+.mn-input::placeholder{color:var(--faint);font-weight:400}
+.mn-input:focus{border-color:var(--manuel);box-shadow:0 0 0 3px var(--manuel-soft)}
+.mn-input.erreur{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+/* Articles */
+.mn-article{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--paper)}
 .mn-article-haut{display:flex;gap:8px;align-items:center}
+.mn-article-haut .num-art{
+  width:24px;height:24px;border-radius:6px;flex:none;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--ink);color:var(--surface);font-size:11.5px;font-weight:800;
+}
 .mn-article-haut .mn-titre{flex:1;min-width:0}
-.mn-article-haut .mn-qte{width:90px;text-align:right}
-.mn-article textarea{min-height:60px;margin-top:8px;font-size:13px}
-.mn-retirer{border:0;background:none;cursor:pointer;font-size:15px;color:var(--muted);padding:4px 6px;border-radius:6px}
+.mn-qte-wrap{display:flex;align-items:center;gap:6px;flex:none}
+.mn-qte-wrap span{font-size:12px;color:var(--muted);font-weight:600}
+.mn-qte-wrap .mn-qte{width:84px;text-align:right}
+.mn-article textarea{margin-top:8px}
+.mn-retirer{border:0;background:none;cursor:pointer;font-size:14px;color:var(--muted);width:32px;height:32px;border-radius:8px;flex:none}
 .mn-retirer:hover{background:var(--danger-soft);color:var(--danger)}
-.mn-ajout{margin-top:2px}
-.mn-suppr{margin-right:auto;color:var(--danger);border-color:var(--danger-soft)}
-.mn-suppr:hover{background:var(--danger-soft)}
+.mn-ajout{
+  width:100%;justify-content:center;border-style:dashed;color:var(--manuel);background:transparent;
+}
+.mn-ajout:hover{border-color:var(--manuel);color:var(--manuel);background:var(--manuel-soft)}
+/* Paiement : bascule à deux états */
+.mn-bascule{display:inline-flex;background:var(--raise);border-radius:9px;padding:3px;height:40px;width:100%}
+.mn-bascule button{
+  flex:1;border:0;background:none;border-radius:7px;font:inherit;font-size:12.5px;font-weight:700;
+  color:var(--muted);cursor:pointer;transition:.15s;
+}
+.mn-bascule button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.mn-bascule button.on[data-val="payee"]{color:var(--ok)}
+.mn-bascule button.on[data-val="facture"]{color:var(--manuel)}
+/* Étape 2 : dépôt de fichiers */
+.mn-categories{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.mn-cat{
+  border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:20px;
+  padding:6px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:.15s;
+}
+.mn-cat:hover{border-color:var(--manuel);color:var(--manuel)}
+.mn-cat.on{background:var(--manuel);border-color:var(--manuel);color:#fff}
+.mn-depot{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;
+  border:2px dashed var(--line);border-radius:12px;padding:28px 16px;cursor:pointer;
+  background:var(--paper);color:var(--muted);transition:.15s;
+}
+.mn-depot:hover,.mn-depot.survol{border-color:var(--manuel);background:var(--manuel-soft);color:var(--manuel)}
+.mn-depot .ico{width:44px;height:44px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--surface);color:var(--manuel);box-shadow:var(--shadow)}
+.mn-depot b{font-size:14px;color:var(--ink)}
+.mn-depot small{font-size:11.5px}
+.mn-fichiers{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.mn-fichier{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.mn-fichier .vignette{width:42px;height:42px;border-radius:8px;flex:none;object-fit:contain;background:var(--raise);display:inline-flex;align-items:center;justify-content:center;font-size:20px}
+.mn-fichier .infos{flex:1;min-width:0}
+.mn-fichier .infos b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mn-fichier .infos small{display:block;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mn-fichier .infos small.err{color:var(--danger);font-weight:600}
+.mn-fichier .barre{height:4px;border-radius:2px;background:var(--raise);overflow:hidden;margin-top:5px}
+.mn-fichier .barre span{display:block;height:100%;width:0;background:var(--manuel);transition:width .15s}
+.mn-fichiers-vide{font-size:12.5px;color:var(--faint);text-align:center;padding:6px 0}
+/* Pied */
+.mn-pied{display:flex;align-items:center;gap:10px;padding:14px 26px;border-top:1px solid var(--line-soft);background:var(--surface)}
+.mn-pied .hint{flex:1;min-width:0;margin:0}
+.mn-pied .btn{flex:none}
+.mn-pied .btn.primary{background:var(--manuel);border-color:var(--manuel);color:#fff}
+.mn-pied .btn.primary:hover{filter:brightness(1.08);color:#fff}
+.mn-suppr{color:var(--danger);border-color:var(--danger-soft)}
+.mn-suppr:hover{background:var(--danger-soft);color:var(--danger);border-color:var(--danger)}
+/* [hidden] perd contre .btn{display:inline-flex} : on le rétablit. */
+.mn-box [hidden]{display:none !important}
+.mn-etape{cursor:pointer}
+.mn-ouvrir{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.mn-recap-liste{display:grid;grid-template-columns:110px 1fr;gap:8px 14px;margin:0;font-size:13px}
+.mn-recap-liste dt{color:var(--muted);font-weight:600}
+.mn-recap-liste dd{margin:0;color:var(--ink);overflow-wrap:anywhere}
+@media (max-width:640px){
+  .mn-tete,.mn-corps,.mn-pied{padding-left:16px;padding-right:16px}
+  .mn-grille,.mn-grille.trois{grid-template-columns:1fr}
+  .mn-etape small{display:none}
+  .mn-pied{flex-wrap:wrap}
+  .mn-pied .hint{flex-basis:100%;order:-1}
+}
 .badge-group{
   display:inline-block;vertical-align:middle;margin-left:7px;
   background:var(--ok-soft);color:var(--ok);border-radius:20px;padding:2px 8px;
@@ -1883,6 +2047,8 @@ body{
   .stats{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px}
   /* Le filet coloré occupe 3px à gauche : on décale le contenu d'autant. */
   .stat{padding:13px 13px 13px 15px;gap:8px}
+  .flip-recto{padding:13px 13px 13px 15px;gap:8px}
+  .flip-verso{padding:10px}
   /* Cartes plus compactes ici : un écart intermédiaire, sinon elles s'étirent. */
   .stat-body{min-width:0;gap:7px}
   .stat .num{font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1902,6 +2068,12 @@ body{
   .filters .dd{flex:1;min-width:0;display:block}
   .export-wrap{width:100%}
   .export-wrap .btn{width:100%;justify-content:center}
+  /* Boutons icônes : gardent leur taille, à droite de la ligne. */
+  .filters .outils-icones{margin-left:auto}
+  .outils-icones .dd{flex:none}
+  .outils-icones .export-wrap{width:auto}
+  .outils-icones .export-wrap .btn{width:44px}
+  #btn-nouvelle-commande{justify-content:center}
 
   /* — Filtres de liste : un menu par ligne, pleine largeur.
        Côte à côte, « Tous les statuts (30) » était tronqué. — */
@@ -2374,8 +2546,14 @@ export function loginPage(
 function shipPill(o: Order): string {
   // Commande manuelle : absente de Shopify, aucun statut Shopify à montrer.
   if (estCommandeManuelle(o.shopifyOrderId)) {
-    const t = o.trackingNumber ? ` title="Suivi : ${esc(o.trackingNumber)}"` : '';
-    return `<span class="pill manuelle"${t}>Hors Shopify</span>`;
+    /* Commande manuelle : on montre où en est sa facture Shopify. Payée, elle
+       est remplacée par la commande Shopify dès son import. */
+    const f = factureDe(o);
+    const quand = f?.le ? fdate(new Date(f.le)) : '';
+    if (f?.statut === 'envoyee') return `<span class="pill warn" title="Brouillon Shopify ${esc(f.draftOrderId || '')}">Facture envoyée${quand ? ` le ${esc(quand)}` : ''}</span>`;
+    if (f?.statut === 'payee') return `<span class="pill ok">Validée dans Shopify</span>`;
+    if (f?.statut === 'echec') return `<span class="pill danger" title="${esc(f.erreur || '')}">Facture non envoyée</span>`;
+    return `<span class="pill manuelle">Hors Shopify</span>`;
   }
   const prod = o.productionStatus || 'to_produce';
   const map: Record<string, [string, string]> = {
@@ -2402,7 +2580,8 @@ function shipPill(o: Order): string {
 function statusPill(status: string | null): string {
   const s = (status || '').toLowerCase();
   if (s === 'paid') return `<span class="pill ok">Payé</span>`;
-  if (s === 'pending' || s === 'authorized') return `<span class="pill warn">${esc(status)}</span>`;
+  if (s === 'pending') return `<span class="pill warn" title="pending">En attente</span>`;
+  if (s === 'authorized') return `<span class="pill warn" title="authorized">Autorisé</span>`;
   return `<span class="pill neutral">${esc(status || '—')}</span>`;
 }
 
@@ -2513,7 +2692,10 @@ function itemRow(li: any): string {
   /* « Logo … (manquant) » masqué une fois le fichier rattaché après coup. */
   const rattaches = assetsRattaches(li.__typoRetrouvee).map((r) => r.label);
   const texts = props.filter(
-    (p) => !isUrl(p.value) && !estTypo(p) && !rattaches.includes(logoManquant(p.name) ?? ''),
+    (p) =>
+      !isUrl(p.value) && !estTypo(p) && !rattaches.includes(logoManquant(p.name) ?? '') &&
+      // Repère technique du brouillon d'une commande manuelle : pas une spec.
+      !RE_PROPRIETE_COMMANDE_MANUELLE.test(String(p.name || '')),
   );
   /* Visuel de texte REDESSINÉ dans la bonne police (scripts/corriger-texte-
      commande) : il remplace l'original, sorti en police par défaut. */
@@ -2642,6 +2824,31 @@ function statCard(
       <div class="num mono"${infobulle}>${value}</div>
     </div>
     <div class="stat-ico" aria-hidden="true">${icon}</div>
+  </div>`;
+}
+
+/**
+ * Carte « Commandes reçues » RETOURNABLE : au survol (ou au focus, clavier et
+ * mobile), elle pivote et montre la répartition Shopify / saisies manuelles.
+ * Pur CSS (.stat-flip) ; le verso est masqué des lecteurs d'écran, qui lisent
+ * la répartition dans l'aria-label.
+ */
+function statCardCommandes(total: number, shopify: number, manuelles: number): string {
+  return `<div class="stat t-blue stat-flip" tabindex="0" aria-label="Commandes reçues : ${total}, dont ${shopify} Shopify et ${manuelles} saisies manuelles">
+    <div class="flip-in">
+      <div class="flip-face flip-recto">
+        <div class="stat-body">
+          <div class="cap">Commandes reçues</div>
+          <div class="num mono">${total}</div>
+        </div>
+        <div class="stat-ico" aria-hidden="true">${ICO_BOX}</div>
+      </div>
+      <div class="flip-face flip-verso" aria-hidden="true">
+        <div class="flip-part"><span class="num mono">${shopify}</span><span class="cap">Shopify</span></div>
+        <span class="flip-sep"></span>
+        <div class="flip-part"><span class="num mono">${manuelles}</span><span class="cap">Manuelles</span></div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -3082,7 +3289,14 @@ function orderCard(o: Order, srcQuote?: Quote): string {
         </a>
         ${
           manuelle
-            ? `<button type="button" class="btn js-modifier-manuelle" data-order="${id}" data-numero="${esc(o.orderNumber || '')}" data-form="${esc(JSON.stringify(formulaireDepuisCommande(o)))}">✎ Modifier la commande</button>`
+            ? (() => {
+                /* Pas encore de facture Shopify (ou échec) : on peut la (re)lancer,
+                   dans les deux modes : e-mail de paiement, ou déjà payée. */
+                const f = factureDe(o);
+                if (f && f.statut !== 'echec') return '';
+                return `<button type="button" class="btn js-facturer-manuelle" data-order="${id}" data-mode="facture"${o.customerEmail ? '' : ' disabled title="E-mail du client manquant"'}>✉ Envoyer la facture</button>
+                  <button type="button" class="btn js-facturer-manuelle" data-order="${id}" data-mode="payee">✓ Déjà payée : valider dans Shopify</button>`;
+              })()
             : ''
         }
       </div>
@@ -3626,7 +3840,10 @@ export function productionSheetPage(o: Order, nonce = '', srcQuote?: Quote | nul
       /* « Logo … (manquant) » masqué une fois le fichier rattaché après coup. */
   const rattaches = assetsRattaches(li.__typoRetrouvee).map((r) => r.label);
   const texts = props.filter(
-    (p) => !isUrl(p.value) && !estTypo(p) && !rattaches.includes(logoManquant(p.name) ?? ''),
+    (p) =>
+      !isUrl(p.value) && !estTypo(p) && !rattaches.includes(logoManquant(p.name) ?? '') &&
+      // Repère technique du brouillon d'une commande manuelle : pas une spec.
+      !RE_PROPRIETE_COMMANDE_MANUELLE.test(String(p.name || '')),
   );
       const typo = props.filter((p) => !isUrl(p.value) && estTypo(p));
 
@@ -4026,9 +4243,28 @@ function selectFilter(
   name: string,
   options: Array<[string, string]>,
   current: string,
-  opts: { id?: string; onPick?: string; label?: string } = {},
+  /* icone : SVG affiché seul dans le déclencheur ; le libellé courant passe en
+     infobulle et reste lu par les lecteurs d'écran. */
+  opts: { id?: string; onPick?: string; label?: string; icone?: string } = {},
 ): string {
   const sel = options.find(([v]) => v === current) || options[0];
+  if (opts.icone) {
+    const titre = esc(`${opts.label || ''} : ${sel[1]}`);
+    const itemsIcone = options
+      .map(
+        ([v, l]) =>
+          `<button type="button" class="dd-item${v === current ? ' on' : ''}"
+             role="option" aria-selected="${v === current}"
+             data-value="${esc(v)}" onclick="ddPick(this)">${esc(l)}</button>`,
+      )
+      .join('');
+    return `<div class="dd dd-icone"${opts.id ? ` id="${opts.id}"` : ''} data-name="${esc(name)}" data-value="${esc(sel[0])}" data-onpick="${esc(opts.onPick || 'applyFilters')}" aria-label="${esc(opts.label || '')}">
+    <button type="button" class="dd-btn" onclick="ddToggle(this)" aria-haspopup="listbox" aria-expanded="false" title="${titre}">
+      ${opts.icone}<span class="dd-txt sr-only">${esc(sel[1])}</span>
+    </button>
+    <div class="dd-menu" role="listbox">${itemsIcone}</div>
+  </div>`;
+  }
   const id = opts.id ? ` id="${opts.id}"` : '';
   const onPick = opts.onPick || 'applyFilters';
   const aria = opts.label ? ` aria-label="${esc(opts.label)}"` : '';
@@ -4316,7 +4552,7 @@ export function dashboardPage(
   <div class="wrap">
     <div class="stats">
       ${statCard(nbToMake, 'À fabriquer', ICO_MAKE, 'accent')}
-      ${statCard(orders.length, 'Commandes reçues', ICO_BOX, 't-blue')}
+      ${statCardCommandes(orders.length, orders.length - nbManuelles, nbManuelles)}
       ${(() => {
         /* Abrégé pour tenir dans la carte, exact au survol. */
         const ca = moneyCompact(revenue);
@@ -4382,22 +4618,30 @@ export function dashboardPage(
       </form>
 
       <div class="filters" id="filters">
-        ${selectFilter('sort', SORTS, f.sort)}
         ${filtered ? `<a class="chip-clear" href="/api/admin">✕ Réinitialiser</a>` : ''}
-      </div>
-
-      <button type="button" class="btn primary" id="btn-nouvelle-commande" onclick="ouvrirManuelle()"
-              title="Saisir une commande reçue par e-mail ou par téléphone (hors boutique)">+ Nouvelle commande</button>
-
-      <div class="export-wrap">
-        <button class="btn" onclick="toggleExport()">↓ Exporter</button>
+        <!-- Tri et export : deux boutons icônes accolés (libellé en infobulle
+             et pour les lecteurs d'écran). -->
+        <div class="outils-icones">
+          ${selectFilter('sort', SORTS, f.sort, {
+            label: 'Trier',
+            icone: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 16l4 4 4-4"/><path d="M17 20V4M13 8l4-4 4 4"/></svg>',
+          })}
+          <div class="export-wrap">
+            <button type="button" class="btn btn-icone" onclick="toggleExport()" title="Exporter (CSV)" aria-label="Exporter (CSV)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+            </button>
         <div class="export-menu" id="export-menu">
           <a href="#" onclick="return exportCsv('orders')">Commandes (détaillé)</a>
           <a href="#" onclick="return exportCsv('quotes')">Devis</a>
           <a href="#" onclick="return exportCsv('accounting')">Comptabilité (payées)</a>
           <small>Respecte les filtres ci-contre.</small>
         </div>
+          </div>
+        </div>
       </div>
+
+      <button type="button" class="btn primary" id="btn-nouvelle-commande" onclick="ouvrirManuelle()"
+              title="Saisir une commande reçue par e-mail ou par téléphone (hors boutique)">+ Nouvelle commande</button>
     </div>
 
     ${
@@ -4918,57 +5162,133 @@ export function dashboardPage(
     </div>
   </div>
 
-  <!-- Modale : commande MANUELLE (reçue par e-mail, hors boutique). Création
-       et modification. Dashboard seulement : rien n'est créé sur Shopify.
+  <!-- Modale : commande MANUELLE (reçue par e-mail, hors boutique), en trois
+       étapes : 1. client, 2. articles & design, 3. paiement. Rien n'est
+       enregistré avant la dernière étape : la commande est alors créée (ou
+       mise à jour), puis les fichiers déposés lui sont joints.
+       Dashboard seulement : rien n'est créé sur Shopify.
        autocomplete="off" : voir le formulaire de recherche. -->
   <div class="modal" id="manuelle-modal" onclick="if(event.target===this)fermerManuelle()">
-    <form class="modal-box mn-box" autocomplete="off" onsubmit="return false">
-      <h3 id="mn-titre">Nouvelle commande</h3>
-      <p class="sub">Pour une commande reçue par e-mail, téléphone ou bon de commande.
-        Elle n'apparaît que dans ce tableau de bord : <strong>rien n'est créé sur Shopify</strong>
-        et aucun e-mail n'est envoyé au client.</p>
-
-      <div class="mn-section">Client</div>
-      <div class="mn-grid">
-        <div><label class="lbl" for="mn-nom">Nom</label><input id="mn-nom" class="price-input" maxlength="120"></div>
-        <div><label class="lbl" for="mn-entreprise">Entreprise / organisme <span class="opt">(facultatif)</span></label><input id="mn-entreprise" class="price-input" maxlength="120"></div>
-        <div><label class="lbl" for="mn-email">E-mail <span class="opt">(facultatif)</span></label><input id="mn-email" type="email" class="price-input" maxlength="200"></div>
-        <div><label class="lbl" for="mn-tel">Téléphone <span class="opt">(facultatif)</span></label><input id="mn-tel" class="price-input" maxlength="40"></div>
+    <form class="modal-box mn-box" autocomplete="off" onsubmit="return false" aria-labelledby="mn-titre">
+      <div class="mn-tete">
+        <h3 id="mn-titre">Nouvelle commande</h3>
+        <p class="sub">Commande reçue par e-mail, téléphone ou bon de commande. Elle n'existe que dans ce
+          tableau de bord : <strong>rien n'est créé sur Shopify</strong>, aucun e-mail n'est envoyé au client.</p>
+        <div class="mn-etapes" role="tablist">
+          <button type="button" class="mn-etape on" id="mn-etape-1" role="tab" onclick="mnCliquerEtape(1)">
+            <span class="num">1</span><span>Client<small>Coordonnées, livraison</small></span>
+          </button>
+          <button type="button" class="mn-etape" id="mn-etape-2" role="tab" onclick="mnCliquerEtape(2)">
+            <span class="num">2</span><span>Articles &amp; design<small>Articles, maquettes, logos, assets</small></span>
+          </button>
+          <button type="button" class="mn-etape" id="mn-etape-3" role="tab" onclick="mnCliquerEtape(3)">
+            <span class="num">3</span><span>Paiement<small>Montant, statut, note</small></span>
+          </button>
+        </div>
       </div>
 
-      <div class="mn-section">Adresse de livraison <span class="opt">(facultatif)</span></div>
-      <div class="mn-grid">
-        <div class="mn-large"><input id="mn-adr1" class="price-input" maxlength="200" placeholder="Adresse" aria-label="Adresse"></div>
-        <div class="mn-large"><input id="mn-adr2" class="price-input" maxlength="200" placeholder="Complément (bâtiment, service…)" aria-label="Complément d'adresse"></div>
-        <div><input id="mn-cp" class="price-input" maxlength="20" placeholder="Code postal" aria-label="Code postal"></div>
-        <div><input id="mn-ville" class="price-input" maxlength="100" placeholder="Ville" aria-label="Ville"></div>
-        <div><input id="mn-pays" class="price-input" maxlength="60" placeholder="Pays" aria-label="Pays"></div>
+      <div class="mn-corps" id="mn-corps">
+        <!-- ── Étape 1 : client ── -->
+        <div class="mn-page" id="mn-page-1">
+          <section class="mn-carte">
+            <div class="mn-carte-titre">
+              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
+              <span><b>Client</b><small>Le nom ou l'entreprise suffit</small></span>
+            </div>
+            <div class="mn-grille">
+              <div class="mn-champ"><label for="mn-nom">Nom du contact</label><input id="mn-nom" class="mn-input" maxlength="120" placeholder="Ex. Julien Lucas"></div>
+              <div class="mn-champ"><label for="mn-entreprise">Entreprise / organisme <span class="opt">(facultatif)</span></label><input id="mn-entreprise" class="mn-input" maxlength="120" placeholder="Ex. Armée de l'Air"></div>
+              <div class="mn-champ"><label for="mn-email">E-mail <span class="opt">(facultatif)</span></label><input id="mn-email" type="email" class="mn-input" maxlength="200" placeholder="nom@exemple.fr"></div>
+              <div class="mn-champ"><label for="mn-tel">Téléphone <span class="opt">(facultatif)</span></label><input id="mn-tel" type="tel" class="mn-input" maxlength="40" placeholder="06 12 34 56 78"></div>
+            </div>
+          </section>
+
+          <section class="mn-carte">
+            <div class="mn-carte-titre">
+              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+              <span><b>Livraison</b><small>Facultatif : laissez vide pour un retrait sur place</small></span>
+            </div>
+            <div class="mn-grille">
+              <div class="mn-champ plein"><label for="mn-adr1">Adresse</label><input id="mn-adr1" class="mn-input" maxlength="200" placeholder="N° et rue"></div>
+              <div class="mn-champ plein"><label for="mn-adr2">Complément <span class="opt">(facultatif)</span></label><input id="mn-adr2" class="mn-input" maxlength="200" placeholder="Bâtiment, service, étage…"></div>
+            </div>
+            <div class="mn-grille trois" style="margin-top:12px">
+              <div class="mn-champ"><label for="mn-cp">Code postal</label><input id="mn-cp" class="mn-input" maxlength="20" inputmode="numeric"></div>
+              <div class="mn-champ"><label for="mn-ville">Ville</label><input id="mn-ville" class="mn-input" maxlength="100"></div>
+              <div class="mn-champ"><label for="mn-pays">Pays</label><input id="mn-pays" class="mn-input" maxlength="60"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ── Étape 2 : articles & design ── -->
+        <div class="mn-page" id="mn-page-2" hidden>
+          <section class="mn-carte">
+            <div class="mn-carte-titre">
+              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>
+              <span><b>Articles</b><small>Un bloc par article ; détails libres, un par ligne</small></span>
+            </div>
+            <datalist id="mn-suggestions">${ARTICLES_SUGGERES.map((a) => `<option value="${esc(a)}"></option>`).join('')}</datalist>
+            <div id="mn-articles"></div>
+            <button type="button" class="btn mn-ajout" onclick="ajouterArticleManuel()">+ Ajouter un article</button>
+          </section>
+
+          <section class="mn-carte">
+            <div class="mn-carte-titre">
+              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
+              <span><b>Design &amp; assets du client</b><small>Choisissez le type, puis déposez les fichiers : ils seront joints à la commande</small></span>
+            </div>
+            <div class="mn-categories" id="mn-categories" role="radiogroup" aria-label="Type de fichier">
+              <button type="button" class="mn-cat on" data-cat="Design">Design / maquette</button>
+              <button type="button" class="mn-cat" data-cat="BAT">BAT</button>
+              <button type="button" class="mn-cat" data-cat="Logo">Logo</button>
+              <button type="button" class="mn-cat" data-cat="Asset">Asset</button>
+              <button type="button" class="mn-cat" data-cat="Consignes">Consignes</button>
+              <button type="button" class="mn-cat" data-cat="">Autre</button>
+            </div>
+            <label class="mn-depot" id="mn-depot">
+              <span class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg></span>
+              <b>Glissez les fichiers ici, ou cliquez pour les choisir</b>
+              <small>PDF, PNG, JPG, WEBP, GIF, Word, Excel, TXT · 10 Mo maximum par fichier</small>
+              <input type="file" id="mn-file" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx,.txt">
+            </label>
+            <div class="mn-fichiers" id="mn-fichiers"></div>
+          </section>
+        </div>
+
+        <!-- ── Étape 3 : paiement ── -->
+        <div class="mn-page" id="mn-page-3" hidden>
+          <section class="mn-carte">
+            <div class="mn-carte-titre">
+              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>
+              <span><b>Paiement</b><small>La commande est créée dans Shopify ; le montant est réparti entre les articles</small></span>
+            </div>
+            <div class="mn-grille">
+              <div class="mn-champ"><label for="mn-date">Date de commande</label><input id="mn-date" type="date" class="mn-input"></div>
+              <div class="mn-champ"><label for="mn-total">Montant total TTC (€) <span class="req">*</span></label><input id="mn-total" class="mn-input mono" inputmode="decimal" placeholder="0,00"></div>
+              <div class="mn-champ plein"><label>Règlement</label>
+                <input type="hidden" id="mn-paiement" value="facture">
+                <div class="mn-bascule" role="radiogroup" aria-label="Règlement">
+                  <button type="button" data-val="facture" class="on" onclick="choisirPaiement('facture')">✉ Envoyer la facture au client</button>
+                  <button type="button" data-val="payee" onclick="choisirPaiement('payee')">✓ Déjà payé</button>
+                </div>
+                <p class="hint" id="mn-paiement-aide" style="margin-top:6px"></p>
+              </div>
+            </div>
+            <div class="mn-champ" id="mn-note-wrap" style="margin-top:12px">
+              <label for="mn-note">Note interne <span class="opt">(facultatif, visible de votre équipe uniquement)</span></label>
+              <textarea id="mn-note" class="mn-input" maxlength="2000" rows="3" placeholder="Ex. Reçue par e-mail le 14/10, livraison souhaitée avant le 30"></textarea>
+            </div>
+          </section>
+          <!-- Récapitulatif avant création (rempli par le DOM). -->
+          <section class="mn-carte mn-recap" id="mn-recap"></section>
+        </div>
       </div>
 
-      <div class="mn-section">Articles</div>
-      <datalist id="mn-suggestions">${ARTICLES_SUGGERES.map((a) => `<option value="${esc(a)}"></option>`).join('')}</datalist>
-      <div id="mn-articles"></div>
-      <button type="button" class="btn mn-ajout" onclick="ajouterArticleManuel()">+ Ajouter un article</button>
-
-      <div class="mn-section">Commande</div>
-      <div class="mn-grid">
-        <div><label class="lbl" for="mn-date">Date de commande</label><input id="mn-date" type="date" class="price-input"></div>
-        <div><label class="lbl" for="mn-total">Montant total TTC (€) <span class="opt">(facultatif)</span></label><input id="mn-total" class="price-input mono" inputmode="decimal" placeholder="0,00"></div>
-        <div><label class="lbl" for="mn-paiement">Paiement</label>
-          <select id="mn-paiement" class="price-input"><option value="pending">En attente</option><option value="paid">Payé</option></select></div>
+      <div class="mn-pied">
+        <p class="hint" id="mn-statut" role="status"></p>
+        <button type="button" class="btn" id="mn-retour" onclick="mnRetour()">Annuler</button>
+        <button type="button" class="btn primary" id="mn-go" onclick="mnSuivant()">Suivant →</button>
       </div>
-      <div id="mn-note-wrap">
-        <label class="lbl" for="mn-note" style="margin-top:12px">Note interne <span class="opt">(facultatif)</span></label>
-        <textarea id="mn-note" maxlength="2000" rows="3" placeholder="Visible uniquement par votre équipe…"></textarea>
-      </div>
-      <p class="hint">Le BAT, le logo ou l'e-mail du client se joignent ensuite depuis la commande (« Fichiers joints »).</p>
-
-      <div class="modal-actions">
-        <button type="button" class="btn mn-suppr" id="mn-suppr" onclick="supprimerManuelle()" hidden>Supprimer</button>
-        <button type="button" class="btn" onclick="fermerManuelle()">Annuler</button>
-        <button type="button" class="btn primary" id="mn-go" onclick="enregistrerManuelle()">Créer la commande</button>
-      </div>
-      <p class="hint" id="mn-statut" style="margin-top:12px"></p>
     </form>
   </div>
 
@@ -5033,6 +5353,11 @@ export function dashboardPage(
       dd.setAttribute('data-value', val);
       var txt=dd.querySelector('.dd-txt');
       if(txt) txt.textContent=item.textContent.trim();
+      /* Menu en icône : le libellé courant vit dans l'infobulle. */
+      if(dd.classList.contains('dd-icone')){
+        var bi=dd.querySelector('.dd-btn');
+        if(bi) bi.title=(dd.getAttribute('aria-label')||'')+' : '+item.textContent.trim();
+      }
 
       dd.querySelectorAll('.dd-item').forEach(function(i){
         var on=i===item;
@@ -5278,77 +5603,219 @@ export function dashboardPage(
       doProdStatus(orderId,status,btn,null);
     }
 
-    /* ── Commande manuelle (reçue par e-mail, hors boutique) ──
-       Création et modification dans la même modale ; mnCtx.id vaut null en
-       création. Les lignes d'article sont construites par le DOM (jamais
-       d'innerHTML avec une valeur saisie). */
-    var mnCtx={id:null};
+    /* ── Commande manuelle (reçue par e-mail, hors boutique) : trois étapes ──
+       1. Client ; 2. Articles & design ; 3. Paiement.
+       Rien n'est enregistré avant le bouton final. Il enchaîne : création de
+       la commande, envoi des fichiers déposés à l'étape 2, puis rattachement à
+       Shopify (route /facture) : e-mail de facture au client, ou validation
+       comme payée. Fermer le formulaire en cours de route ne laisse donc
+       aucune commande à moitié faite. Création seulement : une commande
+       manuelle ne se modifie ni ne se supprime.
+       Les lignes (articles, fichiers) sont construites par le DOM : jamais
+       d'innerHTML avec une valeur saisie. */
+    var mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
     function mnVal(id){ var e=document.getElementById(id); return e?e.value:''; }
     function mnSet(id,v){ var e=document.getElementById(id); if(e) e.value=(v==null?'':String(v)); }
+    function mnStatut(msg, err){
+      var st=document.getElementById('mn-statut');
+      st.className=err?'hint err':'hint'; st.textContent=msg||'';
+    }
+    function mnEl(tag, cls, txt){
+      var e=document.createElement(tag);
+      if(cls) e.className=cls;
+      if(txt!=null) e.textContent=txt;
+      return e;
+    }
+    function choisirPaiement(v){
+      var mode = v==='payee' ? 'payee' : 'facture';
+      mnSet('mn-paiement', mode);
+      document.querySelectorAll('.mn-bascule button').forEach(function(b){
+        var on=b.getAttribute('data-val')===mode;
+        b.classList.toggle('on', on); b.setAttribute('aria-checked', on?'true':'false');
+      });
+      var aide=document.getElementById('mn-paiement-aide');
+      if(aide) aide.textContent = mode==='payee'
+        ? 'Paiement déjà reçu (virement, chèque…) : la commande est créée dans Shopify comme payée, sans e-mail de facture.'
+        : 'Le client reçoit un e-mail de Shopify avec le lien de paiement. Une fois payée, la commande Shopify remplace celle-ci dans le tableau de bord.';
+      if(mnCtx.etape===3){
+        mnRecap();
+        if(!mnCtx.envoi) document.getElementById('mn-go').textContent=mnLibelleFinal();
+      }
+    }
+    function mnLibelleFinal(){
+      if(mnCtx.id) return 'Réessayer';
+      return mnVal('mn-paiement')==='payee' ? 'Créer la commande payée' : 'Créer et envoyer la facture';
+    }
+    function mnNumeroterArticles(){
+      document.querySelectorAll('#mn-articles .mn-article').forEach(function(b,i){
+        var n=b.querySelector('.num-art'); if(n) n.textContent=String(i+1);
+      });
+    }
     function ajouterArticleManuel(a){
       a=a||{};
-      var bloc=document.createElement('div'); bloc.className='mn-article';
-      var haut=document.createElement('div'); haut.className='mn-article-haut';
-      var titre=document.createElement('input');
-      titre.className='price-input mn-titre'; titre.maxLength=150;
-      titre.setAttribute('list','mn-suggestions');
-      titre.placeholder='Article (ex. Patch personnalisé (PVC))';
+      var bloc=mnEl('div','mn-article');
+      var haut=mnEl('div','mn-article-haut');
+      var num=mnEl('span','num-art');
+      var titre=mnEl('input','mn-input mn-titre');
+      titre.maxLength=150; titre.setAttribute('list','mn-suggestions');
+      titre.placeholder='Article : Patch personnalisé (PVC), Coin métal…';
       titre.setAttribute('aria-label','Article');
       titre.value=a.titre||'';
-      var qte=document.createElement('input');
-      qte.className='price-input mono mn-qte'; qte.type='number'; qte.min='1'; qte.step='1';
-      qte.setAttribute('aria-label','Quantité'); qte.title='Quantité';
+      var qw=mnEl('div','mn-qte-wrap');
+      var qte=mnEl('input','mn-input mono mn-qte');
+      qte.type='number'; qte.min='1'; qte.step='1';
+      qte.setAttribute('aria-label','Quantité');
       qte.value=a.quantite||1;
-      var x=document.createElement('button');
-      x.type='button'; x.className='mn-retirer'; x.title='Retirer cet article'; x.textContent='✕';
+      qw.appendChild(mnEl('span',null,'Qté')); qw.appendChild(qte);
+      var x=mnEl('button','mn-retirer','✕');
+      x.type='button'; x.title='Retirer cet article';
       x.addEventListener('click', function(){
         bloc.remove();
         if(!document.querySelector('#mn-articles .mn-article')) ajouterArticleManuel();
+        mnNumeroterArticles();
       });
-      haut.appendChild(titre); haut.appendChild(qte); haut.appendChild(x);
-      var det=document.createElement('textarea');
+      haut.appendChild(num); haut.appendChild(titre); haut.appendChild(qw); haut.appendChild(x);
+      var det=mnEl('textarea','mn-input');
       det.maxLength=3000; det.rows=2;
-      det.placeholder='Détails, un par ligne : taille, couleur, format, finition, texte à floquer…';
-      det.setAttribute('aria-label','Détails de l\\'article');
+      det.placeholder='Détails, un par ligne : Taille : 8 cm / Format : Rond / Finition : PVC…';
+      det.setAttribute('aria-label',"Détails de l'article");
       det.value=a.details||'';
       bloc.appendChild(haut); bloc.appendChild(det);
       document.getElementById('mn-articles').appendChild(bloc);
+      mnNumeroterArticles();
       return titre;
     }
-    function ouvrirManuelle(id, numero, f){
-      f=f||{};
-      var c=f.client||{}, ad=f.adresse||{};
-      mnCtx={id:id||null};
-      document.getElementById('mn-titre').textContent=id?('Modifier la commande '+(numero||'')):'Nouvelle commande';
-      document.getElementById('mn-go').textContent=id?'Enregistrer':'Créer la commande';
-      document.getElementById('mn-suppr').hidden=!id;
-      /* La note se modifie depuis la carte : ici, seulement à la création. */
-      document.getElementById('mn-note-wrap').hidden=!!id;
-      mnSet('mn-nom',c.nom); mnSet('mn-entreprise',c.entreprise);
-      mnSet('mn-email',c.email); mnSet('mn-tel',c.telephone);
-      mnSet('mn-adr1',ad.ligne1); mnSet('mn-adr2',ad.ligne2);
-      mnSet('mn-cp',ad.codePostal); mnSet('mn-ville',ad.ville);
-      mnSet('mn-pays', id ? ad.pays : (ad.pays||'France'));
-      mnSet('mn-date', f.date || new Date().toLocaleDateString('sv-SE'));
-      mnSet('mn-total', f.total ? String(f.total).replace('.',',') : '');
-      mnSet('mn-paiement', f.paiement||'pending');
-      mnSet('mn-note','');
-      var liste=document.getElementById('mn-articles'); liste.textContent='';
-      var arts=Array.isArray(f.articles)&&f.articles.length?f.articles:[{}];
-      arts.forEach(function(a){ ajouterArticleManuel(a); });
-      var st=document.getElementById('mn-statut'); st.className='hint'; st.textContent='';
+
+    /* ── Navigation ── */
+    function mnAller(n){
+      mnCtx.etape=n;
+      for(var i=1;i<=3;i++){
+        document.getElementById('mn-page-'+i).hidden=i!==n;
+        var e=document.getElementById('mn-etape-'+i);
+        e.classList.toggle('on', i===n); e.classList.toggle('fait', i<n);
+        e.setAttribute('aria-selected', i===n?'true':'false');
+      }
+      var go=document.getElementById('mn-go'), ret=document.getElementById('mn-retour');
+      ret.textContent = n===1 ? 'Annuler' : '← Retour';
+      go.textContent = n<3 ? 'Suivant →' : mnLibelleFinal();
+      if(n===3) mnRecap();
+      document.getElementById('mn-corps').scrollTop=0;
+    }
+    /* Contrôle de l'étape (le serveur revalide tout) : on montre le champ fautif. */
+    function mnVerifier(n){
+      document.querySelectorAll('.mn-input.erreur').forEach(function(i){ i.classList.remove('erreur'); });
+      function faute(el,msg){ mnAller(n); if(el){ el.classList.add('erreur'); el.focus(); } mnStatut(msg,true); return false; }
+      if(n===1){
+        if(!mnVal('mn-nom').trim() && !mnVal('mn-entreprise').trim())
+          return faute(document.getElementById('mn-nom'),"Indiquez le nom du client ou de son entreprise.");
+        var em=mnVal('mn-email').trim();
+        if(em && !/^[^ @]+@[^ @]+[.][^ @]+$/.test(em)) return faute(document.getElementById('mn-email'),'Adresse e-mail invalide.');
+      }
+      if(n===2){
+        var arts=document.querySelectorAll('#mn-articles .mn-article'), unArticle=false;
+        for(var i=0;i<arts.length;i++){
+          var t=arts[i].querySelector('.mn-titre'), q=arts[i].querySelector('.mn-qte');
+          var d=arts[i].querySelector('textarea');
+          if(!t.value.trim() && !d.value.trim()) continue;
+          if(!t.value.trim()) return faute(t,'Chaque article doit avoir un nom.');
+          if(!(parseInt(q.value,10)>=1)) return faute(q,'Quantité invalide.');
+          unArticle=true;
+        }
+        if(!unArticle) return faute(arts[0]&&arts[0].querySelector('.mn-titre'),'Ajoutez au moins un article.');
+      }
+      if(n===3){
+        var tot=Number(mnVal('mn-total').replace(/ /g,'').replace(',','.'));
+        if(!(tot>0)) return faute(document.getElementById('mn-total'),'Indiquez le montant total TTC.');
+        if(mnVal('mn-paiement')!=='payee' && !mnVal('mn-email').trim()){
+          mnAller(1);
+          var em1=document.getElementById('mn-email'); em1.classList.add('erreur'); em1.focus();
+          mnStatut("Indiquez l'e-mail du client : la facture lui est envoyée.", true);
+          return false;
+        }
+      }
+      mnStatut('');
+      return true;
+    }
+    /* Clic sur une étape de l'en-tête : retour libre, avance après contrôle. */
+    function mnCliquerEtape(n){
+      if(mnCtx.envoi || n===mnCtx.etape) return;
+      if(n>mnCtx.etape){
+        for(var i=mnCtx.etape;i<n;i++) if(!mnVerifier(i)) return;
+      }
+      mnStatut('');
+      mnAller(n);
+    }
+    function mnRetour(){
+      if(mnCtx.envoi) return;
+      if(mnCtx.etape>1){ mnStatut(''); mnAller(mnCtx.etape-1); return; }
+      fermerManuelle();
+    }
+    function mnSuivant(){
+      if(mnCtx.envoi) return;
+      if(mnCtx.etape<3){
+        if(mnVerifier(mnCtx.etape)) mnAller(mnCtx.etape+1);
+        return;
+      }
+      if(!mnCtx.id && (!mnVerifier(1) || !mnVerifier(2) || !mnVerifier(3))) return;
+      mnEnregistrer();
+    }
+    function ouvrirManuelle(){
+      mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
+      ['mn-nom','mn-entreprise','mn-email','mn-tel','mn-adr1','mn-adr2','mn-cp','mn-ville','mn-total','mn-note']
+        .forEach(function(k){ mnSet(k,''); });
+      mnSet('mn-pays','France');
+      mnSet('mn-date', new Date().toLocaleDateString('sv-SE'));
+      choisirPaiement('facture');
+      document.getElementById('mn-articles').textContent='';
+      ajouterArticleManuel();
+      document.getElementById('mn-fichiers').textContent='';
+      mnFichiersVide();
+      document.querySelectorAll('.mn-input.erreur').forEach(function(i){ i.classList.remove('erreur'); });
+      document.getElementById('mn-titre').textContent='Nouvelle commande';
+      mnStatut('');
+      document.getElementById('mn-go').disabled=false;
+      mnAller(1);
       document.getElementById('manuelle-modal').classList.add('open');
       setTimeout(function(){ var n=document.getElementById('mn-nom'); if(n) n.focus(); },30);
     }
     function fermerManuelle(){
+      if(mnCtx.envoi){ mnStatut('Envoi en cours : patientez…', true); return; }
+      if(mnCtx.file.length && !mnCtx.enregistre &&
+         !window.confirm('Fermer sans enregistrer ? Les informations saisies et les fichiers déposés seront perdus.')) return;
       document.getElementById('manuelle-modal').classList.remove('open');
-      mnCtx={id:null};
+      /* Commande enregistrée (envoi partiel par exemple) : la liste doit la montrer. */
+      if(mnCtx.enregistre && mnCtx.id){ mnMontrerCommande(mnCtx.id, ''); return; }
+      mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
     }
-    function mnEnvoyer(methode, url, corps, fin){
-      var st=document.getElementById('mn-statut');
-      var go=document.getElementById('mn-go'), sp=document.getElementById('mn-suppr');
-      go.disabled=true; sp.disabled=true;
-      fetch(url,{
+
+    /* ── Étape 3 : récapitulatif ── */
+    function mnRecap(){
+      var r=document.getElementById('mn-recap'); r.textContent='';
+      var t=mnEl('div','mn-carte-titre');
+      var tt=mnEl('span'); tt.appendChild(mnEl('b',null,'Récapitulatif')); tt.appendChild(mnEl('small',null,'Vérifiez avant de créer la commande'));
+      t.appendChild(tt); r.appendChild(t);
+      var client=[mnVal('mn-nom').trim(), mnVal('mn-entreprise').trim()].filter(Boolean).join(' · ');
+      var arts=[];
+      document.querySelectorAll('#mn-articles .mn-article').forEach(function(b){
+        var n=b.querySelector('.mn-titre').value.trim();
+        if(n) arts.push((parseInt(b.querySelector('.mn-qte').value,10)||0)+' × '+n);
+      });
+      var lignes=[
+        ['Client', client||'—'],
+        ['Livraison', [mnVal('mn-adr1').trim(), [mnVal('mn-cp').trim(), mnVal('mn-ville').trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ')||'Aucune adresse'],
+        ['Articles', arts.join(' · ')||'—'],
+        ['Montant', (mnVal('mn-total').trim()||'—')+' € TTC'],
+        ['Fichiers', mnCtx.file.length ? mnCtx.file.length+' à joindre' : 'Aucun fichier'],
+        ['Règlement', mnVal('mn-paiement')==='payee' ? 'Déjà payé : commande Shopify validée comme payée' : 'Facture envoyée par e-mail à '+(mnVal('mn-email').trim()||'—')]
+      ];
+      var dl=mnEl('dl','mn-recap-liste');
+      lignes.forEach(function(l){ dl.appendChild(mnEl('dt',null,l[0])); dl.appendChild(mnEl('dd',null,l[1])); });
+      r.appendChild(dl);
+    }
+
+    /* ── Enregistrement final, puis envoi des fichiers ── */
+    function mnRequete(methode, url, corps){
+      return fetch(url,{
         method:methode, credentials:'same-origin',
         headers:{'Content-Type':'application/json'},
         body: corps ? JSON.stringify(corps) : undefined
@@ -5358,16 +5825,15 @@ export function dashboardPage(
         return r.json().catch(function(){ throw new Error('Le serveur a répondu '+r.status+'.'); });
       })
       .then(function(res){
-        if(res && res.ok){ fin(res); return; }
-        st.className='hint err'; st.textContent=(res&&res.error)||"Échec de l'enregistrement.";
-        go.disabled=false; sp.disabled=false;
-      })
-      .catch(function(e){
-        st.className='hint err'; st.textContent=e.message||'Erreur réseau.';
-        go.disabled=false; sp.disabled=false;
+        if(!res || !res.ok) throw new Error((res&&res.error)||"Échec de l'enregistrement.");
+        return res;
       });
     }
-    function enregistrerManuelle(){
+    function mnEnregistrer(){
+      var go=document.getElementById('mn-go'); go.disabled=true;
+      mnCtx.envoi=true;
+      /* Reprise après un échec : la commande existe déjà, on reprend où l'on en était. */
+      if(mnCtx.id){ mnEnvoyerFichiers(0, 0); return; }
       var articles=[];
       document.querySelectorAll('#mn-articles .mn-article').forEach(function(b){
         articles.push({
@@ -5380,36 +5846,177 @@ export function dashboardPage(
         client:{ nom:mnVal('mn-nom'), entreprise:mnVal('mn-entreprise'), email:mnVal('mn-email'), telephone:mnVal('mn-tel') },
         adresse:{ ligne1:mnVal('mn-adr1'), ligne2:mnVal('mn-adr2'), codePostal:mnVal('mn-cp'), ville:mnVal('mn-ville'), pays:mnVal('mn-pays') },
         articles:articles,
-        date:mnVal('mn-date'), total:mnVal('mn-total'), paiement:mnVal('mn-paiement'),
-        note: mnCtx.id ? undefined : mnVal('mn-note')
+        date:mnVal('mn-date'), total:mnVal('mn-total'), mode:mnVal('mn-paiement'),
+        note: mnVal('mn-note')
       };
-      var st=document.getElementById('mn-statut'); st.className='hint'; st.textContent='Enregistrement…';
-      var url = mnCtx.id
-        ? '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle'
-        : '/api/admin/orders/manuelles';
-      mnEnvoyer('POST', url, corps, function(res){
-        st.className='hint ok'; st.textContent=mnCtx.id?'Commande enregistrée.':'Commande créée.';
-        /* Rechargement : la carte est rendue par le serveur, comme les autres.
-           memoriserVue la remontre ouverte au chargement suivant. */
-        memoriserVue('card-'+res.id);
-        location.reload();
-      });
+      mnStatut('Création de la commande…');
+      mnRequete('POST', '/api/admin/orders/manuelles', corps)
+        .then(function(res){
+          mnCtx.id=res.id; mnCtx.enregistre=true;
+          mnCtx.numero='M-'+(1000+Math.abs(parseInt(res.id,10)));
+          mnEnvoyerFichiers(0, 0);
+        })
+        .catch(function(e){
+          mnCtx.envoi=false; go.disabled=false;
+          mnStatut(e.message||'Erreur réseau.', true);
+        });
     }
-    function supprimerManuelle(){
-      if(!mnCtx.id) return;
-      if(!window.confirm('Supprimer définitivement cette commande et ses fichiers joints ?')) return;
-      var st=document.getElementById('mn-statut'); st.className='hint'; st.textContent='Suppression…';
-      mnEnvoyer('DELETE', '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle', null, function(){
-        memoriserVue();
-        location.reload();
-      });
+    /* Dernière étape : rattachement à Shopify (facture envoyée, ou payée). */
+    function mnFacturer(echecsFichiers){
+      var go=document.getElementById('mn-go');
+      var mode=mnVal('mn-paiement');
+      function fin(){
+        mnCtx.envoi=false;
+        if(!echecsFichiers){
+          mnMontrerCommande(mnCtx.id, mode==='payee'
+            ? 'Commande '+mnCtx.numero+' validée dans Shopify.'
+            : 'Commande '+mnCtx.numero+' créée, facture envoyée à '+mnVal('mn-email').trim()+'.');
+          return;
+        }
+        go.disabled=false; go.textContent='Réessayer';
+        mnStatut('Commande '+mnCtx.numero+' créée'+(mnCtx.facturee?' et rattachée à Shopify':'')+', mais '+echecsFichiers+" fichier(s) n'ont pas pu être joints (voir l'étape 2).", true);
+      }
+      if(mnCtx.facturee){ fin(); return; }
+      mnStatut(mode==='payee' ? 'Validation dans Shopify…' : 'Envoi de la facture au client…');
+      mnRequete('POST', '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/facture', {mode:mode})
+        .then(function(){ mnCtx.facturee=true; fin(); })
+        .catch(function(e){
+          mnCtx.envoi=false; go.disabled=false; go.textContent='Réessayer';
+          mnStatut('Commande '+mnCtx.numero+' créée, mais Shopify a échoué : '+(e.message||'erreur réseau')+' Réessayez ici, ou plus tard depuis la carte de la commande.', true);
+        });
     }
+    /* Envoie la file des fichiers, un par un ; les échecs restent dans la file
+       (nouvelle tentative au prochain clic). */
+    /* Ferme la modale, puis recharge la liste sur la commande, ouverte et
+       mise en évidence (restaurerVue). La carte est rendue par le serveur,
+       d'où le rechargement. On force l'onglet Commandes et l'on retire les
+       filtres de la page, qui pourraient masquer la nouvelle commande. */
+    function mnMontrerCommande(id, message){
+      document.getElementById('manuelle-modal').classList.remove('open');
+      if(message) toast(message+' Ouverture…');
+      /* memoriserVue relit l'onglet actif et les filtres (et pagehide la
+         rappelle au départ de la page) : c'est donc l'état de la page qu'on
+         règle, pas seulement la vue mémorisée. */
+      var t=document.querySelector('.tab[data-tab="orders"]');
+      if(t && !t.classList.contains('active')) t.click();
+      orderFilter='all'; articleFilter='all';
+      var s=document.getElementById('search'); if(s) s.value='';
+      memoriserVue('card-'+id);
+      mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
+      setTimeout(function(){ location.reload(); }, message ? 450 : 0);
+    }
+    function mnEnvoyerFichiers(i, echecs){
+      if(i>=mnCtx.file.length){
+        mnCtx.file=mnCtx.file.filter(function(j){ return !j.fait; });
+        mnCtx.envoi=false;
+        /* Facture même si un fichier a échoué : les fichiers ne partent pas
+           dans l'e-mail, ils servent à l'atelier. */
+        mnFacturer(echecs);
+        return;
+      }
+      var job=mnCtx.file[i];
+      if(job.fait){ mnEnvoyerFichiers(i+1, echecs); return; }
+      mnStatut('Envoi des fichiers : '+(i+1)+' / '+mnCtx.file.length+' — '+job.fichier.name);
+      job.sous.className=''; job.sous.textContent=job.fichier.name+' · envoi…';
+      var fd=new FormData(); fd.append('file', job.fichier); fd.append('libelle', job.cat);
+      var xhr=new XMLHttpRequest();
+      xhr.open('POST','/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/fichiers');
+      xhr.withCredentials=true;
+      xhr.upload.onprogress=function(e){ if(e.lengthComputable) job.barre.style.width=Math.round(e.loaded*100/e.total)+'%'; };
+      xhr.onload=function(){
+        var res=fjReponse(xhr);
+        if(res.ok){ job.fait=true; job.sous.textContent='Joint à la commande'; mnEnvoyerFichiers(i+1, echecs); }
+        else { job.sous.className='err'; job.sous.textContent=job.fichier.name+' : '+(res.error||"échec de l'envoi."); mnEnvoyerFichiers(i+1, echecs+1); }
+      };
+      xhr.onerror=function(){ job.sous.className='err'; job.sous.textContent=job.fichier.name+' : erreur réseau.'; mnEnvoyerFichiers(i+1, echecs+1); };
+      xhr.send(fd);
+    }
+
+    /* ── Étape 2 : fichiers ── */
+    function mnFichiersVide(){
+      var fl=document.getElementById('mn-fichiers');
+      var vide=fl.querySelector('.mn-fichiers-vide');
+      var n=fl.querySelectorAll('.mn-fichier').length;
+      if(!n && !vide) fl.appendChild(mnEl('div','mn-fichiers-vide','Aucun fichier pour le moment.'));
+      if(n && vide) vide.remove();
+    }
+    function mnLigne(libelle, sousTexte, image, url){
+      var row=mnEl('div','mn-fichier');
+      var vig;
+      if(image && url){ vig=mnEl('img','vignette'); vig.src=url; vig.alt=''; }
+      else vig=mnEl('span','vignette','📄');
+      var infos=mnEl('div','infos');
+      infos.appendChild(mnEl('b',null,libelle));
+      infos.appendChild(mnEl('small',null,sousTexte||''));
+      row.appendChild(vig); row.appendChild(infos);
+      document.getElementById('mn-fichiers').appendChild(row);
+      mnFichiersVide();
+      return row;
+    }
+    function mnCategorie(){
+      var on=document.querySelector('#mn-categories .mn-cat.on');
+      return on ? on.getAttribute('data-cat')||'' : '';
+    }
+    /* Fichiers déposés : mis en file, envoyés à l'enregistrement de la commande. */
+    function mnAjouterFichiers(liste){
+      var cat=mnCategorie(), refus=0;
+      for(var i=0;i<liste.length;i++){
+        var f=liste[i];
+        if(f.size>10*1024*1024){ refus++; continue; }
+        var estImage=/^image[/]/.test(f.type||'');
+        var row=mnLigne(cat||f.name, (cat?f.name+' · ':'')+'sera joint à l’enregistrement', estImage, estImage?URL.createObjectURL(f):'');
+        var infos=row.querySelector('.infos');
+        var barre=mnEl('div','barre'), bs=mnEl('span'); barre.appendChild(bs); infos.appendChild(barre);
+        var job={fichier:f, cat:cat, fait:false, sous:row.querySelector('small'), barre:bs};
+        mnCtx.file.push(job);
+        (function(job, row){
+          var del=mnEl('button','mn-retirer','✕');
+          del.type='button'; del.title='Ne pas joindre ce fichier';
+          del.addEventListener('click', function(){
+            if(mnCtx.envoi) return;
+            mnCtx.file=mnCtx.file.filter(function(j){ return j!==job; });
+            row.remove(); mnFichiersVide();
+          });
+          row.appendChild(del);
+        })(job, row);
+      }
+      mnStatut(refus ? refus+' fichier(s) refusé(s) : 10 Mo maximum.' : '', !!refus);
+    }
+    (function(){
+      var depot=document.getElementById('mn-depot'), input=document.getElementById('mn-file');
+      if(!depot) return;
+      input.addEventListener('change', function(){ mnAjouterFichiers(input.files||[]); input.value=''; });
+      ['dragenter','dragover'].forEach(function(t){
+        depot.addEventListener(t, function(e){ e.preventDefault(); depot.classList.add('survol'); });
+      });
+      ['dragleave','drop'].forEach(function(t){
+        depot.addEventListener(t, function(e){ e.preventDefault(); depot.classList.remove('survol'); });
+      });
+      depot.addEventListener('drop', function(e){
+        if(e.dataTransfer && e.dataTransfer.files) mnAjouterFichiers(e.dataTransfer.files);
+      });
+      document.getElementById('mn-categories').addEventListener('click', function(e){
+        var b=e.target.closest('.mn-cat'); if(!b) return;
+        this.querySelectorAll('.mn-cat').forEach(function(x){ x.classList.toggle('on', x===b); });
+      });
+    })();
+    /* Carte d'une commande manuelle pas encore rattachée (ou après un échec) :
+       « Envoyer la facture » ou « Déjà payée ». */
     document.addEventListener('click', function(ev){
-      var b=ev.target&&ev.target.closest?ev.target.closest('.js-modifier-manuelle'):null;
-      if(!b) return;
-      var f={};
-      try{ f=JSON.parse(b.getAttribute('data-form')||'{}'); }catch(e){}
-      ouvrirManuelle(b.getAttribute('data-order')||'', b.getAttribute('data-numero')||'', f);
+      var b=ev.target&&ev.target.closest?ev.target.closest('.js-facturer-manuelle'):null;
+      if(!b || b.disabled) return;
+      var id=b.getAttribute('data-order')||'', mode=b.getAttribute('data-mode')==='payee'?'payee':'facture';
+      if(!window.confirm(mode==='payee'
+        ? 'Valider cette commande dans Shopify comme PAYÉE ? Aucun e-mail de facture ne sera envoyé.'
+        : 'Envoyer au client l’e-mail de facture Shopify, avec le lien de paiement ?')) return;
+      b.disabled=true;
+      mnRequete('POST', '/api/admin/orders/'+encodeURIComponent(id)+'/facture', {mode:mode})
+        .then(function(){
+          toast(mode==='payee' ? 'Commande validée dans Shopify.' : 'Facture envoyée au client.');
+          memoriserVue('card-'+id);
+          setTimeout(function(){ location.reload(); }, 450);
+        })
+        .catch(function(e){ b.disabled=false; showAlert('Shopify', e.message||'Erreur réseau.', 'error'); });
     });
 
     /* Déconnexion confirmée. Le lien de l'en-tête garde son href : sans JS,

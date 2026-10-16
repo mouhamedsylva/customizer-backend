@@ -1,4 +1,4 @@
-import { SaisieManuelle, estCommandeManuelle, numeroManuel } from './commandes-manuelles';
+import { SaisieManuelle, numeroManuel } from './commandes-manuelles';
 import { FichierJoint, fichiersJointsValides } from './fichiers-joints';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -608,22 +608,6 @@ export class AdminService implements OnModuleInit {
       }
     }
     throw new Error('Création impossible.');
-  }
-
-  /** Remplace la saisie d'une commande manuelle (suivi, notes et fichiers inchangés). */
-  async modifierCommandeManuelle(id: string, saisie: SaisieManuelle): Promise<boolean> {
-    if (!estCommandeManuelle(id)) return false;
-    const r = await this.orders.update({ shopifyOrderId: id }, saisie as any);
-    return !!r.affected;
-  }
-
-  /** Supprime une commande manuelle ; renvoie ce qui a été supprimé (fichiers à effacer). */
-  async supprimerCommandeManuelle(id: string): Promise<Order | null> {
-    if (!estCommandeManuelle(id)) return null;
-    const o = await this.orders.findOne({ where: { shopifyOrderId: id } });
-    if (!o) return null;
-    await this.orders.delete({ shopifyOrderId: id });
-    return o;
   }
 
   /** Enregistre la note interne d'une commande. */

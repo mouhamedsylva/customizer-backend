@@ -2,6 +2,7 @@ import {
   CONFIGURATOR_PRODUCT_IDS,
   CONFIGURATOR_PRODUCT_TITLES,
 } from '../admin/pricing.service';
+import { RE_PROPRIETE_COMMANDE_MANUELLE } from '../admin/commandes-manuelles';
 
 /**
  * Reconnaissance des commandes issues du configurateur.
@@ -76,6 +77,13 @@ export function evaluerLignes(
 
     if (Array.isArray(li.properties)) {
       for (const p of li.properties as Array<Record<string, any>>) {
+        /* Commande manuelle du dashboard devenue commande Shopify : lignes
+           libres, titres arbitraires ; la propriété cachée est leur seul
+           point d'accroche (voir admin/commandes-manuelles.ts). */
+        if (RE_PROPRIETE_COMMANDE_MANUELLE.test(String(p?.name || ''))) {
+          reconnue = true;
+          continue;
+        }
         if (!RÉF_DEVIS.test(String(p?.name || ''))) continue;
         reconnue = true;
         /* Toutes les lignes d'un même devis portent le même UUID : la première

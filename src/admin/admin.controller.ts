@@ -39,6 +39,7 @@ import {
   nouveauFichierJoint,
 } from './fichiers-joints';
 import { estCommandeManuelle, lireSaisieManuelle } from './commandes-manuelles';
+import { FacturationManuelleService, RefusFacturation } from './facturation-manuelle.service';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
@@ -101,6 +102,7 @@ export class AdminController {
     private readonly shopify: ShopifyService,
     private readonly config: ConfigService,
     private readonly cloudinary: CloudinaryService,
+    private readonly facturation: FacturationManuelleService,
   ) {}
 
   /**
@@ -912,60 +914,37 @@ export class AdminController {
     res.json({ ok: true, id });
   }
 
-  /** POST /api/admin/orders/:id/manuelle — modifie une commande manuelle. */
-  @Post('orders/:id/manuelle')
-  async modifierCommandeManuelle(
+  /**
+   * POST /api/admin/orders/:id/facture — rattache une commande manuelle à
+   * Shopify : brouillon, puis e-mail de facture au client (`mode: 'facture'`)
+   * ou validation comme payée (`mode: 'payee'`). Voir facturation-manuelle.service.ts.
+   * Appelée par le formulaire juste après la création (et l'envoi des
+   * fichiers), et par le bouton « Envoyer la facture » après un échec.
+   */
+  @Post('orders/:id/facture')
+  async facturerCommandeManuelle(
     @Req() req: Request,
     @Param('id') orderId: string,
+    @Body('mode') mode: unknown,
     @Res() res: Response,
   ): Promise<void> {
     if (!(await this.isAuthed(req))) {
       res.status(401).json({ ok: false, error: 'Non authentifié.' });
       return;
     }
-    if (!estCommandeManuelle(orderId)) {
-      res.status(403).json({ ok: false, error: 'Seules les commandes saisies à la main sont modifiables.' });
+    const m = mode === 'payee' ? 'payee' : mode === 'facture' || mode === undefined ? 'facture' : null;
+    if (!m) {
+      res.status(400).json({ ok: false, error: 'Mode de paiement inconnu.' });
       return;
     }
-    const lu = lireSaisieManuelle(req.body);
-    if ('erreur' in lu) {
-      res.status(400).json({ ok: false, error: lu.erreur });
-      return;
+    try {
+      const r = await this.facturation.facturer(orderId, m);
+      res.json({ ok: true, ...r });
+    } catch (e) {
+      const statut = e instanceof RefusFacturation ? e.statut : 500;
+      if (!(e instanceof RefusFacturation)) this.logger.error(`Facture ${orderId} : ${(e as Error).message}`);
+      res.status(statut).json({ ok: false, error: (e as Error).message || 'Erreur.' });
     }
-    if (!(await this.data.modifierCommandeManuelle(orderId, lu.saisie))) {
-      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
-      return;
-    }
-    res.json({ ok: true, id: orderId });
-  }
-
-  /** DELETE /api/admin/orders/:id/manuelle — supprime une commande manuelle et ses fichiers joints. */
-  @Delete('orders/:id/manuelle')
-  async supprimerCommandeManuelle(
-    @Req() req: Request,
-    @Param('id') orderId: string,
-    @Res() res: Response,
-  ): Promise<void> {
-    if (!(await this.isAuthed(req))) {
-      res.status(401).json({ ok: false, error: 'Non authentifié.' });
-      return;
-    }
-    if (!estCommandeManuelle(orderId)) {
-      res.status(403).json({ ok: false, error: 'Seules les commandes saisies à la main peuvent être supprimées.' });
-      return;
-    }
-    const o = await this.data.supprimerCommandeManuelle(orderId);
-    if (!o) {
-      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
-      return;
-    }
-    for (const f of fichiersJointsValides(o.fichiersJoints)) {
-      if (!f.publicId) continue;
-      await this.cloudinary
-        .deleteResource(f.publicId, f.resourceType || 'image')
-        .catch((e) => this.logger.warn(`Suppression Cloudinary ${f.publicId} : ${(e as Error).message}`));
-    }
-    res.json({ ok: true });
   }
 
   /** POST /api/admin/orders/:id/note — enregistre la note interne. */

@@ -5,6 +5,7 @@ import { AdminService } from './admin.service';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminSessionGuard } from './admin-session.guard';
 import { MessageTemplateService } from './message-template.service';
+import { FacturationManuelleService } from './facturation-manuelle.service';
 import { SettingsModule } from './settings.module';
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
@@ -21,7 +22,7 @@ import { MessageTemplate } from '../database/entities/message-template.entity';
     SettingsModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService, AdminAuthService, AdminSessionGuard, MessageTemplateService],
+  providers: [AdminService, AdminAuthService, AdminSessionGuard, MessageTemplateService, FacturationManuelleService],
   /* Exportés pour que les autres modules (quotes, orders, uploads) puissent
      protéger leurs routes sensibles avec AdminSessionGuard. */
   exports: [AdminAuthService, AdminSessionGuard, MessageTemplateService],

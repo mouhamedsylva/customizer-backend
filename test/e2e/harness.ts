@@ -173,6 +173,11 @@ export class FakeShopify {
     return { id, status: 'invoice_sent' };
   }
 
+  async completeDraftOrder(id: unknown, paymentPending: unknown) {
+    this.record('completeDraftOrder', [id, paymentPending]);
+    return { id, status: 'completed', order_id: 7000000000001 };
+  }
+
   async deleteDraftOrderLine(id: unknown, lineId: unknown) {
     this.record('deleteDraftOrderLine', [id, lineId]);
     return { id, line_items: [] };

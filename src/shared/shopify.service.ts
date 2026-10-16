@@ -30,12 +30,26 @@ export interface DraftOrderCustomer {
   phone?: string;
 }
 
+export interface DraftOrderAddress {
+  first_name?: string;
+  last_name?: string;
+  company?: string;
+  address1?: string;
+  address2?: string;
+  zip?: string;
+  city?: string;
+  country?: string;
+  phone?: string;
+}
+
 export interface CreateDraftOrderPayload {
   line_items: ShopifyLineItem[];
   customer?: DraftOrderCustomer;
   email?: string;
   note?: string;
   tags?: string;
+  /** Commandes manuelles : adresse saisie par l'admin. */
+  shipping_address?: DraftOrderAddress;
 }
 
 /**
@@ -418,6 +432,29 @@ export class ShopifyService {
       draft_order_invoice: Record<string, any>;
     };
     return result.draft_order_invoice;
+  }
+
+  /**
+   * VALIDE un draft order : il devient une vraie commande Shopify.
+   * `paymentPending` vrai → commande « paiement en attente » ; faux → commande
+   * marquée PAYÉE (paiement reçu hors boutique : virement, chèque…).
+   * Renvoie le draft, dont `order_id` désigne la commande créée.
+   */
+  async completeDraftOrder(
+    draftOrderId: string | number,
+    paymentPending: boolean,
+  ): Promise<Record<string, any>> {
+    const response = await this.fetchShopify(
+      `${this.getBaseUrl()}/draft_orders/${draftOrderId}/complete.json?payment_pending=${paymentPending ? 'true' : 'false'}`,
+      { method: 'PUT', headers: await this.getHeaders() },
+    );
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      this.logger.error(`Echec validation draft ${draftOrderId}: ${response.status} ${text}`);
+      throw new Error(`Erreur Shopify (${response.status}) : ${response.statusText}. ${text}`);
+    }
+    const result = (await response.json()) as { draft_order: Record<string, any> };
+    return result.draft_order;
   }
 
   /**
