@@ -1277,7 +1277,11 @@ body{
 .mn-grille .plein{grid-column:1/-1}
 .mn-champ label{display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;letter-spacing:0;text-transform:none}
 .mn-champ label .opt{font-size:11px}
-.mn-champ label .req{color:var(--danger)}
+/* Astérisque rouge des champs obligatoires. */
+.mn-box .req{color:var(--danger);font-weight:800;margin-left:2px}
+.mn-legende{font-size:11.5px;color:var(--muted);margin:-4px 0 12px}
+.mn-titre-wrap{flex:1;min-width:0;position:relative}
+.mn-titre-wrap .req{position:absolute;top:3px;right:8px;pointer-events:none}
 .mn-input{
   width:100%;height:40px;padding:0 12px;border:1px solid var(--line);border-radius:9px;
   background:var(--surface);color:var(--ink);font:inherit;font-size:13.5px;font-weight:500;outline:none;
@@ -5119,15 +5123,16 @@ export function dashboardPage(
       <div class="mn-corps" id="mn-corps">
         <!-- ── Étape 1 : client ── -->
         <div class="mn-page" id="mn-page-1">
+          <p class="mn-legende"><span class="req">*</span> Champ obligatoire</p>
           <section class="mn-carte">
             <div class="mn-carte-titre">
               <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
-              <span><b>Client</b><small>Le nom ou l'entreprise suffit</small></span>
+              <span><b>Client</b><small>Le nom du contact ou l'entreprise suffit</small></span>
             </div>
             <div class="mn-grille">
-              <div class="mn-champ"><label for="mn-nom">Nom du contact</label><input id="mn-nom" class="mn-input" maxlength="120" placeholder="Ex. Julien Lucas"></div>
-              <div class="mn-champ"><label for="mn-entreprise">Entreprise / organisme <span class="opt">(facultatif)</span></label><input id="mn-entreprise" class="mn-input" maxlength="120" placeholder="Ex. Armée de l'Air"></div>
-              <div class="mn-champ"><label for="mn-email">E-mail <span class="opt">(facultatif)</span></label><input id="mn-email" type="email" class="mn-input" maxlength="200" placeholder="nom@exemple.fr"></div>
+              <div class="mn-champ"><label for="mn-nom">Nom du contact <span class="req" aria-hidden="true">*</span></label><input id="mn-nom" aria-required="true" class="mn-input" maxlength="120" placeholder="Ex. Julien Lucas"></div>
+              <div class="mn-champ"><label for="mn-entreprise">Entreprise / organisme <span class="opt">(ou à la place du nom)</span></label><input id="mn-entreprise" class="mn-input" maxlength="120" placeholder="Ex. Armée de l'Air"></div>
+              <div class="mn-champ"><label for="mn-email">E-mail <span class="req" id="mn-email-req" aria-hidden="true">*</span> <span class="opt" id="mn-email-aide">(la facture y est envoyée)</span></label><input id="mn-email" aria-required="true" type="email" class="mn-input" maxlength="200" placeholder="nom@exemple.fr"></div>
               <div class="mn-champ"><label for="mn-tel">Téléphone <span class="opt">(facultatif)</span></label><input id="mn-tel" type="tel" class="mn-input" maxlength="40" placeholder="06 12 34 56 78"></div>
             </div>
           </section>
@@ -5151,6 +5156,7 @@ export function dashboardPage(
 
         <!-- ── Étape 2 : articles & design ── -->
         <div class="mn-page" id="mn-page-2" hidden>
+          <p class="mn-legende"><span class="req">*</span> Champ obligatoire</p>
           <section class="mn-carte">
             <div class="mn-carte-titre">
               <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>
@@ -5186,15 +5192,16 @@ export function dashboardPage(
 
         <!-- ── Étape 3 : paiement ── -->
         <div class="mn-page" id="mn-page-3" hidden>
+          <p class="mn-legende"><span class="req">*</span> Champ obligatoire</p>
           <section class="mn-carte">
             <div class="mn-carte-titre">
               <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>
               <span><b>Paiement</b><small>La commande est créée dans Shopify ; le montant est réparti entre les articles</small></span>
             </div>
             <div class="mn-grille">
-              <div class="mn-champ"><label for="mn-date">Date de commande</label><input id="mn-date" type="date" class="mn-input"></div>
-              <div class="mn-champ"><label for="mn-total">Montant total TTC (€) <span class="req">*</span></label><input id="mn-total" class="mn-input mono" inputmode="decimal" placeholder="0,00"></div>
-              <div class="mn-champ plein"><label>Règlement</label>
+              <div class="mn-champ"><label for="mn-date">Date de commande <span class="req" aria-hidden="true">*</span></label><input id="mn-date" type="date" class="mn-input"></div>
+              <div class="mn-champ"><label for="mn-total">Montant total TTC (€) <span class="req" aria-hidden="true">*</span></label><input id="mn-total" class="mn-input mono" inputmode="decimal" placeholder="0,00"></div>
+              <div class="mn-champ plein"><label>Règlement <span class="req" aria-hidden="true">*</span></label>
                 <input type="hidden" id="mn-paiement" value="facture">
                 <div class="mn-bascule" role="radiogroup" aria-label="Règlement">
                   <button type="button" data-val="facture" class="on" onclick="choisirPaiement('facture')">✉ Envoyer la facture au client</button>
@@ -5562,6 +5569,11 @@ export function dashboardPage(
         var on=b.getAttribute('data-val')===mode;
         b.classList.toggle('on', on); b.setAttribute('aria-checked', on?'true':'false');
       });
+      /* L'e-mail n'est obligatoire que pour envoyer la facture. */
+      var er=document.getElementById('mn-email-req'), ea=document.getElementById('mn-email-aide');
+      if(er) er.hidden = mode==='payee';
+      if(ea) ea.textContent = mode==='payee' ? '(facultatif : déjà payé)' : '(la facture y est envoyée)';
+      var ei=document.getElementById('mn-email'); if(ei) ei.setAttribute('aria-required', mode==='payee'?'false':'true');
       var aide=document.getElementById('mn-paiement-aide');
       if(aide) aide.textContent = mode==='payee'
         ? 'Paiement déjà reçu (virement, chèque…) : la commande est créée dans Shopify comme payée, sans e-mail de facture.'
@@ -5595,7 +5607,11 @@ export function dashboardPage(
       qte.type='number'; qte.min='1'; qte.step='1';
       qte.setAttribute('aria-label','Quantité');
       qte.value=a.quantite||1;
-      qw.appendChild(mnEl('span',null,'Qté')); qw.appendChild(qte);
+      var ql=mnEl('span',null,'Qté'); var qr=mnEl('span','req','*'); qr.setAttribute('aria-hidden','true'); ql.appendChild(qr);
+      qw.appendChild(ql); qw.appendChild(qte);
+      titre.setAttribute('aria-required','true');
+      var tw=mnEl('div','mn-titre-wrap'); var tr=mnEl('span','req','*'); tr.setAttribute('aria-hidden','true');
+      tw.appendChild(titre); tw.appendChild(tr);
       var x=mnEl('button','mn-retirer','✕');
       x.type='button'; x.title='Retirer cet article';
       x.addEventListener('click', function(){
@@ -5603,7 +5619,7 @@ export function dashboardPage(
         if(!document.querySelector('#mn-articles .mn-article')) ajouterArticleManuel();
         mnNumeroterArticles();
       });
-      haut.appendChild(num); haut.appendChild(titre); haut.appendChild(qw); haut.appendChild(x);
+      haut.appendChild(num); haut.appendChild(tw); haut.appendChild(qw); haut.appendChild(x);
       var det=mnEl('textarea','mn-input');
       det.maxLength=3000; det.rows=2;
       det.placeholder='Détails, un par ligne : Taille : 8 cm / Format : Rond / Finition : PVC…';
@@ -5638,6 +5654,9 @@ export function dashboardPage(
         if(!mnVal('mn-nom').trim() && !mnVal('mn-entreprise').trim())
           return faute(document.getElementById('mn-nom'),"Indiquez le nom du client ou de son entreprise.");
         var em=mnVal('mn-email').trim();
+        /* Facture par e-mail (choix par défaut) : l'adresse est indispensable. */
+        if(!em && mnVal('mn-paiement')!=='payee')
+          return faute(document.getElementById('mn-email'),"Indiquez l'e-mail du client : la facture lui est envoyée.");
         if(em && !/^[^ @]+@[^ @]+[.][^ @]+$/.test(em)) return faute(document.getElementById('mn-email'),'Adresse e-mail invalide.');
       }
       if(n===2){
