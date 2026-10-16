@@ -124,9 +124,20 @@ export class FacturationManuelleService {
       const taxes = ShopifyService.lireTaxes(brouillon);
       const ttcVersPrix = taxes.taxesIncluded === false && !taxes.taxExempt && taxes.rate ? 1 + taxes.rate : 1;
 
-      // 3. Prix : total réparti au centime sur toutes les lignes.
-      const prixUnitaire = total / ttcVersPrix / pieces;
-      const tarife = await this.shopify.setDraftOrderPrice(draftId, prixUnitaire);
+      // 3. Prix : celui de CHAQUE ligne (prix unitaire saisi à l'étape 2).
+      //    Commande antérieure, sans prix par ligne : le total est réparti au
+      //    centime sur toutes les lignes, comme avant.
+      const prixLignes = lignes.map((li) => Number(li?.price));
+      const parLigne = prixLignes.length > 0 && prixLignes.every((p) => p > 0);
+      const tarife = parLigne
+        ? await this.shopify.updateDraftOrderLineItems(
+            draftId,
+            brouillonDepuisManuelle(o).line_items.map((li, i) => ({
+              ...li,
+              price: (prixLignes[i] / ttcVersPrix).toFixed(2),
+            })),
+          )
+        : await this.shopify.setDraftOrderPrice(draftId, total / ttcVersPrix / pieces);
       const totalShopify = Number(tarife?.total_price);
       const tolerance = Math.max(0.02, 0.01 * pieces);
       if (Number.isFinite(totalShopify) && Math.abs(totalShopify - total) > tolerance) {
@@ -146,7 +157,11 @@ export class FacturationManuelleService {
         const message = messageFactureManuelle({
           nom: o.customerName || '',
           numero,
-          articles: lignes.map((li) => `${Math.max(1, Number(li?.quantity) || 1)} × ${String(li?.title || 'Article')}`),
+          articles: lignes.map((li) => {
+            const q = Math.max(1, Number(li?.quantity) || 1);
+            const pu = Number(li?.price);
+            return `${q} × ${String(li?.title || 'Article')}` + (pu > 0 ? ` (${pu.toFixed(2).replace('.', ',')} € l'unité)` : '');
+          }),
           total: `${totalFinal.replace('.', ',')} €`,
         });
         await this.shopify.sendDraftOrderInvoice(draftId, {

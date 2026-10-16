@@ -1040,6 +1040,70 @@ export class AdminController {
     res.json({ ok: true, fichier, fichiers: liste, html: listeFichiersJoints(liste, orderId) });
   }
 
+  /**
+   * POST /api/admin/orders/:id/manuelle/design — design d'UN article d'une
+   * commande manuelle (multipart : `file`, `ligne` = index de l'article).
+   * Le fichier va sur Cloudinary, son lien sur la ligne (propriété « Design ») :
+   * il s'affiche avec l'article et part dans le brouillon Shopify.
+   */
+  @Post('orders/:id/manuelle/design')
+  @UseGuards(AdminSessionGuard)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      fileFilter: filtreTypes(TYPES_DOCUMENTS_DEVIS),
+      limits: { fileSize: TAILLE_MAX_FICHIER_JOINT, files: 1 },
+    }),
+  )
+  async joindreDesignArticle(
+    @Param('id') orderId: string,
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string; size: number } | undefined,
+    @Body('ligne') ligne: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!estCommandeManuelle(orderId)) {
+      res.status(403).json({ ok: false, error: 'Réservé aux commandes saisies à la main.' });
+      return;
+    }
+    const index = Number(ligne);
+    if (!Number.isInteger(index) || index < 0) {
+      res.status(400).json({ ok: false, error: 'Article invalide.' });
+      return;
+    }
+    if (!file || !file.buffer || !file.size) {
+      res.status(400).json({ ok: false, error: 'Aucun fichier reçu.' });
+      return;
+    }
+    if (!contenuConforme(file.buffer, file.mimetype)) {
+      res.status(400).json({ ok: false, error: 'Le contenu du fichier ne correspond pas à son type.' });
+      return;
+    }
+    const order = await this.data.getOrder(orderId);
+    if (!order) {
+      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
+      return;
+    }
+    if (!Array.isArray(order.lineItems) || !order.lineItems[index]) {
+      res.status(400).json({ ok: false, error: 'Article introuvable.' });
+      return;
+    }
+    const nom = nomFichierUtf8(file.originalname || 'design');
+    const numero = String(order.orderNumber || orderId).replace(/^#/, '');
+    let envoi: Awaited<ReturnType<CloudinaryService['uploadFichierCommande']>>;
+    try {
+      envoi = await this.cloudinary.uploadFichierCommande(file.buffer, nom, file.mimetype, numero);
+    } catch (e) {
+      this.logger.error(`Design ${orderId}/${index} : ${(e as Error).message}`);
+      res.status(502).json({ ok: false, error: "Échec de l'envoi du fichier. Réessayez." });
+      return;
+    }
+    const r = await this.data.ajouterDesignLigne(orderId, index, envoi.url);
+    if (r.erreur) {
+      res.status(400).json({ ok: false, error: r.erreur });
+      return;
+    }
+    res.json({ ok: true, url: envoi.url });
+  }
+
   /** DELETE /api/admin/orders/:id/fichiers/:fichierId — retire un fichier joint. */
   @Delete('orders/:id/fichiers/:fichierId')
   async retirerFichier(

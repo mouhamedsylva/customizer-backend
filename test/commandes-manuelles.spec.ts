@@ -1,4 +1,6 @@
 import {
+  CATALOGUE_MANUEL,
+  avecDesign,
   brouillonDepuisManuelle,
   commandeManuelleDeLignes,
   estCommandeManuelle,
@@ -14,7 +16,7 @@ const MAINTENANT = new Date('2026-10-16T10:00:00Z');
 const formulaire = (p: Record<string, unknown> = {}) => ({
   client: { nom: 'Lucas Julien', entreprise: 'Armée de l’Air', email: 'Lucas@Exemple.fr', telephone: '0144428498' },
   adresse: { ligne1: '1 place Joffre', ligne2: 'BAT 44', codePostal: '75007', ville: 'Paris', pays: 'France' },
-  articles: [{ titre: 'Patch personnalisé (PVC)', quantite: 250, details: 'Taille : 8 cm\nFormat : Rond\n\n' }],
+  articles: [{ titre: 'Patch personnalisé (PVC)', quantite: 250, prix: '3,84', details: 'Taille : 8 cm\nFormat : Rond\n\n' }],
   date: '2026-10-14',
   total: '960,00',
   mode: 'facture',
@@ -54,7 +56,7 @@ describe('commandes manuelles : règles', () => {
   });
 
   it('ignore les lignes d’article laissées vides', () => {
-    const r = lireSaisieManuelle(formulaire({ articles: [{ titre: '', quantite: 0, details: '' }, { titre: 'Drapeau', quantite: 2 }] }));
+    const r = lireSaisieManuelle(formulaire({ articles: [{ titre: '', quantite: 0, details: '' }, { titre: 'Drapeau personnalisé', quantite: 2, prix: 19.9 }] }));
     expect('saisie' in r && r.saisie.lineItems.length).toBe(1);
   });
 
@@ -62,18 +64,36 @@ describe('commandes manuelles : règles', () => {
     [{ client: { nom: '', entreprise: '' } }, 'nom du client'],
     [{ client: { nom: 'A', email: 'pas-un-mail' } }, 'e-mail invalide'],
     [{ articles: [] }, 'au moins un article'],
-    [{ articles: [{ titre: '', quantite: 3 }] }, 'doit avoir un nom'],
-    [{ articles: [{ titre: 'Patch', quantite: 0.5 }] }, 'Quantité invalide'],
-    [{ total: 'abc' }, 'Montant total invalide'],
+    [{ articles: [{ titre: '', quantite: 3 }] }, 'au moins un article'],
+    [{ articles: [{ titre: '', quantite: 3, details: 'Rond' }] }, 'dans la liste'],
+    [{ articles: [{ titre: 'Patch', quantite: 2 }] }, 'Article inconnu'],
+    [{ articles: [{ titre: 'Coin métal personnalisé', quantite: 0.5 }] }, 'Quantité invalide'],
     [{ mode: 'virement' }, 'paiement inconnu'],
-    [{ total: '' }, 'montant total TTC'],
-    [{ total: '0' }, 'Montant total invalide'],
+    [{ articles: [{ titre: 'Coin métal personnalisé', quantite: 10 }] }, 'prix unitaire de « Coin métal personnalisé »'],
+    [{ articles: [{ titre: 'Coin métal personnalisé', quantite: 10, prix: '0' }] }, 'prix unitaire'],
+    [{ articles: [{ titre: 'Coin métal personnalisé', quantite: 10, prix: 'abc' }] }, 'prix unitaire'],
     [{ client: { nom: 'A', email: '' } }, 'facture lui est envoyée'],
     [{ date: '2030-01-01' }, 'dans le futur'],
     [{ date: '14/10/2026' }, 'Date de commande invalide'],
   ])('refuse %j', (p, message) => {
     const r = lireSaisieManuelle(formulaire(p), MAINTENANT);
     expect('erreur' in r && r.erreur).toContain(message);
+  });
+
+  it('total = somme des lignes (prix unitaire × quantité), au centime', () => {
+    const r = lireSaisieManuelle(
+      formulaire({
+        total: '1',
+        articles: [
+          { titre: 'Patch personnalisé (PVC)', quantite: 3, prix: '24,10' },
+          { titre: 'Sweatshirt personnalisé', quantite: 2, prix: 60 },
+        ],
+      }),
+      MAINTENANT,
+    );
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(r.saisie.lineItems.map((l) => l.price)).toEqual(['24.10', '60.00']);
+    expect(r.saisie.totalPrice).toBe('192.30'); // le « total » envoyé est ignoré
   });
 
   it('mode « déjà payé » : e-mail facultatif, commande marquée payée', () => {
@@ -115,6 +135,20 @@ describe('commandes manuelles : règles', () => {
     expect(commandeManuelleDeLignes(null)).toBeNull();
     // Titre libre : la commande Shopify reste visible dans le dashboard.
     expect(evaluerLignes(lignes as any).reconnue).toBe(true);
+  });
+
+  it('design d’un article : propriété Design, puis Design 2, 5 au plus', () => {
+    const lignes = [{ title: 'Drapeau personnalisé', quantity: 1, properties: [{ name: 'Détail 1', value: 'x' }] }];
+    let r = avecDesign(lignes, 0, 'https://res.cloudinary.com/c/image/upload/v1/a.png');
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(lignes[0].properties).toHaveLength(1); // l’original n’est pas modifié
+    r = avecDesign(r.lignes, 0, 'https://res.cloudinary.com/c/raw/upload/v1/b.pdf');
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(r.lignes[0].properties.map((p: any) => p.name)).toEqual(['Détail 1', 'Design', 'Design 2']);
+    let l: any = r.lignes;
+    for (let k = 0; k < 3; k++) { const x = avecDesign(l, 0, 'u'); if ('erreur' in x) throw new Error(x.erreur); l = x.lignes; }
+    expect(avecDesign(l, 0, 'u')).toEqual({ erreur: '5 designs au plus par article.' });
+    expect(avecDesign(lignes, 3, 'u')).toEqual({ erreur: 'Article introuvable.' });
   });
 
   it('lit le suivi de facture', () => {
@@ -159,7 +193,15 @@ describe('commandes manuelles : affichage', () => {
     expect(html).toContain('id="mn-etape-3"');
     expect(html).toContain('id="mn-page-3"');
     expect(html).toContain('id="mn-depot"');
-    expect(html).toContain('Envoyer la facture au client');
+    expect(html).toContain('La facture est envoyée au client par e-mail');
+    // Plus d’option « Déjà payé » dans le formulaire.
+    expect(html).not.toContain('data-val="payee"');
+    // Catalogue fermé transmis au menu des articles (plus de saisie libre).
+    expect(html).toContain('data-catalogue="');
+    expect(html).toContain(CATALOGUE_MANUEL[0].articles[0]);
+    expect(html).not.toContain('mn-suggestions');
+    // Grilles de prix transmises pour préremplir le prix unitaire.
+    expect(html).toContain('data-grilles="');
     expect(html).not.toContain('id="mn-suppr"');
     expect(html).not.toContain('data-fichiers=');
   });

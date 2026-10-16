@@ -22,7 +22,7 @@ describe('Commandes manuelles', () => {
 
   const saisie = (p: Record<string, unknown> = {}) => ({
     client: { nom: 'Lucas Julien', email: 'lucas@exemple.fr' },
-    articles: [{ titre: 'Patch personnalisé (PVC)', quantite: 250, details: 'Taille : 8 cm' }],
+    articles: [{ titre: 'Patch personnalisé (PVC)', quantite: 250, prix: '3,84', details: 'Taille : 8 cm' }],
     total: '960',
     mode: 'facture',
     note: 'Reçue par e-mail',
@@ -93,6 +93,28 @@ describe('Commandes manuelles', () => {
     expect(await repo().count()).toBe(1);
   });
 
+  it('joint un design à un article : il s’affiche avec l’article et part dans le brouillon', async () => {
+    const cookie = await connexion();
+    await post('/api/admin/orders/manuelles', cookie, saisie());
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const envoi = (id: string, ligne: string) =>
+      request(srv()).post('/api/admin/orders/' + id + '/manuelle/design').set('X-Forwarded-For', freshIp()).set('Cookie', cookie)
+        .field('ligne', ligne).attach('file', png, { filename: 'design.png', contentType: 'image/png' });
+
+    const r = await envoi('-1', '0');
+    expect(r.status).toBe(201);
+    const o = await repo().findOneByOrFail({ shopifyOrderId: '-1' });
+    expect((o.lineItems as any[])[0].properties).toContainEqual({ name: 'Design', value: r.body.url });
+    expect((await envoi('-1', '3')).status).toBe(400);
+    await repo().save({ shopifyOrderId: '123', orderNumber: '#20500', lineItems: [{ title: 'x', quantity: 1 }], fromConfigurator: true } as Partial<Order>);
+    expect((await envoi('123', '0')).status).toBe(403);
+    const anonyme = await request(srv()).post('/api/admin/orders/-1/manuelle/design').set('X-Forwarded-For', freshIp()).field('ligne', '0');
+    expect(anonyme.status).toBe(401);
+
+    const page = await request(srv()).get('/api/admin').set('X-Forwarded-For', freshIp()).set('Cookie', cookie);
+    expect(page.text).toContain(r.body.url);
+  });
+
   it('expédie une commande manuelle sans appeler Shopify', async () => {
     const cookie = await connexion();
     await post('/api/admin/orders/manuelles', cookie, saisie());
@@ -106,14 +128,15 @@ describe('Commandes manuelles', () => {
   });
 
   describe('Rattachement à Shopify (facture)', () => {
-    /* La doublure renvoie le prix UNITAIRE comme total : on la rend fidèle
-       (prix × pièces), sauf quand un test veut provoquer un écart. */
+    /* La doublure ne calcule pas de total : on la rend fidèle (somme des
+       lignes), sauf quand un test veut provoquer un écart. */
     let ecart = 0;
     beforeEach(() => {
       ecart = 0;
-      jest.spyOn(h.shopify, 'setDraftOrderPrice').mockImplementation(async (id: unknown, prix: unknown) => {
-        h.shopify.calls.push({ method: 'setDraftOrderPrice', args: [id, prix] });
-        return { id, total_price: (Number(prix) * 250 + ecart).toFixed(2) };
+      jest.spyOn(h.shopify, 'updateDraftOrderLineItems').mockImplementation(async (id: unknown, items: any) => {
+        h.shopify.calls.push({ method: 'updateDraftOrderLineItems', args: [id, items] });
+        const total = (items as any[]).reduce((n, li) => n + Number(li.price) * li.quantity, 0);
+        return { id, total_price: (total + ecart).toFixed(2), line_items: items };
       });
     });
     afterEach(() => jest.restoreAllMocks());
@@ -137,11 +160,14 @@ describe('Commandes manuelles', () => {
       const [brouillon] = h.shopify.callsTo('createDraftOrder')[0].args as any[];
       expect(brouillon.email).toBe('lucas@exemple.fr');
       expect(brouillon.line_items[0].properties).toContainEqual({ name: '_Commande manuelle', value: '-1' });
-      expect(h.shopify.callsTo('setDraftOrderPrice')[0].args).toEqual(['999001', 960 / 250]);
+      // Prix de CHAQUE ligne, depuis son prix unitaire (le total n'est plus réparti).
+      const [, lignes] = h.shopify.callsTo('updateDraftOrderLineItems')[0].args as any[];
+      expect(lignes[0]).toMatchObject({ title: 'Patch personnalisé (PVC)', quantity: 250, price: '3.84', custom: true });
+      expect(h.shopify.callsTo('setDraftOrderPrice')).toHaveLength(0);
       const [, invoice] = h.shopify.callsTo('sendDraftOrderInvoice')[0].args as any[];
       expect(invoice).toMatchObject({ to: 'lucas@exemple.fr', subject: 'Votre commande M-1001' });
       expect(invoice.custom_message).toContain('Bonjour Lucas Julien,');
-      expect(invoice.custom_message).toContain('• 250 × Patch personnalisé (PVC)');
+      expect(invoice.custom_message).toContain("• 250 × Patch personnalisé (PVC) (3,84 € l'unité)");
       expect(invoice.custom_message).toContain('Total : 960,00 € TTC.');
       expect(invoice.custom_message).not.toMatch(/devis/i);
       expect(h.shopify.callsTo('completeDraftOrder')).toHaveLength(0);

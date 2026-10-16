@@ -39,17 +39,58 @@ export type ModeFacturation = (typeof MODES_FACTURATION)[number];
 export const PROPRIETE_COMMANDE_MANUELLE = '_Commande manuelle';
 export const RE_PROPRIETE_COMMANDE_MANUELLE = /^_?Commande manuelle$/i;
 
-/** Suggestions d'articles (libres) : le titre détermine la famille de filtre. */
-export const ARTICLES_SUGGERES = [
+/**
+ * CATALOGUE FERMÉ des articles d'une commande manuelle : l'admin choisit dans
+ * la liste, il ne saisit pas. Le titre détermine aussi la famille du filtre
+ * « par article » (familles-articles.ts) : un titre libre y tombait dans
+ * « Autres ».
+ */
+export const CATALOGUE_MANUEL: Array<{ famille: string; icone: string; articles: string[] }> = [
+  { famille: 'Patchs', icone: '🏷', articles: ['Patch personnalisé (PVC)', 'Patch personnalisé (brodé)', 'Patch personnalisé (tissé)'] },
+  { famille: 'Coins', icone: '🪙', articles: ['Coin métal personnalisé'] },
+  { famille: 'Drapeaux', icone: '🚩', articles: ['Drapeau personnalisé'] },
+  {
+    famille: 'Textiles',
+    icone: '👕',
+    articles: ['T-shirt coton personnalisé', 'T-shirt polyester personnalisé', 'Sweatshirt personnalisé'],
+  },
+];
+export const ARTICLES_MANUELS: string[] = CATALOGUE_MANUEL.flatMap((f) => f.articles);
+
+/**
+ * Articles SANS prix catalogue : leur prix unitaire n'est pas prérempli,
+ * l'admin le saisit (sur devis). La grille des patchs ne vaut que pour le
+ * patch brodé ; PVC et tissé se chiffrent à part.
+ */
+export const ARTICLES_SANS_PRIX_CATALOGUE: string[] = [
   'Patch personnalisé (PVC)',
-  'Patch personnalisé (brodé)',
   'Patch personnalisé (tissé)',
   'Coin métal personnalisé',
-  'Drapeau personnalisé',
-  'T-shirt coton personnalisé',
-  'T-shirt polyester personnalisé',
-  'Sweatshirt personnalisé',
 ];
+
+/** Designs joints à une même ligne d'article, au plus. */
+export const MAX_DESIGNS_PAR_LIGNE = 5;
+
+/**
+ * Ajoute le design d'un article : propriété « Design » (puis « Design 2 »…) sur
+ * la ligne. Carte, fiche de production et ZIP l'affichent avec l'article, et
+ * le brouillon Shopify la reprend.
+ */
+export function avecDesign(
+  lignes: unknown,
+  index: number,
+  url: string,
+): { lignes: Array<Record<string, any>> } | { erreur: string } {
+  const copie: Array<Record<string, any>> = Array.isArray(lignes) ? lignes.map((l: any) => ({ ...l })) : [];
+  const li = copie[index];
+  if (!Number.isInteger(index) || !li) return { erreur: 'Article introuvable.' };
+  const props = Array.isArray(li.properties) ? [...li.properties] : [];
+  const n = props.filter((p: any) => /^Design( \d+)?$/.test(String(p?.name ?? ''))).length;
+  if (n >= MAX_DESIGNS_PAR_LIGNE) return { erreur: `${MAX_DESIGNS_PAR_LIGNE} designs au plus par article.` };
+  props.push({ name: n ? `Design ${n + 1}` : 'Design', value: url });
+  li.properties = props;
+  return { lignes: copie };
+}
 
 export interface SaisieManuelle {
   customerName: string;
@@ -99,17 +140,28 @@ export function lireSaisieManuelle(
       .map((d) => ligne(d, 300))
       .filter(Boolean)
       .slice(0, 20);
-    if (!titre && !details.length && !a?.quantite) continue; // ligne laissée vide
-    if (!titre) return { erreur: 'Chaque article doit avoir un nom.' };
+    // Ligne laissée vide (la quantité vaut 1 par défaut : elle ne compte pas).
+    if (!titre && !details.length) continue;
+    if (!titre) return { erreur: "Choisissez l'article dans la liste." };
+    if (!ARTICLES_MANUELS.includes(titre)) {
+      return { erreur: `Article inconnu : « ${titre} ». Choisissez-le dans la liste.` };
+    }
     const qte = Number(a?.quantite);
     if (!Number.isInteger(qte) || qte < 1 || qte > 1_000_000) {
       return { erreur: `Quantité invalide pour « ${titre} ».` };
+    }
+    // Prix unitaire TTC : prérempli depuis la grille de prix du dashboard,
+    // modifiable (coins sur devis, patchs au-delà de 100…). Il devient le prix
+    // de la ligne sur la facture Shopify.
+    const prix = Number(String(a?.prix ?? '').replace(/\s/g, '').replace(',', '.'));
+    if (!Number.isFinite(prix) || prix <= 0 || prix > 100_000) {
+      return { erreur: `Indiquez le prix unitaire de « ${titre} ».` };
     }
     lignes.push({
       title: titre,
       variantTitle: null,
       quantity: qte,
-      price: '0.00',
+      price: prix.toFixed(2),
       sku: null,
       productId: null,
       variantId: null,
@@ -121,13 +173,14 @@ export function lireSaisieManuelle(
     return { erreur: `${MAX_LIGNES_MANUELLES} articles au plus par commande.` };
   }
 
-  // Montant TTC OBLIGATOIRE : il devient le prix du brouillon Shopify, réparti
-  // entre les articles (voir facturerCommandeManuelle).
-  const totalBrut = String(b.total ?? '').replace(/\s/g, '').replace(',', '.');
-  if (!totalBrut) return { erreur: 'Indiquez le montant total TTC.' };
-  const t = Number(totalBrut);
-  if (!Number.isFinite(t) || t <= 0 || t > 10_000_000) return { erreur: 'Montant total invalide.' };
-  const totalPrice = t.toFixed(2);
+  // Total TTC = somme des lignes (prix unitaire × quantité), en centimes
+  // entiers : le total saisi par le navigateur n'est qu'un affichage.
+  const centimes = lignes.reduce(
+    (n, li) => n + Math.round(Number(li.price) * 100) * Number(li.quantity),
+    0,
+  );
+  if (centimes > 1_000_000_000) return { erreur: 'Montant total invalide.' };
+  const totalPrice = (centimes / 100).toFixed(2);
 
   // « facture » : e-mail de paiement envoyé au client ; « payee » : paiement
   // déjà reçu (virement, chèque…), commande Shopify validée comme payée.
@@ -222,9 +275,10 @@ export function commandeManuelleDeLignes(lignes: unknown): string | null {
 }
 
 /**
- * Brouillon Shopify d'une commande manuelle. Lignes personnalisées à 0,00 €
- * (le prix est posé ensuite par setDraftOrderPrice, qui répartit le total au
- * centime) : elles ne touchent pas au stock.
+ * Brouillon Shopify d'une commande manuelle. Lignes personnalisées à 0,00 € :
+ * le prix de CHAQUE ligne est posé ensuite (facturation-manuelle.service.ts),
+ * une fois le régime de TVA de la boutique connu. Lignes libres : elles ne
+ * touchent pas au stock.
  */
 export function brouillonDepuisManuelle(o: {
   shopifyOrderId: string;

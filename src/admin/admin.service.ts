@@ -1,4 +1,4 @@
-import { SaisieManuelle, numeroManuel } from './commandes-manuelles';
+import { SaisieManuelle, avecDesign, numeroManuel } from './commandes-manuelles';
 import { FichierJoint, fichiersJointsValides } from './fichiers-joints';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -620,6 +620,16 @@ export class AdminService implements OnModuleInit {
 
   /** Ajoute un fichier joint ; renvoie la liste à jour. `update` sur la
    *  seule colonne : le reste de la commande n'est pas réécrit. */
+  /** Design d'un ARTICLE d'une commande manuelle : propriété « Design » sur sa ligne. */
+  async ajouterDesignLigne(shopifyOrderId: string, index: number, url: string): Promise<{ erreur?: string }> {
+    const o = await this.orders.findOne({ where: { shopifyOrderId }, select: { shopifyOrderId: true, lineItems: true } });
+    if (!o) return { erreur: 'Commande introuvable.' };
+    const r = avecDesign(o.lineItems, index, url);
+    if ('erreur' in r) return { erreur: r.erreur };
+    await this.orders.update({ shopifyOrderId }, { lineItems: r.lignes as any });
+    return {};
+  }
+
   async ajouterFichierJoint(shopifyOrderId: string, fichier: FichierJoint): Promise<FichierJoint[]> {
     const o = await this.orders.findOne({ where: { shopifyOrderId }, select: { shopifyOrderId: true, fichiersJoints: true } });
     const liste = [...fichiersJointsValides(o?.fichiersJoints), fichier];
