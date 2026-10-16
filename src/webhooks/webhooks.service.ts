@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
@@ -529,8 +529,11 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
    * manquer une arrivée pile pendant la coupure.
    */
   private async lastKnownOrderDate(): Promise<string | null> {
+    // Commandes Shopify seulement : une commande MANUELLE (identifiant
+    // négatif, voir admin/commandes-manuelles.ts) datée après la dernière vente
+    // avancerait la borne, et le rattrapage manquerait les ventes intermédiaires.
     const latest = await this.orders.findOne({
-      where: {},
+      where: { shopifyOrderId: MoreThan('0') },
       order: { shopifyCreatedAt: 'DESC' },
       select: { shopifyOrderId: true, shopifyCreatedAt: true },
     });
@@ -561,7 +564,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     try {
       // Rattrapage initial : base vide, ou toute première synchro de ce process.
       // Décidé avant l'appel Shopify, car il conditionne la fenêtre demandée.
-      const known = await this.orders.count();
+      const known = await this.orders.count({ where: { shopifyOrderId: MoreThan('0') } });
       const backfill = this.firstSync || known === 0;
 
       // Fenêtre demandée à Shopify :

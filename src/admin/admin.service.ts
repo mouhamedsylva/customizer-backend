@@ -1,3 +1,4 @@
+import { SaisieManuelle, estCommandeManuelle, numeroManuel } from './commandes-manuelles';
 import { FichierJoint, fichiersJointsValides } from './fichiers-joints';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -574,6 +575,55 @@ export class AdminService implements OnModuleInit {
       ...patch,
       productionUpdatedAt: new Date(),
     });
+  }
+
+  /**
+   * Crée une commande MANUELLE (voir commandes-manuelles.ts) : identifiant
+   * négatif suivant (-1, -2…), numéro « M-1001 »… Renvoie son identifiant.
+   */
+  async creerCommandeManuelle(saisie: SaisieManuelle, note: string | null): Promise<string> {
+    for (let essai = 0; essai < 3; essai++) {
+      const r = await this.orders
+        .createQueryBuilder('o')
+        .select('MIN(o.shopifyOrderId)', 'min')
+        .where('o.shopifyOrderId < 0')
+        .getRawOne<{ min: string | number | null }>();
+      const id = String(Math.min(0, Number(r?.min ?? 0)) - 1);
+      try {
+        await this.orders.insert({
+          ...saisie,
+          shopifyOrderId: id,
+          orderNumber: numeroManuel(id),
+          fromConfigurator: true,
+          quoteId: null,
+          fulfillmentStatus: null,
+          productionStatus: 'to_produce',
+          internalNote: note || null,
+          seen: true,
+        } as any);
+        return id;
+      } catch (e) {
+        // Deux créations simultanées ont pris le même numéro : on recommence.
+        if (essai === 2 || !/duplicate|unique|constraint/i.test(String((e as Error).message))) throw e;
+      }
+    }
+    throw new Error('Création impossible.');
+  }
+
+  /** Remplace la saisie d'une commande manuelle (suivi, notes et fichiers inchangés). */
+  async modifierCommandeManuelle(id: string, saisie: SaisieManuelle): Promise<boolean> {
+    if (!estCommandeManuelle(id)) return false;
+    const r = await this.orders.update({ shopifyOrderId: id }, saisie as any);
+    return !!r.affected;
+  }
+
+  /** Supprime une commande manuelle ; renvoie ce qui a été supprimé (fichiers à effacer). */
+  async supprimerCommandeManuelle(id: string): Promise<Order | null> {
+    if (!estCommandeManuelle(id)) return null;
+    const o = await this.orders.findOne({ where: { shopifyOrderId: id } });
+    if (!o) return null;
+    await this.orders.delete({ shopifyOrderId: id });
+    return o;
   }
 
   /** Enregistre la note interne d'une commande. */

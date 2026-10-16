@@ -38,6 +38,7 @@ import {
   fichiersJointsValides,
   nouveauFichierJoint,
 } from './fichiers-joints';
+import { estCommandeManuelle, lireSaisieManuelle } from './commandes-manuelles';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
@@ -756,6 +757,29 @@ export class AdminController {
       return;
     }
 
+    // Commande MANUELLE : elle n'existe pas sur Shopify, le suivi reste
+    // interne. Shopify refuserait l'expédition (404) et la commande ne
+    // pourrait jamais passer « Expédiée ».
+    if (estCommandeManuelle(orderId)) {
+      if (status === 'shipped') {
+        const tracking = String((req.body as any)?.tracking || '').trim().slice(0, 128);
+        await this.data.setShipped(orderId, {
+          productionStatus: status,
+          fulfillmentStatus: null,
+          trackingNumber: tracking || null,
+        });
+        res.json({
+          ok: true,
+          status,
+          shopify: "Commande manuelle marquée expédiée. Aucun e-mail n'est envoyé : prévenez le client vous-même.",
+        });
+        return;
+      }
+      await this.data.setProductionStatus(orderId, status);
+      res.json({ ok: true, status });
+      return;
+    }
+
     // « Expédiée » n'est pas un statut interne comme les autres : on le
     // répercute dans Shopify, qui envoie alors SON e-mail d'expédition au
     // client. Si Shopify refuse, on n'enregistre PAS le statut — sinon le
@@ -865,6 +889,83 @@ export class AdminController {
     }
 
     res.json({ ok: true, status, ...(notice ? { notice } : {}) });
+  }
+
+  /**
+   * POST /api/admin/orders/manuelles — crée une commande MANUELLE (reçue par
+   * e-mail, hors boutique). Dashboard seulement : rien n'est créé sur Shopify.
+   * Voir commandes-manuelles.ts.
+   */
+  @Post('orders/manuelles')
+  async creerCommandeManuelle(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const lu = lireSaisieManuelle(req.body);
+    if ('erreur' in lu) {
+      res.status(400).json({ ok: false, error: lu.erreur });
+      return;
+    }
+    const note = String((req.body as any)?.note ?? '').slice(0, 2000).trim();
+    const id = await this.data.creerCommandeManuelle(lu.saisie, note || null);
+    res.json({ ok: true, id });
+  }
+
+  /** POST /api/admin/orders/:id/manuelle — modifie une commande manuelle. */
+  @Post('orders/:id/manuelle')
+  async modifierCommandeManuelle(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (!estCommandeManuelle(orderId)) {
+      res.status(403).json({ ok: false, error: 'Seules les commandes saisies à la main sont modifiables.' });
+      return;
+    }
+    const lu = lireSaisieManuelle(req.body);
+    if ('erreur' in lu) {
+      res.status(400).json({ ok: false, error: lu.erreur });
+      return;
+    }
+    if (!(await this.data.modifierCommandeManuelle(orderId, lu.saisie))) {
+      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
+      return;
+    }
+    res.json({ ok: true, id: orderId });
+  }
+
+  /** DELETE /api/admin/orders/:id/manuelle — supprime une commande manuelle et ses fichiers joints. */
+  @Delete('orders/:id/manuelle')
+  async supprimerCommandeManuelle(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (!estCommandeManuelle(orderId)) {
+      res.status(403).json({ ok: false, error: 'Seules les commandes saisies à la main peuvent être supprimées.' });
+      return;
+    }
+    const o = await this.data.supprimerCommandeManuelle(orderId);
+    if (!o) {
+      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
+      return;
+    }
+    for (const f of fichiersJointsValides(o.fichiersJoints)) {
+      if (!f.publicId) continue;
+      await this.cloudinary
+        .deleteResource(f.publicId, f.resourceType || 'image')
+        .catch((e) => this.logger.warn(`Suppression Cloudinary ${f.publicId} : ${(e as Error).message}`));
+    }
+    res.json({ ok: true });
   }
 
   /** POST /api/admin/orders/:id/note — enregistre la note interne. */

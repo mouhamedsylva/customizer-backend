@@ -21,6 +21,7 @@ import type { PricingPayload } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
 import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
+import { ARTICLES_SUGGERES, estCommandeManuelle, formulaireDepuisCommande } from './commandes-manuelles';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -482,6 +483,7 @@ const STYLE = `
   --ok:#3f7d4e; --ok-soft:#e7f0e9;
   --warn:#b45309; --warn-soft:#fbefd9;
   --danger:#c0392b; --danger-soft:#fbe6e3;
+  --manuel:#6d4fc2; --manuel-soft:#efeafc;
   --shadow:0 1px 2px rgba(27,31,36,.04),0 8px 24px rgba(27,31,36,.05);
   --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
   --radius:14px;
@@ -496,6 +498,7 @@ const STYLE = `
   --accent:#c2410c; --accent-soft:#fbeae1;
   --ok:#3f7d4e; --ok-soft:#e7f0e9; --warn:#b45309; --warn-soft:#fbefd9;
   --danger:#c0392b; --danger-soft:#fbe6e3;
+  --manuel:#6d4fc2; --manuel-soft:#efeafc;
   --shadow:0 1px 2px rgba(27,31,36,.04),0 8px 24px rgba(27,31,36,.05);
   --shadow-hover:0 2px 4px rgba(27,31,36,.05),0 14px 34px rgba(27,31,36,.10);
 }
@@ -511,6 +514,7 @@ const STYLE = `
   --ok:#addb67; --ok-soft:#16351f;
   --warn:#ecc48d; --warn-soft:#3a2f1c;
   --danger:#ef5350; --danger-soft:#3d1f22;
+  --manuel:#c792ea; --manuel-soft:#2c2342;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.45);
   --shadow-hover:0 2px 6px rgba(0,0,0,.5),0 18px 40px rgba(0,0,0,.6);
 }
@@ -1214,6 +1218,31 @@ body{
   font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
 }
 /* Badge « Groupe » sur une carte devis de commande groupée. */
+/* Commande saisie à la main (hors Shopify) : liseré, avatar et badge violets. */
+.card.card-manuelle{border-left:4px solid var(--manuel)}
+.card.card-manuelle .avatar{background:var(--manuel-soft);color:var(--manuel)}
+.badge-manuelle{
+  display:inline-block;vertical-align:middle;margin-left:7px;
+  background:var(--manuel-soft);color:var(--manuel);border-radius:20px;padding:2px 8px;
+  font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+}
+.pill.manuelle{background:var(--manuel-soft);color:var(--manuel)}
+/* Formulaire de commande manuelle */
+.modal-box.mn-box{width:min(94vw,640px)}
+.mn-section{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--line-soft)}
+.mn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.mn-grid .mn-large{grid-column:1/-1}
+.mn-article{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--raise)}
+.mn-article-haut{display:flex;gap:8px;align-items:center}
+.mn-article-haut .mn-titre{flex:1;min-width:0}
+.mn-article-haut .mn-qte{width:90px;text-align:right}
+.mn-article textarea{min-height:60px;margin-top:8px;font-size:13px}
+.mn-retirer{border:0;background:none;cursor:pointer;font-size:15px;color:var(--muted);padding:4px 6px;border-radius:6px}
+.mn-retirer:hover{background:var(--danger-soft);color:var(--danger)}
+.mn-ajout{margin-top:2px}
+.mn-suppr{margin-right:auto;color:var(--danger);border-color:var(--danger-soft)}
+.mn-suppr:hover{background:var(--danger-soft)}
 .badge-group{
   display:inline-block;vertical-align:middle;margin-left:7px;
   background:var(--ok-soft);color:var(--ok);border-radius:20px;padding:2px 8px;
@@ -2343,6 +2372,11 @@ export function loginPage(
  * la commande y est « en préparation ».
  */
 function shipPill(o: Order): string {
+  // Commande manuelle : absente de Shopify, aucun statut Shopify à montrer.
+  if (estCommandeManuelle(o.shopifyOrderId)) {
+    const t = o.trackingNumber ? ` title="Suivi : ${esc(o.trackingNumber)}"` : '';
+    return `<span class="pill manuelle"${t}>Hors Shopify</span>`;
+  }
   const prod = o.productionStatus || 'to_produce';
   const map: Record<string, [string, string]> = {
     to_produce: ['Non traitée', 'neutral'],
@@ -2969,12 +3003,17 @@ function orderCard(o: Order, srcQuote?: Quote): string {
   // Familles d'articles (patchs, textiles…) : filtre « par article ».
   const familles = famillesDeCommande(items).join(' ');
 
-  return `<div class="card" data-search="${search}" data-prod="${esc(prod)}" data-group="${isGroup}" data-articles="${esc(familles)}" id="card-${id}">
+  // Commande saisie à la main (reçue par e-mail) : distinguée visuellement,
+  // modifiable et supprimable — voir commandes-manuelles.ts.
+  const manuelle = estCommandeManuelle(o.shopifyOrderId);
+
+  return `<div class="card${manuelle ? ' card-manuelle' : ''}" data-search="${search}${manuelle ? ' saisie manuelle' : ''}" data-prod="${esc(prod)}" data-group="${isGroup}" data-manuelle="${manuelle}" data-articles="${esc(familles)}" id="card-${id}">
     <div class="head" onclick="toggleCard(this)">
-      <div class="avatar">${esc(initials(o.customerName))}</div>
+      <div class="avatar">${manuelle ? '✍' : esc(initials(o.customerName))}</div>
       <div>
         <div class="id mono">${esc(o.orderNumber || '#' + o.shopifyOrderId)}
           ${o.seen ? '' : '<span class="badge-new">nouveau</span>'}
+          ${manuelle ? '<span class="badge-manuelle" title="Commande saisie à la main dans le dashboard, absente de Shopify">Saisie manuelle</span>' : ''}
           ${isGroup ? '<span class="badge-group">Groupe</span>' : ''}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
@@ -3041,6 +3080,11 @@ function orderCard(o: Order, srcQuote?: Quote): string {
         <a class="btn" href="/api/admin/orders/${id}/assets.zip">
           ↓ Tous les fichiers (ZIP)
         </a>
+        ${
+          manuelle
+            ? `<button type="button" class="btn js-modifier-manuelle" data-order="${id}" data-numero="${esc(o.orderNumber || '')}" data-form="${esc(JSON.stringify(formulaireDepuisCommande(o)))}">✎ Modifier la commande</button>`
+            : ''
+        }
       </div>
     </div>
   </div>`;
@@ -4160,6 +4204,7 @@ export function dashboardPage(
     });
   };
   const nbOrderGroup = orders.filter(orderIsGroup).length;
+  const nbManuelles = orders.filter((o) => estCommandeManuelle(o.shopifyOrderId)).length;
   // Commandes par famille d'article (une commande mixte compte dans chacune).
   const articleCounts: Record<string, number> = {};
   orders.forEach((o) => {
@@ -4341,6 +4386,9 @@ export function dashboardPage(
         ${filtered ? `<a class="chip-clear" href="/api/admin">✕ Réinitialiser</a>` : ''}
       </div>
 
+      <button type="button" class="btn primary" id="btn-nouvelle-commande" onclick="ouvrirManuelle()"
+              title="Saisir une commande reçue par e-mail ou par téléphone (hors boutique)">+ Nouvelle commande</button>
+
       <div class="export-wrap">
         <button class="btn" onclick="toggleExport()">↓ Exporter</button>
         <div class="export-menu" id="export-menu">
@@ -4379,6 +4427,7 @@ export function dashboardPage(
                        ],
                    ),
                    ['group', `🎯 Commandes de groupe (${nbOrderGroup})`] as [string, string],
+                   ['manuelle', `✍ Saisies manuelles (${nbManuelles})`] as [string, string],
                  ],
                  'all',
                  {
@@ -4848,7 +4897,7 @@ export function dashboardPage(
   <div class="modal" id="ship-modal" onclick="if(event.target===this)closeShip()">
     <div class="modal-box">
       <h3>Marquer comme expédiée</h3>
-      <p class="sub">
+      <p class="sub" id="ship-sub">
         La commande sera marquée comme traitée dans Shopify, et
         <strong>le client recevra son e-mail d'expédition</strong>. Cette action
         n'est pas réversible depuis ce tableau de bord.
@@ -4867,6 +4916,60 @@ export function dashboardPage(
       </div>
       <p class="hint" id="ship-status" style="margin-top:12px"></p>
     </div>
+  </div>
+
+  <!-- Modale : commande MANUELLE (reçue par e-mail, hors boutique). Création
+       et modification. Dashboard seulement : rien n'est créé sur Shopify.
+       autocomplete="off" : voir le formulaire de recherche. -->
+  <div class="modal" id="manuelle-modal" onclick="if(event.target===this)fermerManuelle()">
+    <form class="modal-box mn-box" autocomplete="off" onsubmit="return false">
+      <h3 id="mn-titre">Nouvelle commande</h3>
+      <p class="sub">Pour une commande reçue par e-mail, téléphone ou bon de commande.
+        Elle n'apparaît que dans ce tableau de bord : <strong>rien n'est créé sur Shopify</strong>
+        et aucun e-mail n'est envoyé au client.</p>
+
+      <div class="mn-section">Client</div>
+      <div class="mn-grid">
+        <div><label class="lbl" for="mn-nom">Nom</label><input id="mn-nom" class="price-input" maxlength="120"></div>
+        <div><label class="lbl" for="mn-entreprise">Entreprise / organisme <span class="opt">(facultatif)</span></label><input id="mn-entreprise" class="price-input" maxlength="120"></div>
+        <div><label class="lbl" for="mn-email">E-mail <span class="opt">(facultatif)</span></label><input id="mn-email" type="email" class="price-input" maxlength="200"></div>
+        <div><label class="lbl" for="mn-tel">Téléphone <span class="opt">(facultatif)</span></label><input id="mn-tel" class="price-input" maxlength="40"></div>
+      </div>
+
+      <div class="mn-section">Adresse de livraison <span class="opt">(facultatif)</span></div>
+      <div class="mn-grid">
+        <div class="mn-large"><input id="mn-adr1" class="price-input" maxlength="200" placeholder="Adresse" aria-label="Adresse"></div>
+        <div class="mn-large"><input id="mn-adr2" class="price-input" maxlength="200" placeholder="Complément (bâtiment, service…)" aria-label="Complément d'adresse"></div>
+        <div><input id="mn-cp" class="price-input" maxlength="20" placeholder="Code postal" aria-label="Code postal"></div>
+        <div><input id="mn-ville" class="price-input" maxlength="100" placeholder="Ville" aria-label="Ville"></div>
+        <div><input id="mn-pays" class="price-input" maxlength="60" placeholder="Pays" aria-label="Pays"></div>
+      </div>
+
+      <div class="mn-section">Articles</div>
+      <datalist id="mn-suggestions">${ARTICLES_SUGGERES.map((a) => `<option value="${esc(a)}"></option>`).join('')}</datalist>
+      <div id="mn-articles"></div>
+      <button type="button" class="btn mn-ajout" onclick="ajouterArticleManuel()">+ Ajouter un article</button>
+
+      <div class="mn-section">Commande</div>
+      <div class="mn-grid">
+        <div><label class="lbl" for="mn-date">Date de commande</label><input id="mn-date" type="date" class="price-input"></div>
+        <div><label class="lbl" for="mn-total">Montant total TTC (€) <span class="opt">(facultatif)</span></label><input id="mn-total" class="price-input mono" inputmode="decimal" placeholder="0,00"></div>
+        <div><label class="lbl" for="mn-paiement">Paiement</label>
+          <select id="mn-paiement" class="price-input"><option value="pending">En attente</option><option value="paid">Payé</option></select></div>
+      </div>
+      <div id="mn-note-wrap">
+        <label class="lbl" for="mn-note" style="margin-top:12px">Note interne <span class="opt">(facultatif)</span></label>
+        <textarea id="mn-note" maxlength="2000" rows="3" placeholder="Visible uniquement par votre équipe…"></textarea>
+      </div>
+      <p class="hint">Le BAT, le logo ou l'e-mail du client se joignent ensuite depuis la commande (« Fichiers joints »).</p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn mn-suppr" id="mn-suppr" onclick="supprimerManuelle()" hidden>Supprimer</button>
+        <button type="button" class="btn" onclick="fermerManuelle()">Annuler</button>
+        <button type="button" class="btn primary" id="mn-go" onclick="enregistrerManuelle()">Créer la commande</button>
+      </div>
+      <p class="hint" id="mn-statut" style="margin-top:12px"></p>
+    </form>
   </div>
 
   <!-- Modale : confirmer la déconnexion (un clic égaré sur le bouton rouge de
@@ -5156,11 +5259,158 @@ export function dashboardPage(
         document.getElementById('ship-num').value='';
         document.getElementById('ship-carrier').value='';
         document.getElementById('ship-status').textContent='';
+        /* Commande manuelle (identifiant négatif) : hors Shopify, aucun e-mail
+           ne part. La modale le dit, au lieu d'annoncer l'e-mail Shopify. */
+        var sub=document.getElementById('ship-sub');
+        var go=document.getElementById('ship-go');
+        if(!sub.dataset.defaut) sub.dataset.defaut=sub.innerHTML;
+        if(!go.dataset.defaut) go.dataset.defaut=go.textContent;
+        if(String(orderId).charAt(0)==='-'){
+          sub.textContent="Commande saisie à la main : elle sera marquée expédiée dans ce tableau de bord seulement. Aucun e-mail n'est envoyé : prévenez le client vous-même.";
+          go.textContent='Marquer expédiée';
+        } else {
+          sub.innerHTML=sub.dataset.defaut;
+          go.textContent=go.dataset.defaut;
+        }
         document.getElementById('ship-modal').classList.add('open');
         return;
       }
       doProdStatus(orderId,status,btn,null);
     }
+
+    /* ── Commande manuelle (reçue par e-mail, hors boutique) ──
+       Création et modification dans la même modale ; mnCtx.id vaut null en
+       création. Les lignes d'article sont construites par le DOM (jamais
+       d'innerHTML avec une valeur saisie). */
+    var mnCtx={id:null};
+    function mnVal(id){ var e=document.getElementById(id); return e?e.value:''; }
+    function mnSet(id,v){ var e=document.getElementById(id); if(e) e.value=(v==null?'':String(v)); }
+    function ajouterArticleManuel(a){
+      a=a||{};
+      var bloc=document.createElement('div'); bloc.className='mn-article';
+      var haut=document.createElement('div'); haut.className='mn-article-haut';
+      var titre=document.createElement('input');
+      titre.className='price-input mn-titre'; titre.maxLength=150;
+      titre.setAttribute('list','mn-suggestions');
+      titre.placeholder='Article (ex. Patch personnalisé (PVC))';
+      titre.setAttribute('aria-label','Article');
+      titre.value=a.titre||'';
+      var qte=document.createElement('input');
+      qte.className='price-input mono mn-qte'; qte.type='number'; qte.min='1'; qte.step='1';
+      qte.setAttribute('aria-label','Quantité'); qte.title='Quantité';
+      qte.value=a.quantite||1;
+      var x=document.createElement('button');
+      x.type='button'; x.className='mn-retirer'; x.title='Retirer cet article'; x.textContent='✕';
+      x.addEventListener('click', function(){
+        bloc.remove();
+        if(!document.querySelector('#mn-articles .mn-article')) ajouterArticleManuel();
+      });
+      haut.appendChild(titre); haut.appendChild(qte); haut.appendChild(x);
+      var det=document.createElement('textarea');
+      det.maxLength=3000; det.rows=2;
+      det.placeholder='Détails, un par ligne : taille, couleur, format, finition, texte à floquer…';
+      det.setAttribute('aria-label','Détails de l\\'article');
+      det.value=a.details||'';
+      bloc.appendChild(haut); bloc.appendChild(det);
+      document.getElementById('mn-articles').appendChild(bloc);
+      return titre;
+    }
+    function ouvrirManuelle(id, numero, f){
+      f=f||{};
+      var c=f.client||{}, ad=f.adresse||{};
+      mnCtx={id:id||null};
+      document.getElementById('mn-titre').textContent=id?('Modifier la commande '+(numero||'')):'Nouvelle commande';
+      document.getElementById('mn-go').textContent=id?'Enregistrer':'Créer la commande';
+      document.getElementById('mn-suppr').hidden=!id;
+      /* La note se modifie depuis la carte : ici, seulement à la création. */
+      document.getElementById('mn-note-wrap').hidden=!!id;
+      mnSet('mn-nom',c.nom); mnSet('mn-entreprise',c.entreprise);
+      mnSet('mn-email',c.email); mnSet('mn-tel',c.telephone);
+      mnSet('mn-adr1',ad.ligne1); mnSet('mn-adr2',ad.ligne2);
+      mnSet('mn-cp',ad.codePostal); mnSet('mn-ville',ad.ville);
+      mnSet('mn-pays', id ? ad.pays : (ad.pays||'France'));
+      mnSet('mn-date', f.date || new Date().toLocaleDateString('sv-SE'));
+      mnSet('mn-total', f.total ? String(f.total).replace('.',',') : '');
+      mnSet('mn-paiement', f.paiement||'pending');
+      mnSet('mn-note','');
+      var liste=document.getElementById('mn-articles'); liste.textContent='';
+      var arts=Array.isArray(f.articles)&&f.articles.length?f.articles:[{}];
+      arts.forEach(function(a){ ajouterArticleManuel(a); });
+      var st=document.getElementById('mn-statut'); st.className='hint'; st.textContent='';
+      document.getElementById('manuelle-modal').classList.add('open');
+      setTimeout(function(){ var n=document.getElementById('mn-nom'); if(n) n.focus(); },30);
+    }
+    function fermerManuelle(){
+      document.getElementById('manuelle-modal').classList.remove('open');
+      mnCtx={id:null};
+    }
+    function mnEnvoyer(methode, url, corps, fin){
+      var st=document.getElementById('mn-statut');
+      var go=document.getElementById('mn-go'), sp=document.getElementById('mn-suppr');
+      go.disabled=true; sp.disabled=true;
+      fetch(url,{
+        method:methode, credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: corps ? JSON.stringify(corps) : undefined
+      })
+      .then(function(r){
+        if(r.status===401) throw new Error('Session expirée : reconnectez-vous.');
+        return r.json().catch(function(){ throw new Error('Le serveur a répondu '+r.status+'.'); });
+      })
+      .then(function(res){
+        if(res && res.ok){ fin(res); return; }
+        st.className='hint err'; st.textContent=(res&&res.error)||"Échec de l'enregistrement.";
+        go.disabled=false; sp.disabled=false;
+      })
+      .catch(function(e){
+        st.className='hint err'; st.textContent=e.message||'Erreur réseau.';
+        go.disabled=false; sp.disabled=false;
+      });
+    }
+    function enregistrerManuelle(){
+      var articles=[];
+      document.querySelectorAll('#mn-articles .mn-article').forEach(function(b){
+        articles.push({
+          titre: b.querySelector('.mn-titre').value,
+          quantite: parseInt(b.querySelector('.mn-qte').value,10)||0,
+          details: b.querySelector('textarea').value
+        });
+      });
+      var corps={
+        client:{ nom:mnVal('mn-nom'), entreprise:mnVal('mn-entreprise'), email:mnVal('mn-email'), telephone:mnVal('mn-tel') },
+        adresse:{ ligne1:mnVal('mn-adr1'), ligne2:mnVal('mn-adr2'), codePostal:mnVal('mn-cp'), ville:mnVal('mn-ville'), pays:mnVal('mn-pays') },
+        articles:articles,
+        date:mnVal('mn-date'), total:mnVal('mn-total'), paiement:mnVal('mn-paiement'),
+        note: mnCtx.id ? undefined : mnVal('mn-note')
+      };
+      var st=document.getElementById('mn-statut'); st.className='hint'; st.textContent='Enregistrement…';
+      var url = mnCtx.id
+        ? '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle'
+        : '/api/admin/orders/manuelles';
+      mnEnvoyer('POST', url, corps, function(res){
+        st.className='hint ok'; st.textContent=mnCtx.id?'Commande enregistrée.':'Commande créée.';
+        /* Rechargement : la carte est rendue par le serveur, comme les autres.
+           memoriserVue la remontre ouverte au chargement suivant. */
+        memoriserVue('card-'+res.id);
+        location.reload();
+      });
+    }
+    function supprimerManuelle(){
+      if(!mnCtx.id) return;
+      if(!window.confirm('Supprimer définitivement cette commande et ses fichiers joints ?')) return;
+      var st=document.getElementById('mn-statut'); st.className='hint'; st.textContent='Suppression…';
+      mnEnvoyer('DELETE', '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle', null, function(){
+        memoriserVue();
+        location.reload();
+      });
+    }
+    document.addEventListener('click', function(ev){
+      var b=ev.target&&ev.target.closest?ev.target.closest('.js-modifier-manuelle'):null;
+      if(!b) return;
+      var f={};
+      try{ f=JSON.parse(b.getAttribute('data-form')||'{}'); }catch(e){}
+      ouvrirManuelle(b.getAttribute('data-order')||'', b.getAttribute('data-numero')||'', f);
+    });
 
     /* Déconnexion confirmée. Le lien de l'en-tête garde son href : sans JS,
        il déconnecte directement ; avec JS, on demande d'abord confirmation. */
@@ -6219,6 +6469,8 @@ export function dashboardPage(
         if(isOrders && orderFilter!=='all'){
           if(orderFilter==='group'){
             matchStatus = c.getAttribute('data-group')==='true';
+          } else if(orderFilter==='manuelle'){
+            matchStatus = c.getAttribute('data-manuelle')==='true';
           } else {
             matchStatus = (c.getAttribute('data-prod')||'to_produce')===orderFilter;
           }
