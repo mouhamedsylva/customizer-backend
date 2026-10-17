@@ -57,6 +57,15 @@ export const CATALOGUE_MANUEL: Array<{ famille: string; icone: string; articles:
 ];
 export const ARTICLES_MANUELS: string[] = CATALOGUE_MANUEL.flatMap((f) => f.articles);
 
+/** Textiles : les seuls articles qui acceptent une personnalisation de manche. */
+export const ARTICLES_TEXTILES: string[] = CATALOGUE_MANUEL.find((f) => f.famille === 'Textiles')?.articles ?? [];
+
+/** Manches cochées d'un article (« droite », « gauche »), seulement pour un textile. */
+export function manchesDe(titre: string, brut: unknown): Array<'droite' | 'gauche'> {
+  if (!ARTICLES_TEXTILES.includes(titre) || !Array.isArray(brut)) return [];
+  return (['droite', 'gauche'] as const).filter((m) => brut.includes(m));
+}
+
 /**
  * Articles SANS prix catalogue : leur prix unitaire n'est pas prérempli,
  * l'admin le saisit (sur devis). La grille des patchs ne vaut que pour le
@@ -165,7 +174,12 @@ export function lireSaisieManuelle(
       sku: null,
       productId: null,
       variantId: null,
-      properties: details.map((d, i) => ({ name: `Détail ${i + 1}`, value: d })),
+      properties: [
+        ...details.map((d, i) => ({ name: `Détail ${i + 1}`, value: d })),
+        // Manches personnalisées (textiles seulement) : leur supplément est
+        // déjà compris dans le prix unitaire ; la propriété sert à l'atelier.
+        ...manchesDe(titre, a?.manches).map((m) => ({ name: `Manche ${m}`, value: 'Personnalisée' })),
+      ],
     });
   }
   if (!lignes.length) return { erreur: 'Ajoutez au moins un article.' };

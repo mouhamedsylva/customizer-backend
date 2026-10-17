@@ -245,3 +245,34 @@ describe('chiffre d’affaires', () => {
     expect(html).not.toMatch(/803,20/);
   });
 });
+
+describe('manches personnalisées (textiles)', () => {
+  const saisie = (articles: unknown[]) =>
+    lireSaisieManuelle(
+      { client: { nom: 'A', email: 'a@b.fr' }, mode: 'facture', articles },
+      new Date('2026-10-17T10:00:00Z'),
+    );
+
+  it('ajoute les manches cochées à un textile', () => {
+    const r = saisie([{ titre: 'T-shirt coton personnalisé', quantite: 2, prix: 36, manches: ['droite', 'gauche', 'dos'] }]);
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(r.saisie.lineItems[0].properties).toEqual([
+      { name: 'Manche droite', value: 'Personnalisée' },
+      { name: 'Manche gauche', value: 'Personnalisée' },
+    ]);
+    expect(r.saisie.lineItems[0].price).toBe('36.00'); // supplément compris dans le prix reçu
+  });
+
+  it('ignore les manches sur un article qui n’est pas un textile', () => {
+    const r = saisie([{ titre: 'Drapeau personnalisé', quantite: 1, prix: 19.9, manches: ['droite'] }]);
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(r.saisie.lineItems[0].properties).toEqual([]);
+  });
+
+  it('transmet le prix d’une manche et la liste des textiles au formulaire', () => {
+    const pricing = { prices: { sweatshirt: 60, tshirt: 32, tshirt_polyester: 32, coins: 0, drapeaux: 19.9, patches: 20, manche: 4 }, tiers: {} } as any;
+    const html = dashboardPage([], [], [], 'https://x', '', { pricing });
+    expect(html).toContain('data-manche="4"');
+    expect(html).toContain('T-shirt coton personnalisé');
+  });
+});

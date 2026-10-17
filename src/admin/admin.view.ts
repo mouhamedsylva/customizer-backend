@@ -21,7 +21,7 @@ import type { PricingPayload } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
 import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
-import { ARTICLES_SANS_PRIX_CATALOGUE, CATALOGUE_MANUEL, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle, factureDe } from './commandes-manuelles';
+import { ARTICLES_SANS_PRIX_CATALOGUE, ARTICLES_TEXTILES, CATALOGUE_MANUEL, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle, factureDe } from './commandes-manuelles';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -1335,6 +1335,11 @@ body{
 .mn-table tfoot td:first-child{text-align:right}
 .mn-table tfoot tr.mn-ttc td{font-size:15px;font-weight:800;color:var(--ink);padding:11px 12px}
 .mn-table .vide{color:var(--faint)}
+/* Manches personnalisées d'un textile (étape 3). */
+.mn-manches{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px}
+.modal-box .mn-table .mn-manches label{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer;margin:0}
+.mn-manches input{width:15px;height:15px;accent-color:var(--manuel);cursor:pointer}
+.mn-manches .px{color:var(--muted);font-weight:500}
 @media (max-width:640px){
   .mn-article-haut{flex-wrap:wrap}
   .mn-titre-wrap{flex-basis:calc(100% - 70px)}
@@ -5254,7 +5259,9 @@ export function dashboardPage(
                  construit le menu de chaque article. -->
             <div id="mn-articles" data-catalogue="${esc(JSON.stringify(CATALOGUE_MANUEL))}"
                  data-grilles="${esc(JSON.stringify(grillesArticlesManuels(extra.pricing)))}"
-                 data-tva="${TVA_TAUX_DEFAUT}"></div>
+                 data-tva="${TVA_TAUX_DEFAUT}"
+                 data-manche="${Number(extra.pricing?.prices?.manche) > 0 ? Number(extra.pricing?.prices?.manche) : 0}"
+                 data-textiles="${esc(JSON.stringify(ARTICLES_TEXTILES))}"></div>
             <button type="button" class="btn mn-ajout" onclick="ajouterArticleManuel()">+ Ajouter un article</button>
           </section>
 
@@ -5710,7 +5717,7 @@ export function dashboardPage(
       dd.classList.remove('erreur'); mnStatut('');
       /* Nouvel article : on repart de SON prix catalogue. */
       var b=dd.closest('.mn-article');
-      if(b){ var p=b.querySelector('.mn-prix'); if(p) p.dataset.manuel=''; b.dataset.ht=''; mnMajPrix(b); mnMajTotal(); }
+      if(b){ var p=b.querySelector('.mn-prix'); if(p) p.dataset.manuel=''; b.dataset.ht=''; b.dataset.manches=''; mnMajPrix(b); mnMajTotal(); }
     }
     /* ── Prix unitaire, prérempli depuis la grille de prix du dashboard ── */
     function mnGrilles(){
@@ -5762,12 +5769,28 @@ export function dashboardPage(
     function mnTva(){ return Number(document.getElementById('mn-articles').getAttribute('data-tva'))||0.2; }
     /* Prix unitaire TTC d'un bloc : sa case (étape 2), ou le prix HT saisi
        dans les lignes de facture (étape 3) + TVA. NaN s'il manque. */
-    function mnPrixTtc(b){
+    function mnPrixBaseTtc(b){
       if(b.dataset.sansPrix==='1'){
         var ht=mnNombre(b.dataset.ht);
         return ht>0 ? Math.round(ht*(1+mnTva())*100)/100 : NaN;
       }
       return mnNombre(b.querySelector('.mn-prix').value);
+    }
+    /* ── Manches personnalisées (textiles) : supplément « manche » des tarifs ── */
+    function mnPrixManche(){ return Number(document.getElementById('mn-articles').getAttribute('data-manche'))||0; }
+    function mnEstTextile(titre){
+      try{ return JSON.parse(document.getElementById('mn-articles').getAttribute('data-textiles')||'[]').indexOf(titre)!==-1; }
+      catch(e){ return false; }
+    }
+    function mnManches(b){
+      if(!mnEstTextile(mnTitre(b))) return [];
+      return String(b.dataset.manches||'').split(',').filter(function(m){ return m==='droite' || m==='gauche'; });
+    }
+    /* Prix unitaire TTC complet : base + une personnalisation par manche cochée. */
+    function mnPrixTtc(b){
+      var base=mnPrixBaseTtc(b);
+      if(!(base>0)) return NaN;
+      return Math.round((base + mnManches(b).length*mnPrixManche())*100)/100;
     }
     /* Total TTC = somme des lignes, en centimes entiers (comme le serveur). */
     function mnMajTotal(){
@@ -5801,6 +5824,25 @@ export function dashboardPage(
         var det=b.querySelector('textarea').value.split(String.fromCharCode(10))
           .map(function(x){ return x.trim(); }).filter(Boolean).join(' · ');
         if(det) c1.appendChild(mnEl('small',null,det));
+        /* Textile : manches personnalisées, chacune ajoute son supplément. */
+        if(mnEstTextile(mnTitre(b))){
+          var mz=mnEl('div','mn-manches'), pm=mnPrixManche();
+          ['droite','gauche'].forEach(function(cote){
+            var lab=mnEl('label'), cb=document.createElement('input');
+            cb.type='checkbox'; cb.checked=mnManches(b).indexOf(cote)!==-1;
+            cb.addEventListener('change', function(){
+              var ms=mnManches(b).filter(function(m){ return m!==cote; });
+              if(cb.checked) ms.push(cote);
+              b.dataset.manches=ms.join(',');
+              maj();
+            });
+            lab.appendChild(cb);
+            lab.appendChild(document.createTextNode('Manche '+cote+' '));
+            lab.appendChild(mnEl('span','px', pm>0 ? '(+'+mnFmt(pm)+' €)' : ''));
+            mz.appendChild(lab);
+          });
+          c1.appendChild(mz);
+        }
         /* Quantité modifiable ici aussi : elle met à jour l'article de l'étape 2
            (même champ), donc le palier de prix catalogue. */
         var qteArt=b.querySelector('.mn-qte');
@@ -6160,6 +6202,7 @@ export function dashboardPage(
           titre: mnTitre(b),
           quantite: parseInt(b.querySelector('.mn-qte').value,10)||0,
           prix: mnPrixTtc(b),
+          manches: mnManches(b),
           details: b.querySelector('textarea').value
         });
       });
