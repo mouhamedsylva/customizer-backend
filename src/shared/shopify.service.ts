@@ -400,6 +400,32 @@ export class ShopifyService {
    * « Envoyer la facture » de l'admin Shopify).
    * Le client reçoit un e-mail avec un lien de paiement.
    */
+  /** Délais d'attente (ms) entre deux essais quand Shopify recalcule un brouillon. */
+  static DELAIS_CALCUL_MS = [1000, 2000, 3000, 4000, 5000];
+
+  /**
+   * Rejoue un appel tant que Shopify répond 422 « This order has not finished
+   * calculating » : après une modification de ses lignes, un brouillon est
+   * recalculé (taxes, totaux) de façon ASYNCHRONE, et `send_invoice` /
+   * `complete` sont refusés tant que ce n'est pas fini. Les commandes
+   * manuelles posent leurs prix puis envoient la facture aussitôt : sans ce
+   * rejeu, l'envoi échouait à coup sûr.
+   *
+   * Rejouer est sans risque : ce 422 signifie que Shopify n'a RIEN fait (aucun
+   * e-mail parti, rien de validé). Toute autre réponse est rendue telle quelle.
+   */
+  private async rejouerSiCalculEnCours(appel: () => Promise<Response>): Promise<Response> {
+    const delais = ShopifyService.DELAIS_CALCUL_MS;
+    for (let essai = 0; ; essai++) {
+      const response = await appel();
+      if (response.status !== 422 || essai >= delais.length) return response;
+      const texte = await response.clone().text().catch(() => '');
+      if (!/not finished calculating/i.test(texte)) return response;
+      this.logger.warn(`Brouillon Shopify en cours de calcul : nouvel essai dans ${delais[essai] / 1000} s.`);
+      await new Promise((r) => setTimeout(r, delais[essai]));
+    }
+  }
+
   async sendDraftOrderInvoice(
     draftOrderId: string | number,
     invoice: {
@@ -409,13 +435,12 @@ export class ShopifyService {
       bcc?: string[];
     } = {},
   ): Promise<Record<string, any>> {
-    const response = await this.fetchShopify(
-      `${this.getBaseUrl()}/draft_orders/${draftOrderId}/send_invoice.json`,
-      {
+    const response = await this.rejouerSiCalculEnCours(async () =>
+      this.fetchShopify(`${this.getBaseUrl()}/draft_orders/${draftOrderId}/send_invoice.json`, {
         method: 'POST',
         headers: await this.getHeaders(),
         body: JSON.stringify({ draft_order_invoice: invoice }),
-      },
+      }),
     );
 
     if (!response.ok) {
@@ -444,9 +469,11 @@ export class ShopifyService {
     draftOrderId: string | number,
     paymentPending: boolean,
   ): Promise<Record<string, any>> {
-    const response = await this.fetchShopify(
-      `${this.getBaseUrl()}/draft_orders/${draftOrderId}/complete.json?payment_pending=${paymentPending ? 'true' : 'false'}`,
-      { method: 'PUT', headers: await this.getHeaders() },
+    const response = await this.rejouerSiCalculEnCours(async () =>
+      this.fetchShopify(
+        `${this.getBaseUrl()}/draft_orders/${draftOrderId}/complete.json?payment_pending=${paymentPending ? 'true' : 'false'}`,
+        { method: 'PUT', headers: await this.getHeaders() },
+      ),
     );
     if (!response.ok) {
       const text = await response.text().catch(() => '');
