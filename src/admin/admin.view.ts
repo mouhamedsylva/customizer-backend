@@ -1287,10 +1287,12 @@ body{
 .mn-titre-wrap .dd.open .dd-btn,.mn-titre-wrap .dd-btn:hover{border-color:var(--manuel)}
 .mn-titre-wrap .dd.open .dd-btn{box-shadow:0 0 0 3px var(--manuel-soft)}
 .mn-titre-wrap .dd.erreur .dd-btn{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
-/* Liste ENTIÈRE, sans défilement interne : avec le plafond des filtres
-   (300 px), le dernier article (Sweatshirt) restait caché sous le bas du
-   menu. C'est la modale qui défile si besoin. */
-.mn-titre-wrap .dd-menu{max-height:none;overflow:visible;padding:6px}
+/* Menu à défilement propre : hauteur bornée, barre de défilement toujours
+   visible (sinon le dernier article, Sweatshirt, semblait absent). */
+.mn-titre-wrap .dd-menu{max-height:260px;overflow-y:scroll;overscroll-behavior:contain;padding:6px;scrollbar-width:thin;scrollbar-color:var(--manuel) transparent}
+.mn-titre-wrap .dd-menu::-webkit-scrollbar{width:8px}
+.mn-titre-wrap .dd-menu::-webkit-scrollbar-thumb{background:var(--manuel-soft);border-radius:8px;border:2px solid var(--surface)}
+.mn-titre-wrap .dd-menu:hover::-webkit-scrollbar-thumb{background:var(--manuel)}
 .mn-titre-wrap .dd-groupe{
   font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
   padding:9px 10px 4px;
