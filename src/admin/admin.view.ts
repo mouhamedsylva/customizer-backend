@@ -1900,39 +1900,6 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn.primary:hover{background:#a83809;border-color:#a83809;color:#fff}
-/* « + Nouvelle commande » : dégradé de la couleur de la marque qui défile
-   lentement en continu ; il accélère au survol. Les teintes dérivent de
-   --accent : le bouton suit le thème (orange en clair, turquoise en sombre). */
-#btn-nouvelle-commande{
-  border:0;
-  background:linear-gradient(110deg,
-    var(--accent) 0%,
-    color-mix(in srgb,var(--accent) 60%,#fbbf24) 25%,
-    var(--accent) 50%,
-    color-mix(in srgb,var(--accent) 75%,#7c2d12) 75%,
-    var(--accent) 100%);
-  background-size:300% 100%;
-  animation:degradeBouton 7s linear infinite;
-  box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 35%,transparent);
-  transition:box-shadow .2s, transform .2s;
-}
-#btn-nouvelle-commande:hover{
-  background:linear-gradient(110deg,
-    var(--accent) 0%,
-    color-mix(in srgb,var(--accent) 60%,#fbbf24) 25%,
-    var(--accent) 50%,
-    color-mix(in srgb,var(--accent) 75%,#7c2d12) 75%,
-    var(--accent) 100%);
-  background-size:300% 100%;
-  animation-duration:2.2s;
-  box-shadow:0 6px 20px color-mix(in srgb,var(--accent) 50%,transparent);
-  transform:translateY(-1px);
-}
-#btn-nouvelle-commande:active{transform:translateY(0)}
-@keyframes degradeBouton{from{background-position:0% 50%}to{background-position:150% 50%}}
-@media (prefers-reduced-motion: reduce){
-  #btn-nouvelle-commande,#btn-nouvelle-commande:hover{animation:none;transform:none}
-}
 .btn.danger{background:var(--danger);color:#fff;border-color:var(--danger);text-decoration:none}
 .btn.danger:hover{filter:brightness(.9);color:#fff}
 .btn:disabled{opacity:.55;cursor:not-allowed}
