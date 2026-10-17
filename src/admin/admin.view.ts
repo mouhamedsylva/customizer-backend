@@ -4428,7 +4428,16 @@ export function dashboardPage(
     (o.quoteId ? quoteById.get(String(o.quoteId)) : undefined) ||
     quoteByPaidOrder.get(String(o.shopifyOrderId));
 
-  const revenue = orders.reduce((s, o) => s + (parseFloat(String(o.totalPrice || '')) || 0), 0);
+  /* Commande MANUELLE pas encore payée (facture envoyée, en attente) : son
+     montant n'est qu'une promesse, il n'entre pas dans le chiffre d'affaires.
+     Une fois payée, elle est remplacée par la commande Shopify, qui compte. */
+  const revenue = orders.reduce(
+    (s, o) =>
+      estCommandeManuelle(o.shopifyOrderId) && o.financialStatus !== 'paid'
+        ? s
+        : s + (parseFloat(String(o.totalPrice || '')) || 0),
+    0,
+  );
   const isGroupQuote = (q: Quote): boolean => {
     const d: any = q.quoteData || {};
     return d.group !== null && d.group !== undefined;

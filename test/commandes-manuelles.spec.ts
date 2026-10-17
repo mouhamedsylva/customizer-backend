@@ -230,3 +230,18 @@ describe('commandes manuelles : affichage', () => {
     expect(html).toContain('Format : Rond');
   });
 });
+
+describe('chiffre d’affaires', () => {
+  it('ignore les commandes manuelles non payées', () => {
+    const base = { lineItems: [{ title: 'Drapeau personnalisé', quantity: 1, properties: [] }], productionStatus: 'to_produce', receivedAt: new Date(), seen: true };
+    const html = dashboardPage(
+      [
+        { ...base, shopifyOrderId: '-1', orderNumber: 'M-1001', totalPrice: '744.50', financialStatus: 'pending' },
+        { ...base, shopifyOrderId: '6100000000002', orderNumber: '#20900', totalPrice: '58.70', financialStatus: 'paid' },
+      ] as any,
+      [], [], 'https://x', '', {},
+    );
+    expect(html).toContain('58,70');
+    expect(html).not.toMatch(/803,20/);
+  });
+});
