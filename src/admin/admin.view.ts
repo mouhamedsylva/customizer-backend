@@ -1900,6 +1900,26 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn.primary:hover{background:#a83809;border-color:#a83809;color:#fff}
+/* « + Nouvelle commande » flottant (en bas à droite, pendant le défilement). */
+.fab-commande{
+  position:fixed;right:24px;bottom:24px;z-index:80;
+  display:inline-flex;align-items:center;gap:8px;padding:13px 20px 13px 16px;
+  border:0;border-radius:999px;background:var(--accent);color:#fff;
+  font:inherit;font-size:14px;font-weight:700;cursor:pointer;
+  box-shadow:0 10px 28px color-mix(in srgb,var(--accent) 45%,transparent),0 2px 6px rgba(0,0,0,.12);
+  opacity:0;transform:translateY(18px) scale(.92);pointer-events:none;
+  transition:opacity .25s ease, transform .25s ease, background .15s;
+}
+.fab-commande.visible{opacity:1;transform:none;pointer-events:auto}
+.fab-commande:hover{background:#a83809;transform:translateY(-2px)}
+.fab-commande .fab-plus{
+  width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.22);font-size:18px;line-height:1;
+}
+@media (max-width:560px){
+  .fab-commande{right:16px;bottom:16px;padding:12px 16px 12px 12px;font-size:13px}
+}
+@media (prefers-reduced-motion: reduce){ .fab-commande{transition:none} }
 .btn.danger{background:var(--danger);color:#fff;border-color:var(--danger);text-decoration:none}
 .btn.danger:hover{filter:brightness(.9);color:#fff}
 .btn:disabled{opacity:.55;cursor:not-allowed}
@@ -5198,6 +5218,13 @@ export function dashboardPage(
        mise à jour), puis les fichiers déposés lui sont joints.
        Dashboard seulement : rien n'est créé sur Shopify.
        autocomplete="off" : voir le formulaire de recherche. -->
+  <!-- « + Nouvelle commande » FLOTTANT : apparaît en bas à droite dès que le
+       bouton de la barre d'outils sort de l'écran (défilement de la liste). -->
+  <button type="button" class="fab-commande" id="fab-nouvelle-commande" onclick="ouvrirManuelle()"
+          aria-hidden="true" tabindex="-1" title="Saisir une commande reçue par e-mail ou par téléphone">
+    <span class="fab-plus" aria-hidden="true">+</span><span>Nouvelle commande</span>
+  </button>
+
   <div class="modal" id="manuelle-modal" onclick="if(event.target===this)fermerManuelle()">
     <form class="modal-box mn-box" autocomplete="off" onsubmit="return false" aria-labelledby="mn-titre">
       <div class="mn-tete">
@@ -8847,6 +8874,22 @@ export function dashboardPage(
     }
 
     restaurerVue();
+
+    /* Bouton flottant « + Nouvelle commande » : visible seulement quand le
+       bouton de la barre d'outils est sorti de l'écran PAR LE HAUT (l'admin a
+       défilé vers le bas). Les deux ne s'affichent jamais ensemble. */
+    (function(){
+      var fixe=document.getElementById('btn-nouvelle-commande');
+      var fab=document.getElementById('fab-nouvelle-commande');
+      if(!fixe || !fab || !('IntersectionObserver' in window)) return;
+      new IntersectionObserver(function(entrees){
+        var e=entrees[0];
+        var montrer=!e.isIntersecting && e.boundingClientRect.top<0;
+        fab.classList.toggle('visible', montrer);
+        fab.setAttribute('aria-hidden', montrer?'false':'true');
+        fab.tabIndex = montrer ? 0 : -1;
+      }).observe(fixe);
+    })();
 
     /* ── Messages clients ───────────────────────────────────────────────
        Un modèle par type, édité sur place. Remplace douze fonctions et trois
