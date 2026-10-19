@@ -26,9 +26,6 @@ export function numeroManuel(id: string): string {
 }
 
 export const MAX_LIGNES_MANUELLES = 30;
-/** « facture » : e-mail de paiement au client ; « payee » : déjà réglée hors boutique. */
-export const MODES_FACTURATION = ['facture', 'payee'] as const;
-export type ModeFacturation = (typeof MODES_FACTURATION)[number];
 
 /**
  * Propriété CACHÉE (le « _ » la masque au client) posée sur chaque ligne du
@@ -65,17 +62,6 @@ export function manchesDe(titre: string, brut: unknown): Array<'droite' | 'gauch
   if (!ARTICLES_TEXTILES.includes(titre) || !Array.isArray(brut)) return [];
   return (['droite', 'gauche'] as const).filter((m) => brut.includes(m));
 }
-
-/**
- * Articles SANS prix catalogue : leur prix unitaire n'est pas prérempli,
- * l'admin le saisit (sur devis). La grille des patchs ne vaut que pour le
- * patch brodé ; PVC et tissé se chiffrent à part.
- */
-export const ARTICLES_SANS_PRIX_CATALOGUE: string[] = [
-  'Patch personnalisé (PVC)',
-  'Patch personnalisé (tissé)',
-  'Coin métal personnalisé',
-];
 
 /** Designs joints à une même ligne d'article, au plus. */
 export const MAX_DESIGNS_PAR_LIGNE = 5;
@@ -129,7 +115,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function lireSaisieManuelle(
   brut: unknown,
   maintenant: Date = new Date(),
-): { saisie: SaisieManuelle; mode: ModeFacturation } | { erreur: string } {
+): { saisie: SaisieManuelle } | { erreur: string } {
   const b = (brut && typeof brut === 'object' ? brut : {}) as Record<string, any>;
   const c = (b.client && typeof b.client === 'object' ? b.client : {}) as Record<string, any>;
 
@@ -159,18 +145,12 @@ export function lireSaisieManuelle(
     if (!Number.isInteger(qte) || qte < 1 || qte > 1_000_000) {
       return { erreur: `Quantité invalide pour « ${titre} ».` };
     }
-    // Prix unitaire TTC : prérempli depuis la grille de prix du dashboard,
-    // modifiable (coins sur devis, patchs au-delà de 100…). Il devient le prix
-    // de la ligne sur la facture Shopify.
-    const prix = Number(String(a?.prix ?? '').replace(/\s/g, '').replace(',', '.'));
-    if (!Number.isFinite(prix) || prix <= 0 || prix > 100_000) {
-      return { erreur: `Indiquez le prix unitaire de « ${titre} ».` };
-    }
     lignes.push({
       title: titre,
       variantTitle: null,
       quantity: qte,
-      price: prix.toFixed(2),
+      // Pas de prix par article : seul le montant total, saisi par l'admin, compte.
+      price: '0.00',
       sku: null,
       productId: null,
       variantId: null,
@@ -187,25 +167,18 @@ export function lireSaisieManuelle(
     return { erreur: `${MAX_LIGNES_MANUELLES} articles au plus par commande.` };
   }
 
-  // Total TTC = somme des lignes (prix unitaire × quantité), en centimes
-  // entiers : le total saisi par le navigateur n'est qu'un affichage.
-  const centimes = lignes.reduce(
-    (n, li) => n + Math.round(Number(li.price) * 100) * Number(li.quantity),
-    0,
-  );
-  if (centimes > 1_000_000_000) return { erreur: 'Montant total invalide.' };
-  const totalPrice = (centimes / 100).toFixed(2);
+  // Montant total TTC : SAISI par l'admin (montant réellement encaissé), il
+  // n'est pas recalculé depuis les articles.
+  const totalBrut = String(b.total ?? '').replace(/\s/g, '').replace(',', '.');
+  if (!totalBrut) return { erreur: 'Indiquez le montant total TTC.' };
+  const t = Number(totalBrut);
+  if (!Number.isFinite(t) || t <= 0 || t > 10_000_000) return { erreur: 'Montant total invalide.' };
+  const totalPrice = t.toFixed(2);
 
-  // « facture » : e-mail de paiement envoyé au client ; « payee » : paiement
-  // déjà reçu (virement, chèque…), commande Shopify validée comme payée.
-  const mode = String(b.mode || 'facture');
-  if (!(MODES_FACTURATION as readonly string[]).includes(mode)) {
-    return { erreur: 'Mode de paiement inconnu.' };
-  }
-  if (mode === 'facture' && !email) {
-    return { erreur: "Indiquez l'e-mail du client : la facture lui est envoyée." };
-  }
-  const paiement = mode === 'payee' ? 'paid' : 'pending';
+  // Commande manuelle = commande DÉJÀ PAYÉE hors boutique (virement, chèque,
+  // bon de commande réglé…). Elle reste dans le dashboard : rien n'est créé
+  // sur Shopify, aucun e-mail n'est envoyé — l'e-mail du client est facultatif.
+  const paiement = 'paid';
 
   // Date de commande (AAAA-MM-JJ), à midi heure de Paris pour rester sur le bon
   // jour quelle que soit la conversion de fuseau ; aujourd'hui par défaut.
@@ -236,7 +209,6 @@ export function lireSaisieManuelle(
   const aUneAdresse = !!(shipping.address1 || shipping.zip || shipping.city);
 
   return {
-    mode: mode as ModeFacturation,
     saisie: {
       customerName: nom || entreprise,
       customerEmail: email || null,
@@ -259,23 +231,6 @@ export function lireSaisieManuelle(
 }
 
 
-/** Suivi de la facturation Shopify, rangé dans `customerInfo.facture`. */
-export interface FactureManuelle {
-  draftOrderId?: string;
-  statut: 'envoyee' | 'echec' | 'payee';
-  /** ISO : date de l'envoi, de la validation ou de l'échec. */
-  le: string;
-  total?: string;
-  erreur?: string;
-  orderId?: string;
-}
-
-/** Suivi de facture d'une commande manuelle, ou null s'il n'y en a pas encore. */
-export function factureDe(o: { customerInfo?: Record<string, any> | null }): FactureManuelle | null {
-  const f = o.customerInfo?.facture;
-  return f && typeof f === 'object' && typeof f.statut === 'string' ? (f as FactureManuelle) : null;
-}
-
 /** Identifiant de commande manuelle porté par une ligne Shopify (propriété cachée), ou null. */
 export function commandeManuelleDeLignes(lignes: unknown): string | null {
   for (const li of Array.isArray(lignes) ? lignes : []) {
@@ -286,74 +241,4 @@ export function commandeManuelleDeLignes(lignes: unknown): string | null {
     }
   }
   return null;
-}
-
-/**
- * Brouillon Shopify d'une commande manuelle. Lignes personnalisées à 0,00 € :
- * le prix de CHAQUE ligne est posé ensuite (facturation-manuelle.service.ts),
- * une fois le régime de TVA de la boutique connu. Lignes libres : elles ne
- * touchent pas au stock.
- */
-export function brouillonDepuisManuelle(o: {
-  shopifyOrderId: string;
-  orderNumber?: string | null;
-  customerName?: string | null;
-  customerEmail?: string | null;
-  customerPhone?: string | null;
-  customerInfo?: Record<string, any> | null;
-  lineItems?: unknown[];
-}): {
-  line_items: Array<{ title: string; quantity: number; price: string; custom: true; properties: Array<{ name: string; value: string }> }>;
-  customer?: { email?: string; first_name?: string; last_name?: string; phone?: string };
-  email?: string;
-  note: string;
-  tags: string;
-  shipping_address?: Record<string, string>;
-} {
-  const numero = o.orderNumber || numeroManuel(String(o.shopifyOrderId));
-  const s = (o.customerInfo?.shipping || null) as Record<string, any> | null;
-  // « Julien Lucas » → prénom « Julien », nom « Lucas » ; un mot seul → nom.
-  const mots = String(o.customerName || '').trim().split(/\s+/).filter(Boolean);
-  const prenom = mots.length > 1 ? mots.slice(0, -1).join(' ') : '';
-  const nomFamille = mots.length ? mots[mots.length - 1] : '';
-  const sansVide = (r: Record<string, unknown>) =>
-    Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null && v !== undefined && v !== '')) as Record<string, string>;
-
-  return {
-    line_items: (Array.isArray(o.lineItems) ? o.lineItems : []).map((li: any) => ({
-      title: String(li?.title || 'Article'),
-      quantity: Math.max(1, Number(li?.quantity) || 1),
-      price: '0.00',
-      custom: true as const,
-      properties: [
-        ...(Array.isArray(li?.properties) ? li.properties : [])
-          .filter((p: any) => p?.name && p?.value)
-          .map((p: any) => ({ name: String(p.name), value: String(p.value) })),
-        { name: PROPRIETE_COMMANDE_MANUELLE, value: String(o.shopifyOrderId) },
-      ],
-    })),
-    ...(o.customerEmail
-      ? {
-          email: o.customerEmail,
-          customer: sansVide({ email: o.customerEmail, first_name: prenom, last_name: nomFamille, phone: o.customerPhone }),
-        }
-      : {}),
-    note: `COMMANDE MANUELLE ${numero} (saisie dans le dashboard)`,
-    tags: 'manuelle, dashboard',
-    ...(s
-      ? {
-          shipping_address: sansVide({
-            first_name: prenom,
-            last_name: nomFamille || s.name,
-            company: s.company,
-            address1: s.address1,
-            address2: s.address2,
-            zip: s.zip,
-            city: s.city,
-            country: s.country,
-            phone: s.phone,
-          }),
-        }
-      : {}),
-  };
 }

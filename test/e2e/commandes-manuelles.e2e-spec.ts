@@ -22,9 +22,8 @@ describe('Commandes manuelles', () => {
 
   const saisie = (p: Record<string, unknown> = {}) => ({
     client: { nom: 'Lucas Julien', email: 'lucas@exemple.fr' },
-    articles: [{ titre: 'Patch personnalisé (PVC)', quantite: 250, prix: '3,84', details: 'Taille : 8 cm' }],
+    articles: [{ titre: 'Patch personnalisé (PVC)', quantite: 250, details: 'Taille : 8 cm' }],
     total: '960',
-    mode: 'facture',
     note: 'Reçue par e-mail',
     ...p,
   });
@@ -63,7 +62,7 @@ describe('Commandes manuelles', () => {
     expect(o).toMatchObject({
       orderNumber: 'M-1001',
       fromConfigurator: true,
-      financialStatus: 'pending',
+      financialStatus: 'paid',
       totalPrice: '960.00',
       internalNote: 'Reçue par e-mail',
       productionStatus: 'to_produce',
@@ -93,7 +92,7 @@ describe('Commandes manuelles', () => {
     expect(await repo().count()).toBe(1);
   });
 
-  it('joint un design à un article : il s’affiche avec l’article et part dans le brouillon', async () => {
+  it('joint un design à un article : il s’affiche avec l’article', async () => {
     const cookie = await connexion();
     await post('/api/admin/orders/manuelles', cookie, saisie());
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -127,95 +126,19 @@ describe('Commandes manuelles', () => {
     expect(h.shopify.calls).toHaveLength(0);
   });
 
-  describe('Rattachement à Shopify (facture)', () => {
-    /* La doublure ne calcule pas de total : on la rend fidèle (somme des
-       lignes), sauf quand un test veut provoquer un écart. */
-    let ecart = 0;
-    beforeEach(() => {
-      ecart = 0;
-      jest.spyOn(h.shopify, 'updateDraftOrderLineItems').mockImplementation(async (id: unknown, items: any) => {
-        h.shopify.calls.push({ method: 'updateDraftOrderLineItems', args: [id, items] });
-        const total = (items as any[]).reduce((n, li) => n + Number(li.price) * li.quantity, 0);
-        return { id, total_price: (total + ecart).toFixed(2), line_items: items };
-      });
-    });
-    afterEach(() => jest.restoreAllMocks());
-
-    const facture = (cookie: string | null, mode?: string) => post('/api/admin/orders/-1/facture', cookie, mode ? { mode } : {});
-
-    it('refuse sans session, et sur une commande Shopify', async () => {
-      expect((await facture(null)).status).toBe(401);
-      const cookie = await connexion();
-      await repo().save({ shopifyOrderId: '123', orderNumber: '#20500', lineItems: [], fromConfigurator: true } as Partial<Order>);
-      expect((await post('/api/admin/orders/123/facture', cookie, {})).status).toBe(403);
-    });
-
-    it('crée le brouillon, répartit le montant et envoie la facture au client', async () => {
-      const cookie = await connexion();
-      await post('/api/admin/orders/manuelles', cookie, saisie());
-      const r = await facture(cookie, 'facture');
-      expect(r.status).toBe(201);
-      expect(r.body).toMatchObject({ ok: true, total: '960.00', facture: { statut: 'envoyee', draftOrderId: '999001' } });
-
-      const [brouillon] = h.shopify.callsTo('createDraftOrder')[0].args as any[];
-      expect(brouillon.email).toBe('lucas@exemple.fr');
-      expect(brouillon.line_items[0].properties).toContainEqual({ name: '_Commande manuelle', value: '-1' });
-      // Prix de CHAQUE ligne, depuis son prix unitaire (le total n'est plus réparti).
-      const [, lignes] = h.shopify.callsTo('updateDraftOrderLineItems')[0].args as any[];
-      expect(lignes[0]).toMatchObject({ title: 'Patch personnalisé (PVC)', quantity: 250, price: '3.84', custom: true });
-      expect(h.shopify.callsTo('setDraftOrderPrice')).toHaveLength(0);
-      const [, invoice] = h.shopify.callsTo('sendDraftOrderInvoice')[0].args as any[];
-      expect(invoice).toMatchObject({ to: 'lucas@exemple.fr', subject: 'Votre commande M-1001' });
-      expect(invoice.custom_message).toContain('Bonjour Lucas Julien,');
-      expect(invoice.custom_message).toContain("• 250 × Patch personnalisé (PVC) (3,84 € l'unité)");
-      expect(invoice.custom_message).toContain('Total : 960,00 € TTC.');
-      expect(invoice.custom_message).not.toMatch(/devis/i);
-      expect(h.shopify.callsTo('completeDraftOrder')).toHaveLength(0);
-
-      const o = await repo().findOneByOrFail({ shopifyOrderId: '-1' });
-      expect((o.customerInfo as any).facture).toMatchObject({ statut: 'envoyee', draftOrderId: '999001', total: '960.00' });
-      // Deuxième envoi refusé : pas de second brouillon ni de second e-mail.
-      expect((await facture(cookie, 'facture')).status).toBe(409);
-      expect(h.shopify.callsTo('createDraftOrder')).toHaveLength(1);
-    });
-
-    it('« déjà payé » : valide le brouillon comme payé, sans e-mail', async () => {
-      const cookie = await connexion();
-      await post('/api/admin/orders/manuelles', cookie, saisie({ mode: 'payee' }));
-      const r = await facture(cookie, 'payee');
-      expect(r.body).toMatchObject({ ok: true, facture: { statut: 'payee', orderId: '7000000000001' } });
-      expect(h.shopify.callsTo('completeDraftOrder')[0].args).toEqual(['999001', false]);
-      expect(h.shopify.callsTo('sendDraftOrderInvoice')).toHaveLength(0);
-    });
-
-    it('écart de total (TVA, arrondi) : rien n’est envoyé, nouvelle tentative possible', async () => {
-      const cookie = await connexion();
-      await post('/api/admin/orders/manuelles', cookie, saisie());
-      ecart = 192;
-      const r = await facture(cookie, 'facture');
-      expect(r.status).toBe(409);
-      expect(r.body.error).toContain('1152.00');
-      expect(h.shopify.callsTo('sendDraftOrderInvoice')).toHaveLength(0);
-      const o = await repo().findOneByOrFail({ shopifyOrderId: '-1' });
-      expect((o.customerInfo as any).facture).toMatchObject({ statut: 'echec', draftOrderId: '999001' });
-
-      // Réessai : le MÊME brouillon est réutilisé.
-      ecart = 0;
-      expect((await facture(cookie, 'facture')).body.ok).toBe(true);
-      expect(h.shopify.callsTo('createDraftOrder')).toHaveLength(1);
-    });
-
-    it('échec Shopify : 502, commande marquée « facture non envoyée »', async () => {
-      const cookie = await connexion();
-      await post('/api/admin/orders/manuelles', cookie, saisie());
-      h.shopify.failNext.set('sendDraftOrderInvoice', new Error('Erreur Shopify (422)'));
-      const r = await facture(cookie, 'facture');
-      expect(r.status).toBe(502);
-      const o = await repo().findOneByOrFail({ shopifyOrderId: '-1' });
-      expect((o.customerInfo as any).facture.statut).toBe('echec');
-    });
+  it('ne crée rien sur Shopify : pas de brouillon, pas d’e-mail, pas de route /facture', async () => {
+    const cookie = await connexion();
+    const r = await post('/api/admin/orders/manuelles', cookie, saisie({ client: { nom: 'Sans e-mail' } }));
+    expect(r.body.ok).toBe(true);
+    const o = await repo().findOneByOrFail({ shopifyOrderId: r.body.id });
+    expect(o.financialStatus).toBe('paid');
+    expect(o.customerEmail).toBeNull();
+    expect(h.shopify.calls).toHaveLength(0);
+    expect((await post('/api/admin/orders/' + r.body.id + '/facture', cookie, {})).status).toBe(404);
   });
 
+  /* Filet : un ANCIEN brouillon de commande manuelle payé (avant le passage au
+     mode « dashboard seulement ») reste correctement rattaché. */
   it('au paiement, la commande Shopify remplace la commande manuelle (fichiers, note, suivi)', async () => {
     const cookie = await connexion();
     await post('/api/admin/orders/manuelles', cookie, saisie());

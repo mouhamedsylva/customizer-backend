@@ -21,7 +21,7 @@ import type { PricingPayload } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
 import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
-import { ARTICLES_SANS_PRIX_CATALOGUE, ARTICLES_TEXTILES, CATALOGUE_MANUEL, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle, factureDe } from './commandes-manuelles';
+import { ARTICLES_TEXTILES, CATALOGUE_MANUEL, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle } from './commandes-manuelles';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -2596,14 +2596,7 @@ export function loginPage(
 function shipPill(o: Order): string {
   // Commande manuelle : absente de Shopify, aucun statut Shopify à montrer.
   if (estCommandeManuelle(o.shopifyOrderId)) {
-    /* Commande manuelle : on montre où en est sa facture Shopify. Payée, elle
-       est remplacée par la commande Shopify dès son import. */
-    const f = factureDe(o);
-    const quand = f?.le ? fdate(new Date(f.le)) : '';
-    if (f?.statut === 'envoyee') return `<span class="pill warn" title="Brouillon Shopify ${esc(f.draftOrderId || '')}">Facture envoyée${quand ? ` le ${esc(quand)}` : ''}</span>`;
-    if (f?.statut === 'payee') return `<span class="pill ok">Validée dans Shopify</span>`;
-    if (f?.statut === 'echec') return `<span class="pill danger" title="${esc(f.erreur || '')}">Facture non envoyée</span>`;
-    return `<span class="pill manuelle">Hors Shopify</span>`;
+    return `<span class="pill manuelle" title="Commande saisie à la main, déjà payée, absente de Shopify">Hors Shopify</span>`;
   }
   const prod = o.productionStatus || 'to_produce';
   const map: Record<string, [string, string]> = {
@@ -3157,22 +3150,6 @@ function lienFichierJoint(orderId: string, f: FichierJoint): string {
   return `/api/admin/orders/${encodeURIComponent(orderId)}/fichiers/${encodeURIComponent(f.id)}`;
 }
 
-/**
- * Grille de prix de chaque article du formulaire de commande manuelle, pour
- * préremplir son prix unitaire (palier selon la quantité). null = pas de prix
- * catalogue (coins : sur devis) — l'admin le saisit.
- */
-function grillesArticlesManuels(pricing: PricingPayload | undefined): Record<string, ReturnType<typeof grilleDe> | null> {
-  const r: Record<string, ReturnType<typeof grilleDe> | null> = {};
-  for (const famille of CATALOGUE_MANUEL) {
-    for (const a of famille.articles) {
-      const cle = ARTICLES_SANS_PRIX_CATALOGUE.includes(a) ? null : cleCatalogue(a);
-      r[a] = cle && pricing ? grilleDe(cle, pricing) : null;
-    }
-  }
-  return r;
-}
-
 /** « ajouté par x le 15/10/2026 à 14:02 ». */
 function mentionAjout(f: FichierJoint): string {
   const d = new Date(f.ajouteLe);
@@ -3328,18 +3305,6 @@ function orderCard(o: Order, srcQuote?: Quote): string {
         <a class="btn" href="/api/admin/orders/${id}/assets.zip">
           ↓ Tous les fichiers (ZIP)
         </a>
-        ${
-          manuelle
-            ? (() => {
-                /* Pas encore de facture Shopify (ou échec) : on peut la (re)lancer,
-                   dans les deux modes : e-mail de paiement, ou déjà payée. */
-                const f = factureDe(o);
-                if (f && f.statut !== 'echec') return '';
-                return `<button type="button" class="btn js-facturer-manuelle" data-order="${id}" data-mode="facture"${o.customerEmail ? '' : ' disabled title="E-mail du client manquant"'}>✉ Envoyer la facture</button>
-                  <button type="button" class="btn js-facturer-manuelle" data-order="${id}" data-mode="payee">✓ Déjà payée : valider dans Shopify</button>`;
-              })()
-            : ''
-        }
       </div>
     </div>
   </div>`;
@@ -5229,8 +5194,8 @@ export function dashboardPage(
     <form class="modal-box mn-box" autocomplete="off" onsubmit="return false" aria-labelledby="mn-titre">
       <div class="mn-tete">
         <h3 id="mn-titre">Nouvelle commande</h3>
-        <p class="sub">Commande reçue par e-mail, téléphone ou bon de commande. Elle est <strong>créée dans Shopify</strong> :
-          le client reçoit sa facture par e-mail, avec le lien de paiement.</p>
+        <p class="sub">Commande <strong>déjà payée</strong> (virement, chèque, bon de commande…), reçue par e-mail ou par téléphone.
+          Elle est enregistrée dans ce tableau de bord uniquement : <strong>rien n'est créé sur Shopify</strong> et aucun e-mail n'est envoyé au client.</p>
         <div class="mn-etapes" role="tablist">
           <button type="button" class="mn-etape on" id="mn-etape-1" role="tab" onclick="mnCliquerEtape(1)">
             <span class="num">1</span><span>Client<small>Coordonnées, livraison</small></span>
@@ -5251,11 +5216,11 @@ export function dashboardPage(
           <section class="mn-carte">
             <div class="mn-carte-titre">
               <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
-              <span><b>Client</b><small>Nom et e-mail obligatoires : la facture est envoyée à cette adresse</small></span>
+              <span><b>Client</b><small>Le nom est obligatoire</small></span>
             </div>
             <div class="mn-grille">
               <div class="mn-champ"><label for="mn-nom">Nom du contact <span class="req" aria-hidden="true">*</span></label><input id="mn-nom" aria-required="true" class="mn-input" maxlength="120" placeholder="Ex. Julien Lucas"></div>
-              <div class="mn-champ"><label for="mn-email">E-mail <span class="req" id="mn-email-req" aria-hidden="true">*</span> <span class="opt" id="mn-email-aide">(la facture y est envoyée)</span></label><input id="mn-email" aria-required="true" type="email" class="mn-input" maxlength="200" placeholder="nom@exemple.fr"></div>
+              <div class="mn-champ"><label for="mn-email">E-mail <span class="opt">(facultatif)</span></label><input id="mn-email" type="email" class="mn-input" maxlength="200" placeholder="nom@exemple.fr"></div>
               <div class="mn-champ"><label for="mn-tel">Téléphone <span class="opt">(facultatif)</span></label><input id="mn-tel" type="tel" class="mn-input" maxlength="40" placeholder="06 12 34 56 78"></div>
             </div>
           </section>
@@ -5287,9 +5252,6 @@ export function dashboardPage(
             <!-- Catalogue FERMÉ (commandes-manuelles.ts) : lu par le JS, qui
                  construit le menu de chaque article. -->
             <div id="mn-articles" data-catalogue="${esc(JSON.stringify(CATALOGUE_MANUEL))}"
-                 data-grilles="${esc(JSON.stringify(grillesArticlesManuels(extra.pricing)))}"
-                 data-tva="${TVA_TAUX_DEFAUT}"
-                 data-manche="${Number(extra.pricing?.prices?.manche) > 0 ? Number(extra.pricing?.prices?.manche) : 0}"
                  data-textiles="${esc(JSON.stringify(ARTICLES_TEXTILES))}"></div>
             <button type="button" class="btn mn-ajout" onclick="ajouterArticleManuel()">+ Ajouter un article</button>
           </section>
@@ -5319,33 +5281,26 @@ export function dashboardPage(
         <!-- ── Étape 3 : paiement ── -->
         <div class="mn-page" id="mn-page-3" hidden>
           <p class="mn-legende"><span class="req">*</span> Champ obligatoire</p>
-          <!-- Articles choisis à l'étape 2, en lignes de facture (rempli par le
-               DOM, mnLignesFacture). Prix manquant (patch PVC ou tissé, coin) :
-               saisi ici en HT, TVA et montant calculés aussitôt, comme dans la
-               fenêtre de chiffrage des devis. -->
+          <!-- Articles choisis à l'étape 2 (rempli par le DOM, mnLignesFacture) :
+               quantités modifiables, manches des textiles. Aucun prix. -->
           <section class="mn-carte">
             <div class="mn-carte-titre">
               <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg></span>
-              <span><b>Articles commandés</b><small>Vérifiez chaque ligne ; saisissez le prix unitaire HT des articles sans prix catalogue</small></span>
+              <span><b>Articles commandés</b><small>Vérifiez les articles, leurs quantités et les manches des textiles</small></span>
             </div>
             <div id="mn-lignes"></div>
-            <input type="hidden" id="mn-total">
           </section>
 
           <section class="mn-carte">
             <div class="mn-carte-titre">
               <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>
-              <span><b>Paiement</b><small>Date de la commande et mode de règlement</small></span>
+              <span><b>Paiement</b><small>Montant encaissé et date de la commande</small></span>
             </div>
             <div class="mn-grille">
               <div class="mn-champ"><label for="mn-date">Date de commande <span class="req" aria-hidden="true">*</span></label><input id="mn-date" type="date" class="mn-input"></div>
-              <!-- Règlement : toujours par facture Shopify envoyée au client
-                   (l'option « Déjà payé » a été retirée du formulaire ; elle
-                   reste sur la carte d'une commande pas encore facturée). -->
+<div class="mn-champ"><label for="mn-total">Montant total TTC (€) <span class="req" aria-hidden="true">*</span></label><input id="mn-total" class="mn-input mono" inputmode="decimal" placeholder="0,00" aria-required="true"></div>
               <div class="mn-champ plein"><label>Règlement</label>
-                <input type="hidden" id="mn-paiement" value="facture">
-                <div class="mn-reglement">✉ La facture est envoyée au client par e-mail</div>
-                <p class="hint" id="mn-paiement-aide" style="margin-top:6px"></p>
+                <div class="mn-reglement">✓ Payée (hors boutique)</div>
               </div>
             </div>
             <div class="mn-champ" id="mn-note-wrap" style="margin-top:12px">
@@ -5680,15 +5635,15 @@ export function dashboardPage(
 
     /* ── Commande manuelle (reçue par e-mail, hors boutique) : trois étapes ──
        1. Client ; 2. Articles & design ; 3. Paiement.
-       Rien n'est enregistré avant le bouton final. Il enchaîne : création de
-       la commande, envoi des fichiers déposés à l'étape 2, puis rattachement à
-       Shopify (route /facture) : e-mail de facture au client, ou validation
-       comme payée. Fermer le formulaire en cours de route ne laisse donc
-       aucune commande à moitié faite. Création seulement : une commande
-       manuelle ne se modifie ni ne se supprime.
+       Commande DÉJÀ PAYÉE, enregistrée dans le dashboard seulement : rien
+       n'est créé sur Shopify, aucun e-mail n'est envoyé. Montant total saisi
+       par l'admin (aucun calcul). Rien n'est enregistré avant le bouton final :
+       création de la commande, puis envoi des fichiers déposés à l'étape 2.
+       Création seulement : une commande manuelle ne se modifie ni ne se
+       supprime.
        Les lignes (articles, fichiers) sont construites par le DOM : jamais
        d'innerHTML avec une valeur saisie. */
-    var mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
+    var mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
     function mnVal(id){ var e=document.getElementById(id); return e?e.value:''; }
     function mnSet(id,v){ var e=document.getElementById(id); if(e) e.value=(v==null?'':String(v)); }
     function mnStatut(msg, err){
@@ -5701,31 +5656,7 @@ export function dashboardPage(
       if(txt!=null) e.textContent=txt;
       return e;
     }
-    function choisirPaiement(v){
-      var mode = v==='payee' ? 'payee' : 'facture';
-      mnSet('mn-paiement', mode);
-      document.querySelectorAll('.mn-bascule button').forEach(function(b){
-        var on=b.getAttribute('data-val')===mode;
-        b.classList.toggle('on', on); b.setAttribute('aria-checked', on?'true':'false');
-      });
-      /* L'e-mail n'est obligatoire que pour envoyer la facture. */
-      var er=document.getElementById('mn-email-req'), ea=document.getElementById('mn-email-aide');
-      if(er) er.hidden = mode==='payee';
-      if(ea) ea.textContent = mode==='payee' ? '(facultatif : déjà payé)' : '(la facture y est envoyée)';
-      var ei=document.getElementById('mn-email'); if(ei) ei.setAttribute('aria-required', mode==='payee'?'false':'true');
-      var aide=document.getElementById('mn-paiement-aide');
-      if(aide) aide.textContent = mode==='payee'
-        ? 'Paiement déjà reçu (virement, chèque…) : la commande est créée dans Shopify comme payée, sans e-mail de facture.'
-        : 'Le client reçoit un e-mail de Shopify avec le lien de paiement. Une fois payée, la commande Shopify remplace celle-ci dans le tableau de bord.';
-      if(mnCtx.etape===3){
-        mnRecap();
-        if(!mnCtx.envoi) document.getElementById('mn-go').textContent=mnLibelleFinal();
-      }
-    }
-    function mnLibelleFinal(){
-      if(mnCtx.id) return 'Réessayer';
-      return mnVal('mn-paiement')==='payee' ? 'Créer la commande payée' : 'Créer et envoyer la facture';
-    }
+    function mnLibelleFinal(){ return mnCtx.id ? 'Réessayer' : 'Créer la commande'; }
     function mnNumeroterArticles(){
       document.querySelectorAll('#mn-articles .mn-article').forEach(function(b,i){
         var n=b.querySelector('.num-art'); if(n) n.textContent=String(i+1);
@@ -5744,69 +5675,15 @@ export function dashboardPage(
     /* Appelé par ddPick après un choix (data-onpick). */
     function mnArticleChoisi(dd){
       dd.classList.remove('erreur'); mnStatut('');
-      /* Nouvel article : on repart de SON prix catalogue. */
+      /* Nouvel article : ses manches (textiles seulement) repartent de zéro. */
       var b=dd.closest('.mn-article');
-      if(b){ var p=b.querySelector('.mn-prix'); if(p) p.dataset.manuel=''; b.dataset.ht=''; b.dataset.manches=''; mnMajPrix(b); mnMajTotal(); }
+      if(b) b.dataset.manches='';
     }
-    /* ── Prix unitaire, prérempli depuis la grille de prix du dashboard ── */
-    function mnGrilles(){
-      try{ return JSON.parse(document.getElementById('mn-articles').getAttribute('data-grilles')||'{}'); }
-      catch(e){ return {}; }
-    }
-    function mnFmt(n){ return n.toFixed(2).replace('.',','); }
     function mnNombre(v){
       var n=Number(String(v||'').replace(/ /g,'').replace(',','.'));
       return isFinite(n) ? n : NaN;
     }
-    /* Prix catalogue TTC pour l'article et la quantité du bloc (palier
-       dégressif, TVA ajoutée aux patchs saisis HT), ou null. Un prix saisi à la
-       main n'est jamais écrasé. */
-    function mnMajPrix(bloc){
-      var prix=bloc.querySelector('.mn-prix'), aide=bloc.querySelector('.mn-prix-aide');
-      if(!prix || !aide) return;
-      var titre=mnTitre(bloc), q=parseInt(bloc.querySelector('.mn-qte').value,10)||0;
-      aide.textContent='';
-      if(!titre) return;
-      var g=mnGrilles()[titre];
-      var tva=Number(document.getElementById('mn-articles').getAttribute('data-tva'))||0.2;
-      var p = g && q>=1 ? palierDepuisGrille(q, g) : null;
-      var ttc = p===null ? null : (g.enHt ? Math.round(p*(1+tva)*100)/100 : p);
-      var pw=prix.closest('.mn-prix-wrap');
-      /* Pas de prix catalogue (patch PVC ou tissé, coin, patchs au-delà de
-         100) : pas de case ici, le prix unitaire HT se saisit à l'étape 3,
-         dans les lignes de facture. */
-      if(ttc===null){
-        bloc.dataset.sansPrix='1';
-        if(pw) pw.hidden=true;
-        prix.value=''; prix.dataset.manuel=''; prix.classList.remove('auto');
-        aide.textContent = (!g || g.surDevis)
-          ? "Pas de prix catalogue : son prix unitaire HT se saisit à l'étape 3 (Paiement)."
-          : "Prix sur demande à cette quantité : il se saisit à l'étape 3 (Paiement).";
-        return;
-      }
-      bloc.dataset.sansPrix='';
-      if(pw) pw.hidden=false;
-      if(prix.dataset.manuel==='1'){
-        prix.classList.remove('auto');
-        aide.textContent = ttc!==null ? 'Prix saisi à la main (catalogue : '+mnFmt(ttc)+' € TTC).' : 'Prix saisi à la main.';
-        return;
-      }
-      prix.value=mnFmt(ttc); prix.classList.add('auto');
-      aide.textContent='Prix catalogue'+(g.enHt ? ' : '+mnFmt(p)+' € HT + TVA' : '')
-        +((g.tiers&&g.tiers.length) ? ', selon la quantité' : '')+'. Modifiable.';
-    }
-    function mnTva(){ return Number(document.getElementById('mn-articles').getAttribute('data-tva'))||0.2; }
-    /* Prix unitaire TTC d'un bloc : sa case (étape 2), ou le prix HT saisi
-       dans les lignes de facture (étape 3) + TVA. NaN s'il manque. */
-    function mnPrixBaseTtc(b){
-      if(b.dataset.sansPrix==='1'){
-        var ht=mnNombre(b.dataset.ht);
-        return ht>0 ? Math.round(ht*(1+mnTva())*100)/100 : NaN;
-      }
-      return mnNombre(b.querySelector('.mn-prix').value);
-    }
-    /* ── Manches personnalisées (textiles) : supplément « manche » des tarifs ── */
-    function mnPrixManche(){ return Number(document.getElementById('mn-articles').getAttribute('data-manche'))||0; }
+    /* ── Manches personnalisées (textiles) : information pour l'atelier ── */
     function mnEstTextile(titre){
       try{ return JSON.parse(document.getElementById('mn-articles').getAttribute('data-textiles')||'[]').indexOf(titre)!==-1; }
       catch(e){ return false; }
@@ -5815,37 +5692,19 @@ export function dashboardPage(
       if(!mnEstTextile(mnTitre(b))) return [];
       return String(b.dataset.manches||'').split(',').filter(function(m){ return m==='droite' || m==='gauche'; });
     }
-    /* Prix unitaire TTC complet : base + une personnalisation par manche cochée. */
-    function mnPrixTtc(b){
-      var base=mnPrixBaseTtc(b);
-      if(!(base>0)) return NaN;
-      return Math.round((base + mnManches(b).length*mnPrixManche())*100)/100;
-    }
-    /* Total TTC = somme des lignes, en centimes entiers (comme le serveur). */
-    function mnMajTotal(){
-      var cts=0, complet=true;
-      mnBlocsEnvoyes().forEach(function(b){
-        var pu=mnPrixTtc(b), q=parseInt(b.querySelector('.mn-qte').value,10)||0;
-        if(!(pu>0) || !(q>=1)){ complet=false; return; }
-        cts+=Math.round(pu*100)*q;
-      });
-      mnSet('mn-total', complet && cts>0 ? mnFmt(cts/100) : '');
-      return complet ? cts/100 : 0;
-    }
-    /* ── Étape 3 : lignes de facture ──
-       Une ligne par article de l'étape 2 : quantité, prix unitaire HT et TTC,
-       montant. Un article sans prix catalogue reçoit ici une case « PU HT » :
-       TVA et montants se recalculent à la frappe, comme dans la fenêtre de
-       chiffrage des devis. Totaux HT / TVA / TTC en pied. */
+    /* ── Étape 3 : articles commandés ──
+       Une ligne par article de l'étape 2 : quantité modifiable (même champ
+       que l'étape 2) et, pour un textile, les manches personnalisées. Aucun
+       prix : le montant total est saisi plus bas. */
     function mnLignesFacture(){
       var zone=document.getElementById('mn-lignes'); zone.textContent='';
-      var blocs=mnBlocsEnvoyes(), tva=mnTva();
+      var blocs=mnBlocsEnvoyes();
       if(!blocs.length){ zone.appendChild(mnEl('p','hint',"Aucun article : revenez à l'étape 2.")); return; }
-      var wrap=mnEl('div','mn-table-wrap'), t=mnEl('table','mn-table');
+      var wrap=mnEl('div','mn-table-wrap'), t=mnEl('table','mn-table mn-table-simple');
       var th=mnEl('thead'), tr=mnEl('tr');
-      ['Article','Qté','PU HT','PU TTC','Montant TTC'].forEach(function(h){ tr.appendChild(mnEl('th',null,h)); });
+      ['Article','Qté'].forEach(function(h){ tr.appendChild(mnEl('th',null,h)); });
       th.appendChild(tr); t.appendChild(th);
-      var tb=mnEl('tbody'), cellules=[];
+      var tb=mnEl('tbody');
       blocs.forEach(function(b, k){
         var row=mnEl('tr');
         var c1=mnEl('td');
@@ -5853,9 +5712,8 @@ export function dashboardPage(
         var det=b.querySelector('textarea').value.split(String.fromCharCode(10))
           .map(function(x){ return x.trim(); }).filter(Boolean).join(' · ');
         if(det) c1.appendChild(mnEl('small',null,det));
-        /* Textile : manches personnalisées, chacune ajoute son supplément. */
         if(mnEstTextile(mnTitre(b))){
-          var mz=mnEl('div','mn-manches'), pm=mnPrixManche();
+          var mz=mnEl('div','mn-manches');
           ['droite','gauche'].forEach(function(cote){
             var lab=mnEl('label'), cb=document.createElement('input');
             cb.type='checkbox'; cb.checked=mnManches(b).indexOf(cote)!==-1;
@@ -5863,19 +5721,15 @@ export function dashboardPage(
               var ms=mnManches(b).filter(function(m){ return m!==cote; });
               if(cb.checked) ms.push(cote);
               b.dataset.manches=ms.join(',');
-              maj();
             });
             lab.appendChild(cb);
-            lab.appendChild(document.createTextNode('Manche '+cote+' '));
-            lab.appendChild(mnEl('span','px', pm>0 ? '(+'+mnFmt(pm)+' €)' : ''));
+            lab.appendChild(document.createTextNode('Manche '+cote));
             mz.appendChild(lab);
           });
           c1.appendChild(mz);
         }
-        /* Quantité modifiable ici aussi : elle met à jour l'article de l'étape 2
-           (même champ), donc le palier de prix catalogue. */
         var qteArt=b.querySelector('.mn-qte');
-        var c2=mnEl('td'), c3=mnEl('td','mono'), c4=mnEl('td','mono'), c5=mnEl('td','mono');
+        var c2=mnEl('td');
         var qIn=mnEl('input','mn-input mono mn-q');
         qIn.type='number'; qIn.min='1'; qIn.step='1';
         qIn.value=qteArt.value;
@@ -5883,69 +5737,15 @@ export function dashboardPage(
         qIn.setAttribute('aria-label','Quantité de '+(mnTitre(b)||"l'article"));
         qIn.addEventListener('input', function(){
           var v=parseInt(qIn.value,10);
-          if(!(v>=1 && v<=1000000)){ qIn.classList.add('erreur'); return; }   // saisie en cours
+          if(!(v>=1 && v<=1000000)){ qIn.classList.add('erreur'); return; }
           qIn.classList.remove('erreur');
           qteArt.value=String(v);
-          var avant=b.dataset.sansPrix;
-          mnMajPrix(b);
-          /* Le palier a fait apparaître (ou disparaître) le prix catalogue :
-             la ligne change de forme, on redessine le tableau. */
-          if(b.dataset.sansPrix!==avant){
-            mnLignesFacture();
-            var re=document.querySelector('#mn-lignes .mn-q[data-ligne="'+k+'"]');
-            if(re){ re.focus(); try{ re.setSelectionRange(re.value.length, re.value.length); }catch(e){} }
-            return;
-          }
-          maj();
         });
         c2.appendChild(qIn);
-        if(b.dataset.sansPrix==='1'){
-          var inp=mnEl('input','mn-input mono mn-ht');
-          inp.inputMode='decimal'; inp.placeholder='0,00';
-          inp.setAttribute('data-ligne', String(k));
-          inp.setAttribute('aria-label','Prix unitaire HT de '+(mnTitre(b)||"l'article"));
-          if(b.dataset.ht) inp.value=String(b.dataset.ht).replace('.',',');
-          inp.classList.toggle('a-saisir', !(mnNombre(inp.value)>0));
-          inp.addEventListener('input', function(){
-            var v=mnNombre(inp.value);
-            b.dataset.ht = v>0 ? String(v) : '';
-            inp.classList.remove('erreur');
-            inp.classList.toggle('a-saisir', !(v>0));
-            maj();
-          });
-          c3.appendChild(inp);
-          c1.appendChild(mnEl('span','badge-saisie','Prix HT à saisir'));
-        }
-        row.appendChild(c1); row.appendChild(c2); row.appendChild(c3); row.appendChild(c4); row.appendChild(c5);
+        row.appendChild(c1); row.appendChild(c2);
         tb.appendChild(row);
-        cellules.push({b:b, qIn:qIn, c3:c3, c4:c4, c5:c5});
       });
-      t.appendChild(tb);
-      var tf=mnEl('tfoot');
-      function ligneTotal(lib, cls){
-        var r=mnEl('tr',cls||''), l=mnEl('td',null,lib), v=mnEl('td','mono');
-        l.colSpan=4; r.appendChild(l); r.appendChild(v); tf.appendChild(r);
-        return v;
-      }
-      var vHt=ligneTotal('Total HT'), vTva=ligneTotal('TVA ('+Math.round(tva*100)+' %)'), vTtc=ligneTotal('Total TTC','mn-ttc');
-      t.appendChild(tf); wrap.appendChild(t); zone.appendChild(wrap);
-      function maj(){
-        var cts=0, complet=true;
-        cellules.forEach(function(c){
-          c.q=parseInt(c.qIn.value,10)||0;
-          var ttc=mnPrixTtc(c.b);
-          if(c.b.dataset.sansPrix!=='1') c.c3.textContent = ttc>0 ? mnFmt(Math.round(ttc/(1+tva)*100)/100)+' €' : '—';
-          c.c4.textContent = ttc>0 ? mnFmt(ttc)+' €' : '—';
-          c.c5.textContent = ttc>0 ? mnFmt(Math.round(ttc*100)*c.q/100)+' €' : '—';
-          if(ttc>0) cts+=Math.round(ttc*100)*c.q; else complet=false;
-        });
-        var ttcTot=cts/100, ht=Math.round(ttcTot/(1+tva)*100)/100;
-        vTtc.textContent = complet ? mnFmt(ttcTot)+' €' : '—';
-        vHt.textContent = complet ? mnFmt(ht)+' €' : '—';
-        vTva.textContent = complet ? mnFmt(Math.round((ttcTot-ht)*100)/100)+' €' : '—';
-        mnMajTotal();
-      }
-      maj();
+      t.appendChild(tb); wrap.appendChild(t); zone.appendChild(wrap);
     }
     /* Menu de choix de l'article : même composant .dd que les filtres
        (ddToggle / ddPick), construit par le DOM, groupé par famille. */
@@ -5999,23 +5799,7 @@ export function dashboardPage(
         if(!document.querySelector('#mn-articles .mn-article')) ajouterArticleManuel();
         mnNumeroterArticles();
       });
-      /* Prix unitaire TTC, entre l'article et la quantité. */
-      var pw=mnEl('div','mn-prix-wrap');
-      var pl=mnEl('span',null,'PU TTC'); var prr=mnEl('span','req','*'); prr.setAttribute('aria-hidden','true'); pl.appendChild(prr);
-      var prix=mnEl('input','mn-input mono mn-prix');
-      prix.inputMode='decimal'; prix.placeholder='0,00';
-      prix.setAttribute('aria-label','Prix unitaire TTC (€)'); prix.setAttribute('aria-required','true');
-      if(a.prix){ prix.value=String(a.prix).replace('.',','); prix.dataset.manuel='1'; }
-      pw.appendChild(pl); pw.appendChild(prix);
-      var aidePrix=mnEl('div','mn-prix-aide');
-      prix.addEventListener('input', function(){
-        prix.dataset.manuel = prix.value.trim() ? '1' : '';
-        prix.classList.remove('auto');
-        if(!prix.value.trim()) mnMajPrix(bloc);   // champ vidé : retour au catalogue
-        mnMajTotal();
-      });
-      qte.addEventListener('input', function(){ mnMajPrix(bloc); mnMajTotal(); });
-      haut.appendChild(num); haut.appendChild(tw); haut.appendChild(pw); haut.appendChild(qw); haut.appendChild(x);
+      haut.appendChild(num); haut.appendChild(tw); haut.appendChild(qw); haut.appendChild(x);
       var det=mnEl('textarea','mn-input');
       det.maxLength=3000; det.rows=2;
       det.placeholder='Détails, un par ligne : Taille : 8 cm / Format : Rond / Finition : PVC…';
@@ -6044,7 +5828,7 @@ export function dashboardPage(
       dz.addEventListener('drop', function(e){
         if(e.dataTransfer && e.dataTransfer.files) mnAjouterDesigns(bloc, dl, e.dataTransfer.files);
       });
-      bloc.appendChild(haut); bloc.appendChild(aidePrix); bloc.appendChild(det); bloc.appendChild(dz); bloc.appendChild(dl);
+      bloc.appendChild(haut); bloc.appendChild(det); bloc.appendChild(dz); bloc.appendChild(dl);
       document.getElementById('mn-articles').appendChild(bloc);
       mnNumeroterArticles();
       return bloc;
@@ -6070,7 +5854,7 @@ export function dashboardPage(
       var go=document.getElementById('mn-go'), ret=document.getElementById('mn-retour');
       ret.textContent = n===1 ? 'Annuler' : '← Retour';
       go.textContent = n<3 ? 'Suivant →' : mnLibelleFinal();
-      if(n===3){ mnLignesFacture(); mnMajTotal(); mnRecap(); }
+      if(n===3){ mnLignesFacture(); mnRecap(); }
       document.getElementById('mn-corps').scrollTop=0;
     }
     /* Contrôle de l'étape (le serveur revalide tout) : on montre le champ fautif. */
@@ -6081,9 +5865,6 @@ export function dashboardPage(
         if(!mnVal('mn-nom').trim())
           return faute(document.getElementById('mn-nom'),"Indiquez le nom du client.");
         var em=mnVal('mn-email').trim();
-        /* Facture par e-mail (choix par défaut) : l'adresse est indispensable. */
-        if(!em && mnVal('mn-paiement')!=='payee')
-          return faute(document.getElementById('mn-email'),"Indiquez l'e-mail du client : la facture lui est envoyée.");
         if(em && !/^[^ @]+@[^ @]+[.][^ @]+$/.test(em)) return faute(document.getElementById('mn-email'),'Adresse e-mail invalide.');
       }
       if(n===2){
@@ -6094,8 +5875,6 @@ export function dashboardPage(
           if(!mnTitre(arts[i]) && !d.value.trim()) continue;
           if(!mnTitre(arts[i])) return faute(t,"Choisissez l'article dans la liste.");
           if(!(parseInt(q.value,10)>=1)) return faute(q,'Quantité invalide.');
-          var pe=arts[i].querySelector('.mn-prix');
-          if(arts[i].dataset.sansPrix!=='1' && !(mnNombre(pe.value)>0)) return faute(pe,'Indiquez le prix unitaire de « '+mnTitre(arts[i])+' ».');
           unArticle=true;
         }
         if(!unArticle) return faute(arts[0]&&arts[0].querySelector('.dd'),"Choisissez au moins un article.");
@@ -6110,25 +5889,8 @@ export function dashboardPage(
             mnStatut('Quantité invalide pour « '+mnTitre(envoyes[k])+' ».', true);
             return false;
           }
-          if(!(mnPrixTtc(envoyes[k])>0)){
-            if(envoyes[k].dataset.sansPrix==='1'){
-              mnAller(3);
-              var inpK=document.querySelector('#mn-lignes .mn-ht[data-ligne="'+k+'"]');
-              if(inpK){ inpK.classList.add('erreur'); inpK.focus(); }
-              mnStatut('Indiquez le prix unitaire HT de « '+mnTitre(envoyes[k])+' ».', true);
-            } else {
-              mnAller(2); mnStatut('Indiquez le prix unitaire de « '+mnTitre(envoyes[k])+' ».', true);
-            }
-            return false;
-          }
         }
-        if(!(mnMajTotal()>0)){ mnAller(2); mnStatut('Montant total nul : vérifiez les prix des articles.', true); return false; }
-        if(mnVal('mn-paiement')!=='payee' && !mnVal('mn-email').trim()){
-          mnAller(1);
-          var em1=document.getElementById('mn-email'); em1.classList.add('erreur'); em1.focus();
-          mnStatut("Indiquez l'e-mail du client : la facture lui est envoyée.", true);
-          return false;
-        }
+        if(!(mnNombre(mnVal('mn-total'))>0)) return faute(document.getElementById('mn-total'),'Indiquez le montant total TTC.');
       }
       mnStatut('');
       return true;
@@ -6157,12 +5919,11 @@ export function dashboardPage(
       mnEnregistrer();
     }
     function ouvrirManuelle(){
-      mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
+      mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
       ['mn-nom','mn-email','mn-tel','mn-adr1','mn-cp','mn-ville','mn-total','mn-note']
         .forEach(function(k){ mnSet(k,''); });
       mnSet('mn-pays','France');
       mnSet('mn-date', new Date().toLocaleDateString('sv-SE'));
-      choisirPaiement('facture');
       document.getElementById('mn-articles').textContent='';
       ajouterArticleManuel();
       document.getElementById('mn-fichiers').textContent='';
@@ -6182,14 +5943,14 @@ export function dashboardPage(
       document.getElementById('manuelle-modal').classList.remove('open');
       /* Commande enregistrée (envoi partiel par exemple) : la liste doit la montrer. */
       if(mnCtx.enregistre && mnCtx.id){ mnMontrerCommande(mnCtx.id, ''); return; }
-      mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
+      mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
     }
 
     /* ── Étape 3 : récapitulatif ── */
     function mnRecap(){
       var r=document.getElementById('mn-recap'); r.textContent='';
       var t=mnEl('div','mn-carte-titre');
-      var tt=mnEl('span'); tt.appendChild(mnEl('b',null,'Client & envoi')); tt.appendChild(mnEl('small',null,'Vérifiez avant de créer la commande'));
+      var tt=mnEl('span'); tt.appendChild(mnEl('b',null,'Récapitulatif')); tt.appendChild(mnEl('small',null,'Vérifiez avant de créer la commande'));
       t.appendChild(tt); r.appendChild(t);
       var client=mnVal('mn-nom').trim();
       var lignes=[
@@ -6197,7 +5958,8 @@ export function dashboardPage(
         ['Livraison', [mnVal('mn-adr1').trim(), [mnVal('mn-cp').trim(), mnVal('mn-ville').trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ')||'Aucune adresse'],
         ['Designs', (function(){ var n=mnCtx.file.filter(function(j){ return j.bloc; }).length; return n ? n+' à joindre aux articles' : 'Aucun design'; })()],
         ['Autres fichiers', (function(){ var n=mnCtx.file.filter(function(j){ return !j.bloc; }).length; return n ? n+' à joindre' : 'Aucun'; })()],
-        ['Règlement', mnVal('mn-paiement')==='payee' ? 'Déjà payé : commande Shopify validée comme payée' : 'Facture envoyée par e-mail à '+(mnVal('mn-email').trim()||'—')]
+        ['Montant', (mnVal('mn-total').trim()||'—')+' € TTC'],
+        ['Règlement', 'Déjà payée, hors boutique (aucun e-mail envoyé)']
       ];
       var dl=mnEl('dl','mn-recap-liste');
       lignes.forEach(function(l){ dl.appendChild(mnEl('dt',null,l[0])); dl.appendChild(mnEl('dd',null,l[1])); });
@@ -6230,7 +5992,6 @@ export function dashboardPage(
         articles.push({
           titre: mnTitre(b),
           quantite: parseInt(b.querySelector('.mn-qte').value,10)||0,
-          prix: mnPrixTtc(b),
           manches: mnManches(b),
           details: b.querySelector('textarea').value
         });
@@ -6239,7 +6000,7 @@ export function dashboardPage(
         client:{ nom:mnVal('mn-nom'), email:mnVal('mn-email'), telephone:mnVal('mn-tel') },
         adresse:{ ligne1:mnVal('mn-adr1'), codePostal:mnVal('mn-cp'), ville:mnVal('mn-ville'), pays:mnVal('mn-pays') },
         articles:articles,
-        date:mnVal('mn-date'), total:mnVal('mn-total'), mode:mnVal('mn-paiement'),
+        date:mnVal('mn-date'), total:mnVal('mn-total'),
         note: mnVal('mn-note')
       };
       mnStatut('Création de la commande…');
@@ -6254,29 +6015,13 @@ export function dashboardPage(
           mnStatut(e.message||'Erreur réseau.', true);
         });
     }
-    /* Dernière étape : rattachement à Shopify (facture envoyée, ou payée). */
-    function mnFacturer(echecsFichiers){
+    /* Fin : commande créée, fichiers envoyés → on l'ouvre dans la liste. */
+    function mnTerminer(echecsFichiers){
+      mnCtx.envoi=false;
+      if(!echecsFichiers){ mnMontrerCommande(mnCtx.id, 'Commande '+mnCtx.numero+' créée.'); return; }
       var go=document.getElementById('mn-go');
-      var mode=mnVal('mn-paiement');
-      function fin(){
-        mnCtx.envoi=false;
-        if(!echecsFichiers){
-          mnMontrerCommande(mnCtx.id, mode==='payee'
-            ? 'Commande '+mnCtx.numero+' validée dans Shopify.'
-            : 'Commande '+mnCtx.numero+' créée, facture envoyée à '+mnVal('mn-email').trim()+'.');
-          return;
-        }
-        go.disabled=false; go.textContent='Réessayer';
-        mnStatut('Commande '+mnCtx.numero+' créée'+(mnCtx.facturee?' et rattachée à Shopify':'')+', mais '+echecsFichiers+" fichier(s) n'ont pas pu être joints (voir l'étape 2).", true);
-      }
-      if(mnCtx.facturee){ fin(); return; }
-      mnStatut(mode==='payee' ? 'Validation dans Shopify…' : 'Envoi de la facture au client…');
-      mnRequete('POST', '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/facture', {mode:mode})
-        .then(function(){ mnCtx.facturee=true; fin(); })
-        .catch(function(e){
-          mnCtx.envoi=false; go.disabled=false; go.textContent='Réessayer';
-          mnStatut('Commande '+mnCtx.numero+' créée, mais Shopify a échoué : '+(e.message||'erreur réseau')+' Réessayez ici, ou plus tard depuis la carte de la commande.', true);
-        });
+      go.disabled=false; go.textContent='Réessayer';
+      mnStatut('Commande '+mnCtx.numero+' créée, mais '+echecsFichiers+" fichier(s) n'ont pas pu être joints (voir l'étape 2).", true);
     }
     /* Envoie la file des fichiers, un par un ; les échecs restent dans la file
        (nouvelle tentative au prochain clic). */
@@ -6295,16 +6040,14 @@ export function dashboardPage(
       orderFilter='all'; articleFilter='all';
       var s=document.getElementById('search'); if(s) s.value='';
       memoriserVue('card-'+id);
-      mnCtx={id:null, numero:'', etape:1, enregistre:false, facturee:false, envoi:false, file:[]};
+      mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
       setTimeout(function(){ location.reload(); }, message ? 450 : 0);
     }
     function mnEnvoyerFichiers(i, echecs){
       if(i>=mnCtx.file.length){
         mnCtx.file=mnCtx.file.filter(function(j){ return !j.fait; });
         mnCtx.envoi=false;
-        /* Facture même si un fichier a échoué : les fichiers ne partent pas
-           dans l'e-mail, ils servent à l'atelier. */
-        mnFacturer(echecs);
+        mnTerminer(echecs);
         return;
       }
       var job=mnCtx.file[i];
@@ -6427,24 +6170,6 @@ export function dashboardPage(
         this.querySelectorAll('.mn-cat').forEach(function(x){ x.classList.toggle('on', x===b); });
       });
     })();
-    /* Carte d'une commande manuelle pas encore rattachée (ou après un échec) :
-       « Envoyer la facture » ou « Déjà payée ». */
-    document.addEventListener('click', function(ev){
-      var b=ev.target&&ev.target.closest?ev.target.closest('.js-facturer-manuelle'):null;
-      if(!b || b.disabled) return;
-      var id=b.getAttribute('data-order')||'', mode=b.getAttribute('data-mode')==='payee'?'payee':'facture';
-      if(!window.confirm(mode==='payee'
-        ? 'Valider cette commande dans Shopify comme PAYÉE ? Aucun e-mail de facture ne sera envoyé.'
-        : 'Envoyer au client l’e-mail de facture Shopify, avec le lien de paiement ?')) return;
-      b.disabled=true;
-      mnRequete('POST', '/api/admin/orders/'+encodeURIComponent(id)+'/facture', {mode:mode})
-        .then(function(){
-          toast(mode==='payee' ? 'Commande validée dans Shopify.' : 'Facture envoyée au client.');
-          memoriserVue('card-'+id);
-          setTimeout(function(){ location.reload(); }, 450);
-        })
-        .catch(function(e){ b.disabled=false; showAlert('Shopify', e.message||'Erreur réseau.', 'error'); });
-    });
 
     /* Déconnexion confirmée. Le lien de l'en-tête garde son href : sans JS,
        il déconnecte directement ; avec JS, on demande d'abord confirmation. */
