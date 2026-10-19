@@ -21,7 +21,7 @@ import type { PricingPayload } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
 import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
-import { ARTICLES_TEXTILES, CATALOGUE_MANUEL, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle, formulaireDepuisCommande } from './commandes-manuelles';
+import { ARTICLES_TEXTILES, CATALOGUE_MANUEL, POLICES_MANUELLES, RE_PROPRIETE_COMMANDE_MANUELLE, STYLES_TEXTE, VUES_MANUELLES, estCommandeManuelle, formulaireDepuisCommande } from './commandes-manuelles';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -1423,6 +1423,51 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .mn-pied .btn{flex:none}
 .mn-pied .btn.primary{background:var(--manuel);border-color:var(--manuel);color:#fff}
 .mn-pied .btn.primary:hover{filter:brightness(1.08);color:#fff}
+/* Étape 2 : sections repliables (articles & designs, textes & logos). */
+.mn-pli{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+.mn-pli > summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 18px;user-select:none;
+}
+.mn-pli > summary::-webkit-details-marker{display:none}
+.mn-pli > summary:hover{background:var(--raise)}
+.mn-pli > summary .ico{
+  width:30px;height:30px;border-radius:8px;flex:none;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--manuel-soft);color:var(--manuel);
+}
+.mn-pli-titre{flex:1;min-width:0}
+.mn-pli-titre b{font-size:14px;font-weight:800;display:block}
+.mn-pli-titre small{font-size:11.5px;color:var(--muted)}
+.mn-pli-chevron{color:var(--muted);transition:transform .2s;font-size:14px}
+.mn-pli[open] .mn-pli-chevron{transform:rotate(180deg)}
+.mn-pli-corps{padding:4px 18px 18px;border-top:1px solid var(--line-soft)}
+.mn-sous-titre{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+.mn-oui-non{display:inline-flex;background:var(--raise);border-radius:9px;padding:3px;gap:2px}
+.mn-oui-non button{border:0;background:none;border-radius:7px;padding:8px 22px;font:inherit;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+.mn-oui-non button.on{background:var(--surface);color:var(--manuel);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.mn-texte{border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;background:var(--paper)}
+.mn-texte-haut{display:flex;gap:8px;align-items:center}
+.mn-texte-haut .mn-t-texte{flex:1;min-width:0}
+.mn-texte-haut .mn-t-art{width:auto;max-width:220px}
+.mn-texte-bas{display:grid;grid-template-columns:1fr 1.4fr 1fr 110px;gap:8px;margin-top:10px}
+.modal-box .mn-t-champ{display:flex;flex-direction:column;gap:4px;margin:0}
+.mn-t-champ > span{font-size:11.5px;font-weight:600;color:var(--muted)}
+.mn-t-unite{display:flex;align-items:center;gap:6px}
+.mn-t-unite span{font-size:12px;color:var(--muted)}
+.mn-logo-choix{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.mn-logo-choix .mn-t-champ{min-width:180px}
+@media (max-width:640px){ .mn-texte-bas{grid-template-columns:1fr 1fr} }
+/* Confirmation de suppression : au-dessus du formulaire (z-index 110). */
+.modal.mn-suppr-modal{z-index:120}
+.mn-suppr-modal .modal-box{text-align:center;animation:mnSupprIn .2s ease-out}
+.mn-suppr-modal h3{margin-top:4px}
+.mn-suppr-ico{
+  width:56px;height:56px;margin:2px auto 12px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--danger-soft);color:var(--danger);
+}
+.mn-suppr-modal #mn-suppr-statut:empty{display:none}
+@keyframes mnSupprIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){ .mn-suppr-modal .modal-box{animation:none} }
 .mn-suppr{color:var(--danger);border-color:var(--danger-soft)}
 .mn-suppr:hover{background:var(--danger-soft);color:var(--danger);border-color:var(--danger)}
 /* [hidden] perd contre .btn{display:inline-flex} : on le rétablit. */
@@ -5249,38 +5294,62 @@ export function dashboardPage(
         <!-- ── Étape 2 : articles & design ── -->
         <div class="mn-page" id="mn-page-2" hidden>
           <p class="mn-legende"><span class="req">*</span> Champ obligatoire</p>
-          <section class="mn-carte">
-            <div class="mn-carte-titre">
-              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>
-              <span><b>Articles</b><small>Choisissez l'article, sa quantité, ses détails, puis déposez son design</small></span>
-            </div>
-            <!-- Catalogue FERMÉ (commandes-manuelles.ts) : lu par le JS, qui
-                 construit le menu de chaque article. -->
-            <div id="mn-articles" data-catalogue="${esc(JSON.stringify(CATALOGUE_MANUEL))}"
-                 data-textiles="${esc(JSON.stringify(ARTICLES_TEXTILES))}"></div>
-            <button type="button" class="btn mn-ajout" onclick="ajouterArticleManuel()">+ Ajouter un article</button>
-          </section>
 
-          <section class="mn-carte">
-            <div class="mn-carte-titre">
-              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
-              <span><b>Autres fichiers <span class="opt">(facultatif)</span></b><small>BAT, logos, consignes… Choisissez le type, puis déposez les fichiers : ils seront joints à la commande</small></span>
+          <!-- Section repliable 1 : articles, quantités, détails, designs. -->
+          <details class="mn-pli" id="mn-pli-articles" open>
+            <summary>
+              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>
+              <span class="mn-pli-titre"><b>Articles &amp; designs</b><small>Article, quantité, détails et design de chaque article</small></span>
+              <span class="mn-pli-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="mn-pli-corps">
+              <!-- Catalogue FERMÉ (commandes-manuelles.ts) : lu par le JS, qui
+                   construit le menu de chaque article. -->
+              <div id="mn-articles" data-catalogue="${esc(JSON.stringify(CATALOGUE_MANUEL))}"
+                   data-textiles="${esc(JSON.stringify(ARTICLES_TEXTILES))}"></div>
+              <button type="button" class="btn mn-ajout" onclick="ajouterArticleManuel()">+ Ajouter un article</button>
             </div>
-            <div class="mn-categories" id="mn-categories" role="radiogroup" aria-label="Type de fichier">
-              <button type="button" class="mn-cat on" data-cat="BAT">BAT</button>
-              <button type="button" class="mn-cat" data-cat="Logo">Logo</button>
-              <button type="button" class="mn-cat" data-cat="Asset">Asset</button>
-              <button type="button" class="mn-cat" data-cat="Consignes">Consignes</button>
-              <button type="button" class="mn-cat" data-cat="">Autre</button>
+          </details>
+
+          <!-- Section repliable 2 : textes à marquer (si oui) et logos. -->
+          <details class="mn-pli" id="mn-pli-tl">
+            <summary>
+              <span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></span>
+              <span class="mn-pli-titre"><b>Textes &amp; logos</b><small>Facultatif : recopiez les textes présents sur les designs, et joignez les logos</small></span>
+              <span class="mn-pli-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="mn-pli-corps">
+              <div class="mn-sous-titre">Textes</div>
+              <div class="mn-champ">
+                <label>Y a-t-il des textes sur les designs ?</label>
+                <div class="mn-oui-non" id="mn-textes-oui-non" role="radiogroup" aria-label="Textes à marquer">
+                  <button type="button" data-v="non" class="on" aria-checked="true">Non</button>
+                  <button type="button" data-v="oui" aria-checked="false">Oui</button>
+                </div>
+              </div>
+              <div id="mn-textes-zone" hidden>
+                <div id="mn-textes"
+                     data-vues="${esc(JSON.stringify(VUES_MANUELLES))}"
+                     data-polices="${esc(JSON.stringify(POLICES_MANUELLES))}"
+                     data-styles="${esc(JSON.stringify(STYLES_TEXTE))}"></div>
+                <button type="button" class="btn mn-ajout" id="mn-ajout-texte">+ Ajouter un texte</button>
+              </div>
+
+              <div class="mn-sous-titre">Logos <span class="opt">(facultatif)</span></div>
+              <div class="mn-logo-choix">
+                <label class="mn-t-champ"><span>Emplacement du logo</span>
+                  <select id="mn-logo-vue" class="mn-input">${VUES_MANUELLES.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
+                </label>
+                <label class="mn-t-champ" id="mn-logo-art"><span>Article</span></label>
+              </div>
+              <label class="mn-design" id="mn-logo-depot">
+                <span class="ico">🏷</span>
+                <span><b>Logo</b>Glissez le fichier ici, ou cliquez pour le choisir · PNG, JPG, PDF… 10 Mo max</span>
+                <input type="file" id="mn-logo-file" multiple hidden accept=".png,.jpg,.jpeg,.webp,.gif,.pdf">
+              </label>
+              <div class="mn-design-liste" id="mn-logos"></div>
             </div>
-            <label class="mn-depot" id="mn-depot">
-              <span class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg></span>
-              <b>Glissez les fichiers ici, ou cliquez pour les choisir</b>
-              <small>PDF, PNG, JPG, WEBP, GIF, Word, Excel, TXT · 10 Mo maximum par fichier</small>
-              <input type="file" id="mn-file" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx,.txt">
-            </label>
-            <div class="mn-fichiers" id="mn-fichiers"></div>
-          </section>
+          </details>
         </div>
 
         <!-- ── Étape 3 : paiement ── -->
@@ -5339,6 +5408,25 @@ export function dashboardPage(
       <div class="modal-actions">
         <button class="btn" id="logout-cancel" onclick="closeLogout()">Annuler</button>
         <a class="btn danger" href="/api/admin/logout">Se déconnecter</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation de suppression d'une commande manuelle : au-dessus du
+       formulaire de modification (z-index plus élevé). -->
+  <div class="modal mn-suppr-modal" id="mn-suppr-modal" onclick="if(event.target===this)fermerSuppressionManuelle()">
+    <div class="modal-box" style="max-width:440px" role="alertdialog" aria-modal="true" aria-labelledby="mn-suppr-titre" aria-describedby="mn-suppr-texte">
+      <div class="mn-suppr-ico" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+      </div>
+      <h3 id="mn-suppr-titre">Supprimer la commande ?</h3>
+      <p class="sub" id="mn-suppr-texte">
+        Cette action est <strong>définitive</strong> : la commande, ses designs et ses fichiers joints seront supprimés.
+      </p>
+      <p class="hint" id="mn-suppr-statut" role="status"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="mn-suppr-annuler" onclick="fermerSuppressionManuelle()">Annuler</button>
+        <button type="button" class="btn danger" id="mn-suppr-go" onclick="confirmerSuppressionManuelle()">Supprimer définitivement</button>
       </div>
     </div>
   </div>
@@ -5651,7 +5739,7 @@ export function dashboardPage(
        « Supprimer » efface la commande.
        Les lignes (articles, fichiers) sont construites par le DOM : jamais
        d'innerHTML avec une valeur saisie. */
-    var mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
+    var mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[], textesOui:false, logosGardes:[], logoCible:null};
     function mnVal(id){ var e=document.getElementById(id); return e?e.value:''; }
     function mnSet(id,v){ var e=document.getElementById(id); if(e) e.value=(v==null?'':String(v)); }
     function mnStatut(msg, err){
@@ -5888,6 +5976,7 @@ export function dashboardPage(
       var go=document.getElementById('mn-go'), ret=document.getElementById('mn-retour');
       ret.textContent = n===1 ? 'Annuler' : '← Retour';
       go.textContent = n<3 ? 'Suivant →' : mnLibelleFinal();
+      if(n===2) mnMajArticlesTL();
       document.getElementById('mn-suppr').hidden=!(mnCtx.edition && n===1 && !mnCtx.enregistre);
       /* La note se modifie depuis la carte : ici, seulement à la création. */
       document.getElementById('mn-note-wrap').hidden=mnCtx.edition;
@@ -5915,6 +6004,15 @@ export function dashboardPage(
           unArticle=true;
         }
         if(!unArticle) return faute(arts[0]&&arts[0].querySelector('.dd'),"Choisissez au moins un article.");
+        if(mnCtx.textesOui){
+          var tl=document.querySelectorAll('#mn-textes .mn-texte');
+          if(!tl.length){ mnOuvrirPli('mn-pli-tl'); return faute(document.getElementById('mn-ajout-texte'),'Ajoutez un texte, ou répondez « Non ».'); }
+          for(var m=0;m<tl.length;m++){
+            var ti=tl[m].querySelector('.mn-t-texte'), tt=tl[m].querySelector('.mn-t-taille');
+            if(!ti.value.trim()){ mnOuvrirPli('mn-pli-tl'); return faute(ti,'Recopiez le texte présent sur le design.'); }
+            if(tt.value.trim() && !(mnNombre(tt.value)>0)){ mnOuvrirPli('mn-pli-tl'); return faute(tt,'Taille invalide (en cm).'); }
+          }
+        }
       }
       if(n===3){
         var envoyes=mnBlocsEnvoyes();
@@ -5960,7 +6058,8 @@ export function dashboardPage(
     function ouvrirManuelle(id, numero, f, fichiers){
       f=f||{};
       var c=f.client||{}, ad=f.adresse||{};
-      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
+      var cible=mnCtx.logoCible;
+      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[], textesOui:false, logosGardes:[], logoCible:cible};
       if(id){ mnCtx.id=id; mnCtx.numero=numero||''; mnCtx.edition=true; }
       mnSet('mn-nom',c.nom); mnSet('mn-email',c.email); mnSet('mn-tel',c.telephone);
       mnSet('mn-adr1',ad.ligne1); mnSet('mn-cp',ad.codePostal); mnSet('mn-ville',ad.ville);
@@ -5971,9 +6070,19 @@ export function dashboardPage(
       document.getElementById('mn-articles').textContent='';
       var arts=Array.isArray(f.articles)&&f.articles.length?f.articles:[{}];
       arts.forEach(function(a){ ajouterArticleManuel(a); });
-      document.getElementById('mn-fichiers').textContent='';
-      (Array.isArray(fichiers)?fichiers:[]).forEach(function(x){ mnLigneExistante(x); });
-      mnFichiersVide();
+      /* Textes et logos (déjà joints en modification), rangés par article. */
+      document.getElementById('mn-textes').textContent='';
+      document.getElementById('mn-logos').textContent='';
+      mnCtx.logosGardes=[];
+      var blocsOuverts=document.querySelectorAll('#mn-articles .mn-article'), nbTextes=0;
+      arts.forEach(function(a, i){
+        var b=blocsOuverts[i];
+        (Array.isArray(a.textes)?a.textes:[]).forEach(function(t){ ajouterTexteManuel(t, b); nbTextes++; });
+        (Array.isArray(a.logos)?a.logos:[]).forEach(function(l){ mnLogoGarde(l, b); });
+      });
+      mnChoisirTextes(nbTextes>0);
+      document.getElementById('mn-pli-articles').open=true;
+      document.getElementById('mn-pli-tl').open=nbTextes>0 || mnCtx.logosGardes.length>0;
       document.querySelectorAll('.mn-input.erreur').forEach(function(i){ i.classList.remove('erreur'); });
       document.getElementById('mn-titre').textContent=id ? 'Modifier la commande '+(numero||'') : 'Nouvelle commande';
       mnStatut('');
@@ -5990,7 +6099,7 @@ export function dashboardPage(
       /* Commande enregistrée (envoi partiel), ou fichier retiré : la liste doit
          la montrer à jour. */
       if((mnCtx.enregistre || mnCtx.aRecharger) && mnCtx.id){ mnMontrerCommande(mnCtx.id, ''); return; }
-      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
+      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[], textesOui:false, logosGardes:[], logoCible:mnCtx.logoCible};
     }
 
     /* ── Étape 3 : récapitulatif ── */
@@ -6003,8 +6112,9 @@ export function dashboardPage(
       var lignes=[
         ['Client', [client, mnVal('mn-email').trim(), mnVal('mn-tel').trim()].filter(Boolean).join(' · ')||'—'],
         ['Livraison', [mnVal('mn-adr1').trim(), [mnVal('mn-cp').trim(), mnVal('mn-ville').trim()].filter(Boolean).join(' ')].filter(Boolean).join(', ')||'Aucune adresse'],
-        ['Designs', (function(){ var n=mnCtx.file.filter(function(j){ return j.bloc; }).length; return n ? n+' à joindre aux articles' : 'Aucun design'; })()],
-        ['Autres fichiers', (function(){ var n=mnCtx.file.filter(function(j){ return !j.bloc; }).length; return n ? n+' à joindre' : 'Aucun'; })()],
+        ['Designs', (function(){ var n=mnCtx.file.filter(function(j){ return j.bloc && !j.logo; }).length; return n ? n+' à joindre aux articles' : 'Aucun nouveau design'; })()],
+        ['Textes', (function(){ var n=mnCtx.textesOui ? document.querySelectorAll('#mn-textes .mn-texte').length : 0; return n ? n+' texte(s)' : 'Aucun texte'; })()],
+        ['Logos', (function(){ var n=mnCtx.file.filter(function(j){ return j.logo; }).length+mnCtx.logosGardes.length; return n ? n+' logo(s)' : 'Aucun logo'; })()],
         ['Montant', (mnVal('mn-total').trim()||'—')+' € TTC'],
         ['Règlement', 'Déjà payée, hors boutique (aucun e-mail envoyé)']
       ];
@@ -6042,6 +6152,8 @@ export function dashboardPage(
           quantite: parseInt(b.querySelector('.mn-qte').value,10)||0,
           manches: mnManches(b),
           designs: (b._designs||[]).map(function(d){ return d.url; }),
+          textes: mnTextesDe(b),
+          logos: mnCtx.logosGardes.filter(function(l){ return mnBlocDe(l)===b; }).map(function(l){ return {url:l.url, vue:l.vue}; }),
           details: b.querySelector('textarea').value
         });
       });
@@ -6092,7 +6204,7 @@ export function dashboardPage(
       orderFilter='all'; articleFilter='all';
       var s=document.getElementById('search'); if(s) s.value='';
       memoriserVue('card-'+id);
-      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
+      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[], textesOui:false, logosGardes:[], logoCible:mnCtx.logoCible};
       setTimeout(function(){ location.reload(); }, message ? 450 : 0);
     }
     function mnEnvoyerFichiers(i, echecs){
@@ -6108,10 +6220,12 @@ export function dashboardPage(
       job.sous.className=''; job.sous.textContent=job.fichier.name+' · envoi…';
       var fd=new FormData(); fd.append('file', job.fichier);
       var url='/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/fichiers';
+      if(job.logo) job.bloc=mnBlocDe(job);
       if(job.bloc){
         var ligne=mnBlocsEnvoyes().indexOf(job.bloc);
         if(ligne<0){ job.fait=true; mnEnvoyerFichiers(i+1, echecs); return; }   // article vidé entre-temps
         fd.append('ligne', String(ligne));
+        if(job.logo) fd.append('logo', job.logo);
         url='/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle/design';
       } else {
         fd.append('libelle', job.cat);
@@ -6132,6 +6246,7 @@ export function dashboardPage(
     /* ── Étape 2 : fichiers ── */
     function mnFichiersVide(){
       var fl=document.getElementById('mn-fichiers');
+      if(!fl) return;
       var vide=fl.querySelector('.mn-fichiers-vide');
       var n=fl.querySelectorAll('.mn-fichier').length;
       if(!n && !vide) fl.appendChild(mnEl('div','mn-fichiers-vide','Aucun fichier pour le moment.'));
@@ -6150,6 +6265,176 @@ export function dashboardPage(
       if(!conteneur) mnFichiersVide();
       return row;
     }
+    /* ── Étape 2, section « Textes & logos » ──
+       Chaque texte et chaque logo est rattaché à un ARTICLE (sélecteur affiché
+       quand la commande en compte plusieurs) : il devient une propriété de sa
+       ligne (« Texte 1 », « Logo dos »), visible sur la carte et la fiche. */
+    function mnListe(attr){
+      try{ return JSON.parse(document.getElementById('mn-textes').getAttribute(attr)||'[]'); }
+      catch(e){ return []; }
+    }
+    function mnOuvrirPli(id){ var p=document.getElementById(id); if(p) p.open=true; }
+    function mnChoisirTextes(oui){
+      mnCtx.textesOui=!!oui;
+      document.querySelectorAll('#mn-textes-oui-non button').forEach(function(b){
+        var on=(b.getAttribute('data-v')==='oui')===mnCtx.textesOui;
+        b.classList.toggle('on', on); b.setAttribute('aria-checked', on?'true':'false');
+      });
+      document.getElementById('mn-textes-zone').hidden=!mnCtx.textesOui;
+      if(mnCtx.textesOui && !document.querySelector('#mn-textes .mn-texte')) ajouterTexteManuel({});
+    }
+    /* Bloc d'article d'un texte ou d'un logo : le sien s'il est toujours là,
+       sinon le premier article de la commande. */
+    function mnBlocDe(x){
+      var blocs=mnBlocsEnvoyes();
+      return blocs.indexOf(x.bloc)!==-1 ? x.bloc : (blocs[0]||null);
+    }
+    function mnSelectArticle(x){
+      var sel=mnEl('select','mn-input mn-t-art');
+      sel.setAttribute('aria-label','Article concerné');
+      sel.addEventListener('change', function(){ x.bloc=mnBlocsEnvoyes()[parseInt(sel.value,10)]||null; });
+      x.sel=sel;
+      return sel;
+    }
+    /* Options « 1 · Patch personnalisé (PVC) »… ; masqué s'il n'y a qu'un article. */
+    function mnMajArticlesTL(){
+      var blocs=mnBlocsEnvoyes();
+      var cibles=[mnCtx.logoCible].concat(Array.prototype.map.call(document.querySelectorAll('#mn-textes .mn-texte'), function(r){ return r._x; }))
+        .concat(mnCtx.logosGardes||[]);
+      cibles.forEach(function(x){
+        if(!x || !x.sel) return;
+        x.bloc=mnBlocDe(x);
+        x.sel.textContent='';
+        blocs.forEach(function(b, i){
+          var o=document.createElement('option');
+          o.value=String(i); o.textContent=(i+1)+' · '+(mnTitre(b)||'Article');
+          if(b===x.bloc) o.selected=true;
+          x.sel.appendChild(o);
+        });
+        x.sel.hidden=blocs.length<2;
+      });
+    }
+    function ajouterTexteManuel(t, bloc){
+      t=t||{};
+      var x={bloc:bloc||null};
+      var row=mnEl('div','mn-texte'); row._x=x;
+      var haut=mnEl('div','mn-texte-haut');
+      var txt=mnEl('input','mn-input mn-t-texte');
+      txt.maxLength=200; txt.placeholder='Recopiez ici le texte présent sur le design'; txt.setAttribute('aria-label','Texte présent sur le design');
+      txt.value=t.texte||'';
+      var x2=mnEl('button','mn-retirer','✕');
+      x2.type='button'; x2.title='Retirer ce texte';
+      x2.addEventListener('click', function(){
+        row.remove();
+        if(mnCtx.textesOui && !document.querySelector('#mn-textes .mn-texte')) mnChoisirTextes(false);
+      });
+      haut.appendChild(mnSelectArticle(x)); haut.appendChild(txt); haut.appendChild(x2);
+      var bas=mnEl('div','mn-texte-bas');
+      function champ(lib, el){ var c=mnEl('label','mn-t-champ'); c.appendChild(mnEl('span',null,lib)); c.appendChild(el); return c; }
+      function liste(cls, valeurs, val, vide){
+        var s=mnEl('select','mn-input '+cls);
+        if(vide){ var o0=document.createElement('option'); o0.value=''; o0.textContent=vide; s.appendChild(o0); }
+        valeurs.forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=v; if(v===val) o.selected=true; s.appendChild(o); });
+        return s;
+      }
+      var vue=liste('mn-t-vue', mnListe('data-vues'), t.vue||'Face');
+      var police=liste('mn-t-police', mnListe('data-polices'), t.police||'', 'Police libre');
+      var style=liste('mn-t-style', mnListe('data-styles'), t.style||'Normal');
+      var taille=mnEl('input','mn-input mono mn-t-taille');
+      taille.inputMode='decimal'; taille.placeholder='—';
+      taille.value=t.taille ? String(t.taille).replace('.',',') : '';
+      var tw=mnEl('span','mn-t-unite'); tw.appendChild(taille); tw.appendChild(mnEl('span',null,'cm'));
+      bas.appendChild(champ('Vue', vue)); bas.appendChild(champ('Police', police));
+      bas.appendChild(champ('Style', style)); bas.appendChild(champ('Taille', tw));
+      row.appendChild(haut); row.appendChild(bas);
+      document.getElementById('mn-textes').appendChild(row);
+      mnMajArticlesTL();
+      return row;
+    }
+    function mnTextesDe(b){
+      if(!mnCtx.textesOui) return [];
+      var out=[];
+      document.querySelectorAll('#mn-textes .mn-texte').forEach(function(r){
+        if(mnBlocDe(r._x)!==b) return;
+        out.push({
+          texte: r.querySelector('.mn-t-texte').value,
+          vue: r.querySelector('.mn-t-vue').value,
+          police: r.querySelector('.mn-t-police').value,
+          style: r.querySelector('.mn-t-style').value,
+          taille: r.querySelector('.mn-t-taille').value
+        });
+      });
+      return out;
+    }
+    /* Logo déjà joint (modification) : gardé tant qu'on ne le retire pas. */
+    function mnLogoGarde(l, bloc){
+      var x={url:String(l.url||''), vue:l.vue||'Face', bloc:bloc||null};
+      if(!x.url) return;
+      mnCtx.logosGardes.push(x);
+      var nomF=decodeURIComponent(x.url.split('/').pop()||'Logo');
+      var estImg=/[.](png|jpe?g|webp|gif)$/i.test(x.url);
+      var row=mnLigne('Logo · '+x.vue, nomF+' · déjà joint', estImg, estImg?x.url:'', document.getElementById('mn-logos'));
+      var ouvrir=mnEl('a','mn-retirer mn-ouvrir','↗');
+      ouvrir.href=x.url; ouvrir.target='_blank'; ouvrir.rel='noopener'; ouvrir.title='Ouvrir';
+      row.appendChild(ouvrir);
+      var del=mnEl('button','mn-retirer','✕');
+      del.type='button'; del.title="Retirer ce logo (à l'enregistrement)";
+      del.addEventListener('click', function(){
+        if(mnCtx.envoi) return;
+        mnCtx.logosGardes=mnCtx.logosGardes.filter(function(y){ return y!==x; });
+        row.remove();
+      });
+      row.appendChild(del);
+    }
+    /* Logos déposés : en file, envoyés sur la ligne de leur article à l'enregistrement. */
+    function mnAjouterLogos(liste){
+      var vue=document.getElementById('mn-logo-vue').value||'Face', refus=0;
+      var bloc=mnBlocDe(mnCtx.logoCible||{});
+      for(var i=0;i<liste.length;i++){
+        var f=liste[i];
+        if(f.size>10*1024*1024){ refus++; continue; }
+        var estImage=/^image[/]/.test(f.type||'');
+        var lib='Logo · '+vue+(mnBlocsEnvoyes().length>1 && bloc ? ' · '+(mnTitre(bloc)||'Article') : '');
+        var row=mnLigne(lib, f.name+" · sera joint à l'enregistrement", estImage, estImage?URL.createObjectURL(f):'', document.getElementById('mn-logos'));
+        var barre=mnEl('div','barre'), bs=mnEl('span'); barre.appendChild(bs); row.querySelector('.infos').appendChild(barre);
+        var job={fichier:f, cat:'Logo', fait:false, sous:row.querySelector('small'), barre:bs, bloc:bloc, logo:vue};
+        mnCtx.file.push(job);
+        (function(job, row){
+          var del=mnEl('button','mn-retirer','✕');
+          del.type='button'; del.title='Ne pas joindre ce logo';
+          del.addEventListener('click', function(){
+            if(mnCtx.envoi) return;
+            mnCtx.file=mnCtx.file.filter(function(j){ return j!==job; });
+            row.remove();
+          });
+          row.appendChild(del);
+        })(job, row);
+      }
+      mnStatut(refus ? refus+' fichier(s) refusé(s) : 10 Mo maximum.' : '', !!refus);
+    }
+    (function(){
+      var depot=document.getElementById('mn-logo-depot'), input=document.getElementById('mn-logo-file');
+      if(!depot) return;
+      /* Sélecteur « article » du prochain logo déposé. */
+      mnCtx.logoCible={bloc:null};
+      document.getElementById('mn-logo-art').appendChild(mnSelectArticle(mnCtx.logoCible));
+      input.addEventListener('change', function(){ mnAjouterLogos(input.files||[]); input.value=''; });
+      ['dragenter','dragover'].forEach(function(t){
+        depot.addEventListener(t, function(e){ e.preventDefault(); depot.classList.add('survol'); });
+      });
+      ['dragleave','drop'].forEach(function(t){
+        depot.addEventListener(t, function(e){ e.preventDefault(); depot.classList.remove('survol'); });
+      });
+      depot.addEventListener('drop', function(e){
+        if(e.dataTransfer && e.dataTransfer.files) mnAjouterLogos(e.dataTransfer.files);
+      });
+      document.getElementById('mn-textes-oui-non').addEventListener('click', function(e){
+        var b=e.target.closest('button'); if(!b) return;
+        mnChoisirTextes(b.getAttribute('data-v')==='oui');
+      });
+      document.getElementById('mn-ajout-texte').addEventListener('click', function(){ ajouterTexteManuel({}); });
+      document.getElementById('mn-pli-tl').addEventListener('toggle', function(){ if(this.open) mnMajArticlesTL(); });
+    })();
     /* Fichier déjà joint (modification) : ouvrir, ou retirer tout de suite. */
     function mnLigneExistante(x){
       var row=mnLigne(x.libelle||x.nom||'Fichier', (x.libelle&&x.nom&&x.libelle!==x.nom)?x.nom+' · déjà joint':'Déjà joint', x.image, x.url);
@@ -6169,20 +6454,43 @@ export function dashboardPage(
       });
       row.appendChild(del);
     }
-    /* Suppression d'une commande manuelle (modification, étape 1). */
+    /* Suppression d'une commande manuelle (modification, étape 1) : fenêtre
+       de confirmation dédiée (#mn-suppr-modal), au-dessus du formulaire. */
     function supprimerManuelle(){
       if(!mnCtx.id || !mnCtx.edition || mnCtx.envoi) return;
-      if(!window.confirm('Supprimer définitivement la commande '+(mnCtx.numero||'')+', ses designs et ses fichiers joints ?')) return;
-      mnStatut('Suppression…');
+      document.getElementById('mn-suppr-titre').textContent='Supprimer la commande '+(mnCtx.numero||'')+' ?';
+      var st=document.getElementById('mn-suppr-statut'); st.className='hint'; st.textContent='';
+      var go=document.getElementById('mn-suppr-go'); go.disabled=false; go.textContent='Supprimer définitivement';
+      document.getElementById('mn-suppr-modal').classList.add('open');
+      setTimeout(function(){ var a=document.getElementById('mn-suppr-annuler'); if(a) a.focus(); },30);
+    }
+    function fermerSuppressionManuelle(){
+      var go=document.getElementById('mn-suppr-go');
+      if(go && go.disabled) return;   // suppression en cours
+      document.getElementById('mn-suppr-modal').classList.remove('open');
+    }
+    function confirmerSuppressionManuelle(){
+      var go=document.getElementById('mn-suppr-go'), st=document.getElementById('mn-suppr-statut');
+      go.disabled=true; go.textContent='Suppression…';
       mnRequete('DELETE', '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle')
         .then(function(){
+          document.getElementById('mn-suppr-modal').classList.remove('open');
           document.getElementById('manuelle-modal').classList.remove('open');
           toast('Commande '+(mnCtx.numero||'')+' supprimée.');
           memoriserVue();
           setTimeout(function(){ location.reload(); }, 450);
         })
-        .catch(function(e){ mnStatut(e.message||'Erreur réseau.', true); });
+        .catch(function(e){
+          go.disabled=false; go.textContent='Supprimer définitivement';
+          st.className='hint err'; st.textContent=e.message||'Erreur réseau.';
+        });
     }
+    /* Échap ferme la confirmation (sans fermer le formulaire derrière). */
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && document.getElementById('mn-suppr-modal').classList.contains('open')){
+        e.stopPropagation(); fermerSuppressionManuelle();
+      }
+    }, true);
     /* Bouton « ✎ Modifier » d'une carte : formulaire et fichiers en data-*. */
     document.addEventListener('click', function(ev){
       var b=ev.target&&ev.target.closest?ev.target.closest('.js-modifier-manuelle'):null;
@@ -6194,7 +6502,7 @@ export function dashboardPage(
     });
     /* Designs d'un article : en file comme les autres fichiers, liés à son bloc. */
     function mnAjouterDesigns(bloc, conteneur, liste){
-      var refus=0, deja=mnCtx.file.filter(function(j){ return j.bloc===bloc; }).length+((bloc._designs||[]).length);
+      var refus=0, deja=mnCtx.file.filter(function(j){ return j.bloc===bloc && !j.logo; }).length+((bloc._designs||[]).length);
       for(var i=0;i<liste.length;i++){
         var f=liste[i];
         if(f.size>10*1024*1024 || deja>=5){ refus++; continue; }

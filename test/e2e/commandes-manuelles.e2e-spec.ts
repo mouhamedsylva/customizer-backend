@@ -154,6 +154,20 @@ describe('Commandes manuelles', () => {
     expect(page.text).toContain(r.body.url);
   });
 
+  it('joint un logo à un article, rangé par emplacement', async () => {
+    const cookie = await connexion();
+    await post('/api/admin/orders/manuelles', cookie, saisie());
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const r = await request(srv()).post('/api/admin/orders/-1/manuelle/design').set('X-Forwarded-For', freshIp()).set('Cookie', cookie)
+      .field('ligne', '0').field('logo', 'Dos').attach('file', png, { filename: 'logo.png', contentType: 'image/png' });
+    expect(r.status).toBe(201);
+    const o = await repo().findOneByOrFail({ shopifyOrderId: '-1' });
+    expect((o.lineItems as any[])[0].properties).toContainEqual({ name: 'Logo dos', value: r.body.url });
+    const mauvais = await request(srv()).post('/api/admin/orders/-1/manuelle/design').set('X-Forwarded-For', freshIp()).set('Cookie', cookie)
+      .field('ligne', '0').field('logo', 'Ventre').attach('file', png, { filename: 'logo.png', contentType: 'image/png' });
+    expect(mauvais.status).toBe(400);
+  });
+
   it('expédie une commande manuelle sans appeler Shopify', async () => {
     const cookie = await connexion();
     await post('/api/admin/orders/manuelles', cookie, saisie());

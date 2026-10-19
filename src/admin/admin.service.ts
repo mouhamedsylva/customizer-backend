@@ -640,10 +640,10 @@ export class AdminService implements OnModuleInit {
   /** Ajoute un fichier joint ; renvoie la liste à jour. `update` sur la
    *  seule colonne : le reste de la commande n'est pas réécrit. */
   /** Design d'un ARTICLE d'une commande manuelle : propriété « Design » sur sa ligne. */
-  async ajouterDesignLigne(shopifyOrderId: string, index: number, url: string): Promise<{ erreur?: string }> {
+  async ajouterDesignLigne(shopifyOrderId: string, index: number, url: string, vueLogo?: string): Promise<{ erreur?: string }> {
     const o = await this.orders.findOne({ where: { shopifyOrderId }, select: { shopifyOrderId: true, lineItems: true } });
     if (!o) return { erreur: 'Commande introuvable.' };
-    const r = avecDesign(o.lineItems, index, url);
+    const r = avecDesign(o.lineItems, index, url, vueLogo);
     if ('erreur' in r) return { erreur: r.erreur };
     await this.orders.update({ shopifyOrderId }, { lineItems: r.lignes as any });
     return {};

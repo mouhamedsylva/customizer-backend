@@ -38,7 +38,7 @@ import {
   fichiersJointsValides,
   nouveauFichierJoint,
 } from './fichiers-joints';
-import { RE_DESIGN, estCommandeManuelle, lireSaisieManuelle, ressourceCommande } from './commandes-manuelles';
+import { RE_DESIGN, RE_LOGO, estCommandeManuelle, lireSaisieManuelle, ressourceCommande } from './commandes-manuelles';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
@@ -974,7 +974,8 @@ export class AdminController {
     }
     for (const li of Array.isArray(o.lineItems) ? (o.lineItems as any[]) : []) {
       for (const p of Array.isArray(li?.properties) ? li.properties : []) {
-        if (!RE_DESIGN.test(String(p?.name ?? ''))) continue;
+        const nomP = String(p?.name ?? '');
+        if (!RE_DESIGN.test(nomP) && !RE_LOGO.test(nomP)) continue;
         const r = ressourceCommande(String(p?.value ?? ''));
         if (r) ressources.push(r);
       }
@@ -1098,6 +1099,7 @@ export class AdminController {
     @Param('id') orderId: string,
     @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string; size: number } | undefined,
     @Body('ligne') ligne: unknown,
+    @Body('logo') vueLogo: unknown,
     @Res() res: Response,
   ): Promise<void> {
     if (!estCommandeManuelle(orderId)) {
@@ -1136,7 +1138,7 @@ export class AdminController {
       res.status(502).json({ ok: false, error: "Échec de l'envoi du fichier. Réessayez." });
       return;
     }
-    const r = await this.data.ajouterDesignLigne(orderId, index, envoi.url);
+    const r = await this.data.ajouterDesignLigne(orderId, index, envoi.url, vueLogo ? String(vueLogo) : undefined);
     if (r.erreur) {
       res.status(400).json({ ok: false, error: r.erreur });
       return;

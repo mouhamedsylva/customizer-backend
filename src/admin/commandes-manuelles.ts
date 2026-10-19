@@ -83,6 +83,106 @@ export function designsConserves(brut: unknown): string[] {
 /** Propriétés « Design », « Design 2 »… d'une ligne. */
 export const RE_DESIGN = /^Design( \d+)?$/;
 
+/** Vues (emplacements) où se marque un texte ou un logo. */
+export const VUES_MANUELLES = ['Face', 'Dos', 'Cœur', 'Manche droite', 'Manche gauche'] as const;
+
+/** Polices proposées (celles du configurateur, assets/fonts). */
+export const POLICES_MANUELLES = [
+  'Acme', 'Alfa Slab One', 'Allura', 'Amatic SC', 'Anton', 'Architects Daughter', 'Archivo Black', 'Arial',
+  'Bangers', 'Bebas Neue', 'Black Ops One', 'Bungee', 'Caveat', 'Cinzel', 'Cookie', 'Courgette', 'Creepster',
+  'Crimson Text', 'Dancing Script', 'Fjalla One', 'Fredoka One', 'Great Vibes', 'Impact', 'Indie Flower', 'Kalam',
+  'Lato', 'Libre Baskerville', 'Lobster', 'Lora', 'Luckiest Guy', 'Merriweather', 'Monoton', 'Montserrat', 'Nunito',
+  'Open Sans', 'Oswald', 'Pacifico', 'Passion One', 'Patua One', 'Permanent Marker', 'Pinyon Script',
+  'Playfair Display', 'Poppins', 'Press Start 2P', 'PT Serif', 'Raleway', 'Righteous', 'Roboto', 'Rock Salt',
+  'Russo One', 'Sacramento', 'Satisfy', 'Shadows Into Light', 'Shrikhand', 'Special Elite', 'Tangerine', 'Teko',
+  'Ubuntu', 'Yellowtail',
+] as const;
+
+export const STYLES_TEXTE = ['Normal', 'Gras', 'Italique', 'Gras italique'] as const;
+
+export const MAX_TEXTES_PAR_LIGNE = 10;
+
+export interface TexteManuel {
+  texte: string;
+  vue: string;
+  police: string;
+  style: string;
+  /** Hauteur des lettres, en cm (null = non précisée). */
+  taille: number | null;
+}
+
+/** Propriétés « Texte 1 », « Texte 2 »… d'une ligne. */
+export const RE_TEXTE = /^Texte \d+$/;
+/** Propriétés « Logo face », « Logo dos 2 »… d'une ligne (vue en minuscules). */
+export const RE_LOGO = /^Logo (face|dos|cœur|manche droite|manche gauche)( \d+)?$/i;
+
+const vueValide = (v: unknown): string | null => {
+  const t = String(v ?? '').trim().toLowerCase();
+  return VUES_MANUELLES.find((x) => x.toLowerCase() === t) ?? null;
+};
+
+/** Texte lisible pour l'atelier : « « MASSACRE » · Dos · Anton · Gras · 4 cm ». */
+export function texteVersPropriete(t: TexteManuel): string {
+  return [`« ${t.texte} »`, t.vue, t.police || 'Police libre', t.style, t.taille ? `${String(t.taille).replace('.', ',')} cm` : 'Taille libre'].join(' · ');
+}
+
+/** Inverse de texteVersPropriete (modification d'une commande). */
+export function proprieteVersTexte(valeur: string): TexteManuel | null {
+  const v = String(valeur ?? '');
+  const fin = v.lastIndexOf(' »');
+  if (!v.startsWith('« ') || fin < 2) return null;
+  const [vue, police, style, taille] = v.slice(fin + 2).split(' · ').slice(1);
+  return {
+    texte: v.slice(2, fin),
+    vue: vueValide(vue) ?? 'Face',
+    police: police && police !== 'Police libre' ? police : '',
+    style: (STYLES_TEXTE as readonly string[]).includes(style) ? style : 'Normal',
+    taille: taille && /^[\d,]+ cm$/.test(taille) ? Number(taille.replace(' cm', '').replace(',', '.')) : null,
+  };
+}
+
+/** Textes d'un article, validés ; les entrées sans texte sont ignorées. */
+export function lireTextes(brut: unknown): { textes: TexteManuel[] } | { erreur: string } {
+  const textes: TexteManuel[] = [];
+  for (const t of (Array.isArray(brut) ? brut : []).slice(0, MAX_TEXTES_PAR_LIGNE)) {
+    const texte = String((t as any)?.texte ?? '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 200);
+    if (!texte) continue;
+    const vue = vueValide((t as any)?.vue);
+    if (!vue) return { erreur: `Vue inconnue pour le texte « ${texte} ».` };
+    const police = String((t as any)?.police ?? '').trim();
+    if (police && !(POLICES_MANUELLES as readonly string[]).includes(police)) {
+      return { erreur: `Police inconnue pour le texte « ${texte} ».` };
+    }
+    const style = String((t as any)?.style || 'Normal');
+    if (!(STYLES_TEXTE as readonly string[]).includes(style)) return { erreur: `Style inconnu pour le texte « ${texte} ».` };
+    const brutTaille = String((t as any)?.taille ?? '').replace(',', '.').trim();
+    let taille: number | null = null;
+    if (brutTaille) {
+      const n = Number(brutTaille);
+      if (!Number.isFinite(n) || n <= 0 || n > 200) return { erreur: `Taille invalide pour le texte « ${texte} » (en cm).` };
+      taille = Math.round(n * 10) / 10;
+    }
+    textes.push({ texte, vue, police, style, taille });
+  }
+  return { textes };
+}
+
+/** Nom de propriété d'un logo : « Logo face », puis « Logo face 2 »… */
+export function nomLogo(vue: string, dejaPresents: string[]): string {
+  const base = `Logo ${vue.toLowerCase()}`;
+  const n = dejaPresents.filter((p) => p === base || p.startsWith(base + ' ')).length;
+  return n ? `${base} ${n + 1}` : base;
+}
+
+/** Logos DÉJÀ joints renvoyés par le formulaire de modification. */
+export function logosConserves(brut: unknown): Array<{ url: string; vue: string }> {
+  if (!Array.isArray(brut)) return [];
+  return brut
+    .map((l: any) => ({ url: String(l?.url ?? '').trim(), vue: vueValide(l?.vue) ?? '' }))
+    .filter((l) => l.vue && /^https:\/\/res\.cloudinary\.com\/[^\s"'<>]+$/.test(l.url))
+    .slice(0, MAX_DESIGNS_PAR_LIGNE);
+}
+
 /**
  * Données du formulaire pour MODIFIER une commande manuelle (inverse de
  * lireSaisieManuelle) : client, adresse, articles (détails, manches,
@@ -111,6 +211,13 @@ export function formulaireDepuisCommande(o: {
         details: props.filter((p) => /^Détail \d+$/.test(nom(p))).map((p) => String(p.value ?? '')).join('\n'),
         manches: props.filter((p) => /^Manche (droite|gauche)$/.test(nom(p))).map((p) => nom(p).slice(7)),
         designs: props.filter((p) => RE_DESIGN.test(nom(p))).map((p) => String(p.value ?? '')),
+        textes: props
+          .filter((p) => RE_TEXTE.test(nom(p)))
+          .map((p) => proprieteVersTexte(String(p.value ?? '')))
+          .filter(Boolean),
+        logos: props
+          .filter((p) => RE_LOGO.test(nom(p)))
+          .map((p) => ({ url: String(p.value ?? ''), vue: vueValide(nom(p).match(RE_LOGO)?.[1]) ?? 'Face' })),
       };
     }),
     total: o.totalPrice || '',
@@ -140,11 +247,24 @@ export function avecDesign(
   lignes: unknown,
   index: number,
   url: string,
+  /** Vue d'un LOGO (« Face », « Dos »…) ; absente pour un design. */
+  vueLogo?: string,
 ): { lignes: Array<Record<string, any>> } | { erreur: string } {
   const copie: Array<Record<string, any>> = Array.isArray(lignes) ? lignes.map((l: any) => ({ ...l })) : [];
   const li = copie[index];
   if (!Number.isInteger(index) || !li) return { erreur: 'Article introuvable.' };
   const props = Array.isArray(li.properties) ? [...li.properties] : [];
+  if (vueLogo !== undefined) {
+    const vue = vueValide(vueLogo);
+    if (!vue) return { erreur: 'Vue du logo inconnue.' };
+    const noms = props.map((p: any) => String(p?.name ?? ''));
+    if (noms.filter((p) => RE_LOGO.test(p)).length >= MAX_DESIGNS_PAR_LIGNE) {
+      return { erreur: `${MAX_DESIGNS_PAR_LIGNE} logos au plus par article.` };
+    }
+    props.push({ name: nomLogo(vue, noms), value: url });
+    li.properties = props;
+    return { lignes: copie };
+  }
   const n = props.filter((p: any) => /^Design( \d+)?$/.test(String(p?.name ?? ''))).length;
   if (n >= MAX_DESIGNS_PAR_LIGNE) return { erreur: `${MAX_DESIGNS_PAR_LIGNE} designs au plus par article.` };
   props.push({ name: n ? `Design ${n + 1}` : 'Design', value: url });
@@ -206,6 +326,13 @@ export function lireSaisieManuelle(
     if (!ARTICLES_MANUELS.includes(titre)) {
       return { erreur: `Article inconnu : « ${titre} ». Choisissez-le dans la liste.` };
     }
+    const lt = lireTextes(a?.textes);
+    if ('erreur' in lt) return { erreur: lt.erreur };
+    const textesLus = lt.textes;
+    const logosLus: Array<{ name: string; value: string }> = [];
+    for (const l of logosConserves(a?.logos)) {
+      logosLus.push({ name: nomLogo(l.vue, logosLus.map((x) => x.name)), value: l.url });
+    }
     const qte = Number(a?.quantite);
     if (!Number.isInteger(qte) || qte < 1 || qte > 1_000_000) {
       return { erreur: `Quantité invalide pour « ${titre} ».` };
@@ -226,6 +353,8 @@ export function lireSaisieManuelle(
         // Designs DÉJÀ joints (modification d'une commande) : conservés tels
         // quels. Les nouveaux arrivent ensuite par la route « design ».
         ...designsConserves(a?.designs).map((url, i) => ({ name: i ? `Design ${i + 1}` : 'Design', value: url })),
+        ...textesLus.map((t, i) => ({ name: `Texte ${i + 1}`, value: texteVersPropriete(t) })),
+        ...logosLus,
       ],
     });
   }

@@ -7,7 +7,10 @@ import {
   ressourceCommande,
   estCommandeManuelle,
   lireSaisieManuelle,
+  lireTextes,
   numeroManuel,
+  proprieteVersTexte,
+  texteVersPropriete,
 } from '../src/admin/commandes-manuelles';
 import { evaluerLignes } from '../src/shared/reconnaissance-configurateur';
 import { dashboardPage, productionSheetPage } from '../src/admin/admin.view';
@@ -173,7 +176,13 @@ describe('commandes manuelles : affichage', () => {
     const html = dashboardPage([manuelle()], [], [], 'https://x', '', {});
     expect(html).toContain('id="mn-etape-3"');
     expect(html).toContain('Articles &amp; design');
-    expect(html).toContain('id="mn-depot"');
+    // Étape 2 : deux sections repliables ; plus de section « Autres fichiers ».
+    expect(html).toContain('id="mn-pli-articles"');
+    expect(html).toContain('id="mn-pli-tl"');
+    expect(html).toContain('id="mn-logo-depot"');
+    expect(html).toContain('Y a-t-il des textes sur les designs ?');
+    expect(html).not.toContain('id="mn-depot"');
+    expect(html).not.toContain('Autres fichiers');
     expect(html).toContain('id="mn-total"');
     expect(html).toContain('✓ Payée (hors boutique)');
     expect(html).toContain('data-catalogue="');
@@ -219,6 +228,7 @@ describe('modification et suppression', () => {
     expect(f.articles[0]).toEqual({
       titre: 'T-shirt coton personnalisé', quantite: 4, details: 'Taille : M', manches: ['droite'],
       designs: ['https://res.cloudinary.com/c/image/upload/v1/customizer/commandes/M-1001/logo_1.png'],
+      textes: [], logos: [],
     });
     expect(f.total).toBe('960.00');
     expect(f.date).toBe('2026-10-14');
@@ -249,5 +259,60 @@ describe('modification et suppression', () => {
     expect(html.match(/js-modifier-manuelle"/g)).toHaveLength(1);
     expect(html).toContain('data-form="');
     expect(html).toContain('id="mn-suppr"');
+    // Confirmation par une fenêtre du dashboard, pas par une alerte du navigateur.
+    expect(html).toContain('id="mn-suppr-modal"');
+    expect(html).not.toContain("window.confirm('Supprimer définitivement");
+  });
+});
+
+describe('textes et logos', () => {
+  it('un texte devient une propriété lisible, relue à l’identique', () => {
+    const t = { texte: 'MASSACRE · 2026', vue: 'Dos', police: 'Anton', style: 'Gras', taille: 4.5 };
+    const v = texteVersPropriete(t);
+    expect(v).toBe('« MASSACRE · 2026 » · Dos · Anton · Gras · 4,5 cm');
+    expect(proprieteVersTexte(v)).toEqual(t);
+    expect(proprieteVersTexte(texteVersPropriete({ texte: 'A', vue: 'Face', police: '', style: 'Normal', taille: null }))).toEqual({
+      texte: 'A', vue: 'Face', police: '', style: 'Normal', taille: null,
+    });
+  });
+
+  it('valide les textes : vue, police, style, taille', () => {
+    expect(lireTextes([{ texte: '  ', vue: 'Face' }])).toEqual({ textes: [] });
+    expect('erreur' in lireTextes([{ texte: 'A', vue: 'Ventre' }])).toBe(true);
+    expect('erreur' in lireTextes([{ texte: 'A', vue: 'Face', police: 'Comic Sans' }])).toBe(true);
+    expect('erreur' in lireTextes([{ texte: 'A', vue: 'Face', taille: 'grand' }])).toBe(true);
+    expect(lireTextes([{ texte: 'A', vue: 'cœur', police: 'Anton', taille: '3,5' }])).toEqual({
+      textes: [{ texte: 'A', vue: 'Cœur', police: 'Anton', style: 'Normal', taille: 3.5 }],
+    });
+  });
+
+  it('les textes et logos conservés deviennent des propriétés de la ligne, et se relisent', () => {
+    const logo = 'https://res.cloudinary.com/c/image/upload/v1/customizer/commandes/M-1001/logo_2.png';
+    const r = lireSaisieManuelle({
+      client: { nom: 'A' }, total: '10',
+      articles: [{
+        titre: 'Sweatshirt personnalisé', quantite: 1,
+        textes: [{ texte: 'MASSACRE', vue: 'Dos', police: 'Anton', style: 'Gras', taille: 4 }],
+        logos: [{ url: logo, vue: 'Face' }, { url: logo, vue: 'Face' }, { url: 'https://evil.com/x.png', vue: 'Dos' }],
+      }],
+    });
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(r.saisie.lineItems[0].properties).toEqual([
+      { name: 'Texte 1', value: '« MASSACRE » · Dos · Anton · Gras · 4 cm' },
+      { name: 'Logo face', value: logo },
+      { name: 'Logo face 2', value: logo },
+    ]);
+    const f = formulaireDepuisCommande({ lineItems: r.saisie.lineItems } as any) as any;
+    expect(f.articles[0].textes).toEqual([{ texte: 'MASSACRE', vue: 'Dos', police: 'Anton', style: 'Gras', taille: 4 }]);
+    expect(f.articles[0].logos).toEqual([{ url: logo, vue: 'Face' }, { url: logo, vue: 'Face' }]);
+  });
+
+  it('un logo envoyé s’ajoute à sa ligne avec sa vue', () => {
+    let r = avecDesign([{ title: 'x', properties: [] }], 0, 'u1', 'Dos');
+    if ('erreur' in r) throw new Error(r.erreur);
+    r = avecDesign(r.lignes, 0, 'u2', 'dos');
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(r.lignes[0].properties).toEqual([{ name: 'Logo dos', value: 'u1' }, { name: 'Logo dos 2', value: 'u2' }]);
+    expect(avecDesign([{ title: 'x' }], 0, 'u', 'Ventre')).toEqual({ erreur: 'Vue du logo inconnue.' });
   });
 });
