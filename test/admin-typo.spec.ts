@@ -132,6 +132,33 @@ describe('dashboard — typo retrouvée depuis le SVG (anciennes commandes)', ()
     expect(html).toContain('<b>Emplacement</b> Dos');
     expect(ancienne(null)).not.toContain('<b>Police</b>');
   });
+
+  it('ligne de groupe : la typo du surnom n’efface pas celle du dos retrouvée', () => {
+    const html = dashboardPage(
+      [
+        {
+          shopifyOrderId: '20919', orderNumber: 20919, totalPrice: '40',
+          lineItems: [{ title: 'Textile - T-shirt Polyester', quantity: 1, properties: [
+            { name: '_TexteContenu', value: 'Anaïs' },
+            { name: '_TexteFontFamily', value: 'Pacifico' },
+            { name: '_TexteFontSize', value: '16px' },
+            { name: '_TexteZone', value: 'f' },
+          ] }],
+          typoRetrouvee: { 0: {
+            f: { texte: 'IGNORÉ', police: 'Anton', taillePx: 20, couleur: '#000' },
+            b: { texte: 'C’EST QUI MON BINÔME ?', police: 'Bungee', taillePx: 24, couleur: '#fff', source: 'retrouve' },
+          } },
+          productionStatus: 'to_produce', financialStatus: 'paid', receivedAt: new Date(), shopifyCreatedAt: new Date(),
+        } as unknown as Order,
+      ],
+      [], [], 'https://exemple.fr', 'boutique', { limits: { orders: 300, quotes: 500 } },
+    );
+    expect(html).toContain('<b>Police</b> Pacifico');
+    expect(html).toContain('<b>Police</b> Bungee');
+    expect(html).toContain('<b>Emplacement</b> Dos');
+    // La zone déjà décrite par le thème n'est pas doublée par une typo retrouvée.
+    expect(html).not.toContain('IGNORÉ');
+  });
 });
 
 describe('fiche de production — typo retrouvée', () => {

@@ -2706,11 +2706,19 @@ function proprietesRetrouvees(parZone: any): Array<Array<{ name: string; value: 
     });
 }
 
-/** Propriétés typo d'une ligne : celles du thème, sinon celles retrouvées. */
+/**
+ * Propriétés typo d'une ligne : celles du thème, PLUS celles retrouvées pour
+ * les AUTRES zones. Une ligne de groupe porte la typo du surnom (face) ; le
+ * texte commun du dos, rattaché après coup, était masqué par elle.
+ */
 function typosDeLigne(li: any): Array<Array<{ name: string; value: string }>> {
   const props: Array<{ name: string; value: string }> = Array.isArray(li?.properties) ? li.properties : [];
   const envoyees = props.filter((p) => /^_Texte[A-Z]/.test(String(p.name || '')));
-  return envoyees.length ? [envoyees] : proprietesRetrouvees(li?.__typoRetrouvee);
+  const retrouvees = proprietesRetrouvees(li?.__typoRetrouvee);
+  if (!envoyees.length) return retrouvees;
+  const zoneEnvoyee = String(envoyees.find((p) => p.name === '_TexteZone')?.value || 'f');
+  const autres = retrouvees.filter((g) => g.find((p) => p.name === '_TexteZone')?.value !== zoneEnvoyee);
+  return [envoyees, ...autres];
 }
 
 /** Attache à chaque ligne sa typo retrouvée, AVANT collapseSizeGroup (qui perd l'index). */
