@@ -86,16 +86,20 @@ export const RE_DESIGN = /^Design( \d+)?$/;
 /** Vues (emplacements) où se marque un texte ou un logo. */
 export const VUES_MANUELLES = ['Face', 'Dos', 'Cœur', 'Manche droite', 'Manche gauche'] as const;
 
-/** Polices proposées (celles du configurateur, assets/fonts). */
+/**
+ * Polices proposées : EXACTEMENT celles du configurateur, dans le même ordre
+ * (Configurateur-travail/assets/conf-text-editor.js, tableau FONTS).
+ */
 export const POLICES_MANUELLES = [
-  'Acme', 'Alfa Slab One', 'Allura', 'Amatic SC', 'Anton', 'Architects Daughter', 'Archivo Black', 'Arial',
-  'Bangers', 'Bebas Neue', 'Black Ops One', 'Bungee', 'Caveat', 'Cinzel', 'Cookie', 'Courgette', 'Creepster',
-  'Crimson Text', 'Dancing Script', 'Fjalla One', 'Fredoka One', 'Great Vibes', 'Impact', 'Indie Flower', 'Kalam',
-  'Lato', 'Libre Baskerville', 'Lobster', 'Lora', 'Luckiest Guy', 'Merriweather', 'Monoton', 'Montserrat', 'Nunito',
-  'Open Sans', 'Oswald', 'Pacifico', 'Passion One', 'Patua One', 'Permanent Marker', 'Pinyon Script',
-  'Playfair Display', 'Poppins', 'Press Start 2P', 'PT Serif', 'Raleway', 'Righteous', 'Roboto', 'Rock Salt',
-  'Russo One', 'Sacramento', 'Satisfy', 'Shadows Into Light', 'Shrikhand', 'Special Elite', 'Tangerine', 'Teko',
-  'Ubuntu', 'Yellowtail',
+  'Arial', 'Impact', 'Bebas Neue', 'Oswald', 'Teko', 'Montserrat', 'Poppins', 'Righteous', 'Fredoka',
+  'Bangers', 'Luckiest Guy', 'Shrikhand', 'Lobster', 'Pacifico', 'Dancing Script', 'Great Vibes',
+  'Sacramento', 'Satisfy', 'Yellowtail', 'Caveat', 'Permanent Marker', 'Rock Salt', 'Special Elite',
+  'Roboto', 'Open Sans', 'Lato', 'Raleway', 'Ubuntu', 'Nunito', 'Playfair Display', 'Merriweather', 'Lora',
+  'PT Serif', 'Crimson Text', 'Libre Baskerville', 'Anton', 'Archivo Black', 'Alfa Slab One',
+  'Black Ops One', 'Russo One', 'Passion One', 'Fjalla One', 'Monoton', 'Press Start 2P', 'Creepster',
+  'Bungee', 'Acme', 'Patua One', 'Cinzel', 'Courgette', 'Indie Flower', 'Shadows Into Light', 'Amatic SC',
+  'Kalam', 'Architects Daughter', 'Cookie', 'Allura', 'Tangerine', 'Pinyon Script', 'Courier New', 'Courier',
+  'Times New Roman', 'Georgia', 'Verdana', 'Tahoma',
 ] as const;
 
 export const STYLES_TEXTE = ['Normal', 'Gras', 'Italique', 'Gras italique'] as const;

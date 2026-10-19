@@ -1,5 +1,6 @@
 import {
   CATALOGUE_MANUEL,
+  POLICES_MANUELLES,
   avecDesign,
   commandeManuelleDeLignes,
   designsConserves,
@@ -314,5 +315,19 @@ describe('textes et logos', () => {
     if ('erreur' in r) throw new Error(r.erreur);
     expect(r.lignes[0].properties).toEqual([{ name: 'Logo dos', value: 'u1' }, { name: 'Logo dos 2', value: 'u2' }]);
     expect(avecDesign([{ title: 'x' }], 0, 'u', 'Ventre')).toEqual({ erreur: 'Vue du logo inconnue.' });
+  });
+});
+
+describe('polices du formulaire', () => {
+  /* Le thème vit à côté du backend dans le dépôt de travail ; absent (CI,
+     serveur), le test est ignoré plutôt que d'échouer à tort. */
+  const fs = require('fs');
+  const path = require('path');
+  const fichier = path.join(__dirname, '..', '..', 'Configurateur-travail', 'assets', 'conf-text-editor.js');
+  (fs.existsSync(fichier) ? it : it.skip)('sont exactement celles du configurateur', () => {
+    const src: string = fs.readFileSync(fichier, 'utf8');
+    const tableau = src.slice(src.indexOf('var FONTS'), src.indexOf('];', src.indexOf('var FONTS')));
+    const noms = [...new Set([...tableau.matchAll(/name:\s*"([^"]+)"/g)].map((m) => m[1]))];
+    expect([...POLICES_MANUELLES]).toEqual(noms);
   });
 });
