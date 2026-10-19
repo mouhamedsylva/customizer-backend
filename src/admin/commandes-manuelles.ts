@@ -71,6 +71,71 @@ export const MAX_DESIGNS_PAR_LIGNE = 5;
  * la ligne. Carte, fiche de production et ZIP l'affichent avec l'article, et
  * le brouillon Shopify la reprend.
  */
+/** Designs renvoyés par le formulaire de modification : liens Cloudinary seulement. */
+export function designsConserves(brut: unknown): string[] {
+  if (!Array.isArray(brut)) return [];
+  return brut
+    .map((u) => String(u ?? '').trim())
+    .filter((u) => /^https:\/\/res\.cloudinary\.com\/[^\s"'<>]+$/.test(u))
+    .slice(0, MAX_DESIGNS_PAR_LIGNE);
+}
+
+/** Propriétés « Design », « Design 2 »… d'une ligne. */
+export const RE_DESIGN = /^Design( \d+)?$/;
+
+/**
+ * Données du formulaire pour MODIFIER une commande manuelle (inverse de
+ * lireSaisieManuelle) : client, adresse, articles (détails, manches,
+ * designs déjà joints), montant, date.
+ */
+export function formulaireDepuisCommande(o: {
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  customerInfo?: Record<string, any> | null;
+  lineItems?: unknown[];
+  totalPrice?: string | null;
+  shopifyCreatedAt?: Date | string | null;
+}): Record<string, unknown> {
+  const s = (o.customerInfo?.shipping || {}) as Record<string, any>;
+  const d = o.shopifyCreatedAt ? new Date(o.shopifyCreatedAt) : null;
+  return {
+    client: { nom: o.customerName || '', email: o.customerEmail || '', telephone: o.customerPhone || '' },
+    adresse: { ligne1: s.address1 || '', codePostal: s.zip || '', ville: s.city || '', pays: s.country || '' },
+    articles: (Array.isArray(o.lineItems) ? o.lineItems : []).map((li: any) => {
+      const props: any[] = Array.isArray(li?.properties) ? li.properties : [];
+      const nom = (p: any) => String(p?.name ?? '');
+      return {
+        titre: li?.title || '',
+        quantite: li?.quantity || 1,
+        details: props.filter((p) => /^Détail \d+$/.test(nom(p))).map((p) => String(p.value ?? '')).join('\n'),
+        manches: props.filter((p) => /^Manche (droite|gauche)$/.test(nom(p))).map((p) => nom(p).slice(7)),
+        designs: props.filter((p) => RE_DESIGN.test(nom(p))).map((p) => String(p.value ?? '')),
+      };
+    }),
+    total: o.totalPrice || '',
+    date: d && !isNaN(d.getTime()) ? d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }) : '',
+  };
+}
+
+/**
+ * Ressource Cloudinary d'un fichier d'une commande manuelle (dossier
+ * `customizer/commandes/`), pour l'effacer avec la commande. null hors de ce
+ * dossier : on n'efface jamais un fichier qui ne lui appartient pas.
+ */
+export function ressourceCommande(url: string): { publicId: string; resourceType: 'image' | 'raw' } | null {
+  const m = String(url || '').match(/^https:\/\/res\.cloudinary\.com\/[^/]+\/(image|raw)\/upload\/(?:v\d+\/)?(customizer\/commandes\/[^?#]+)$/);
+  if (!m) return null;
+  let chemin: string;
+  try {
+    chemin = decodeURIComponent(m[2]);
+  } catch {
+    return null;
+  }
+  const resourceType = m[1] as 'image' | 'raw';
+  return { publicId: resourceType === 'raw' ? chemin : chemin.replace(/\.[a-zA-Z0-9]{1,5}$/, ''), resourceType };
+}
+
 export function avecDesign(
   lignes: unknown,
   index: number,
@@ -156,9 +221,11 @@ export function lireSaisieManuelle(
       variantId: null,
       properties: [
         ...details.map((d, i) => ({ name: `Détail ${i + 1}`, value: d })),
-        // Manches personnalisées (textiles seulement) : leur supplément est
-        // déjà compris dans le prix unitaire ; la propriété sert à l'atelier.
+        // Manches personnalisées (textiles seulement) : information pour l'atelier.
         ...manchesDe(titre, a?.manches).map((m) => ({ name: `Manche ${m}`, value: 'Personnalisée' })),
+        // Designs DÉJÀ joints (modification d'une commande) : conservés tels
+        // quels. Les nouveaux arrivent ensuite par la route « design ».
+        ...designsConserves(a?.designs).map((url, i) => ({ name: i ? `Design ${i + 1}` : 'Design', value: url })),
       ],
     });
   }

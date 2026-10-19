@@ -2,6 +2,9 @@ import {
   CATALOGUE_MANUEL,
   avecDesign,
   commandeManuelleDeLignes,
+  designsConserves,
+  formulaireDepuisCommande,
+  ressourceCommande,
   estCommandeManuelle,
   lireSaisieManuelle,
   numeroManuel,
@@ -162,7 +165,8 @@ describe('commandes manuelles : affichage', () => {
     expect(html).toContain('✍ Saisies manuelles (1)');
     expect(html).toContain('+ Nouvelle commande');
     expect(html).not.toContain('js-facturer-manuelle');
-    expect(html).not.toContain('js-modifier-manuelle');
+    // Seule la commande manuelle se modifie.
+    expect(html.match(/js-modifier-manuelle"/g)).toHaveLength(1);
   });
 
   it('formulaire : trois étapes, montant saisi, ni facture ni prix unitaire', () => {
@@ -191,5 +195,59 @@ describe('commandes manuelles : affichage', () => {
     expect(html).toContain('Lucas Julien');
     expect(html).toContain('Format : Rond');
     expect(html).not.toMatch(/_?Commande manuelle/);
+  });
+});
+
+describe('modification et suppression', () => {
+  const o = {
+    shopifyOrderId: '-1', orderNumber: 'M-1001', customerName: 'Lucas Julien', customerEmail: 'l@b.fr', customerPhone: '01',
+    customerInfo: { shipping: { address1: '1 place Joffre', zip: '75007', city: 'Paris', country: 'France' } },
+    totalPrice: '960.00', shopifyCreatedAt: new Date('2026-10-14T10:00:00Z'),
+    lineItems: [{
+      title: 'T-shirt coton personnalisé', quantity: 4, properties: [
+        { name: 'Détail 1', value: 'Taille : M' },
+        { name: 'Manche droite', value: 'Personnalisée' },
+        { name: 'Design', value: 'https://res.cloudinary.com/c/image/upload/v1/customizer/commandes/M-1001/logo_1.png' },
+      ],
+    }],
+  } as any;
+
+  it('le formulaire de modification restitue la saisie, designs compris', () => {
+    const f = formulaireDepuisCommande(o) as any;
+    expect(f.client).toEqual({ nom: 'Lucas Julien', email: 'l@b.fr', telephone: '01' });
+    expect(f.adresse).toMatchObject({ ligne1: '1 place Joffre', codePostal: '75007', ville: 'Paris' });
+    expect(f.articles[0]).toEqual({
+      titre: 'T-shirt coton personnalisé', quantite: 4, details: 'Taille : M', manches: ['droite'],
+      designs: ['https://res.cloudinary.com/c/image/upload/v1/customizer/commandes/M-1001/logo_1.png'],
+    });
+    expect(f.total).toBe('960.00');
+    expect(f.date).toBe('2026-10-14');
+    // Relire le formulaire redonne les mêmes lignes (designs conservés).
+    const r = lireSaisieManuelle(f);
+    if ('erreur' in r) throw new Error(r.erreur);
+    expect(r.saisie.lineItems[0].properties).toEqual(o.lineItems[0].properties);
+  });
+
+  it('ne conserve que des designs Cloudinary', () => {
+    expect(designsConserves(['https://res.cloudinary.com/c/raw/upload/v1/a.pdf', 'https://evil.com/x.png', 42])).toEqual([
+      'https://res.cloudinary.com/c/raw/upload/v1/a.pdf',
+    ]);
+  });
+
+  it('retrouve la ressource Cloudinary d’un fichier de commande, et seulement celle-là', () => {
+    expect(ressourceCommande('https://res.cloudinary.com/c/image/upload/v12/customizer/commandes/M-1001/logo_1.png')).toEqual({
+      publicId: 'customizer/commandes/M-1001/logo_1', resourceType: 'image',
+    });
+    expect(ressourceCommande('https://res.cloudinary.com/c/raw/upload/v12/customizer/commandes/M-1001/bat_1.pdf')).toEqual({
+      publicId: 'customizer/commandes/M-1001/bat_1.pdf', resourceType: 'raw',
+    });
+    expect(ressourceCommande('https://res.cloudinary.com/c/image/upload/v1/customizer/logos/x.png')).toBeNull();
+  });
+
+  it('la carte d’une commande manuelle porte le bouton « Modifier »', () => {
+    const html = dashboardPage([{ ...o, productionStatus: 'to_produce', receivedAt: new Date(), seen: true, financialStatus: 'paid' }], [], [], 'https://x', '', {});
+    expect(html.match(/js-modifier-manuelle"/g)).toHaveLength(1);
+    expect(html).toContain('data-form="');
+    expect(html).toContain('id="mn-suppr"');
   });
 });

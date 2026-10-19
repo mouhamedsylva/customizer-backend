@@ -21,7 +21,7 @@ import type { PricingPayload } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
 import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
-import { ARTICLES_TEXTILES, CATALOGUE_MANUEL, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle } from './commandes-manuelles';
+import { ARTICLES_TEXTILES, CATALOGUE_MANUEL, RE_PROPRIETE_COMMANDE_MANUELLE, estCommandeManuelle, formulaireDepuisCommande } from './commandes-manuelles';
 import {
   aDesTextesRegeneres,
   assetsRattaches,
@@ -3305,6 +3305,11 @@ function orderCard(o: Order, srcQuote?: Quote): string {
         <a class="btn" href="/api/admin/orders/${id}/assets.zip">
           ↓ Tous les fichiers (ZIP)
         </a>
+        ${
+          manuelle
+            ? `<button type="button" class="btn js-modifier-manuelle" data-order="${id}" data-numero="${esc(o.orderNumber || '')}" data-form="${esc(JSON.stringify(formulaireDepuisCommande(o)))}" data-fichiers="${esc(JSON.stringify(fichiersJointsValides(o.fichiersJoints).map((f) => ({ id: f.id, libelle: f.libelle, nom: f.nom, image: estImageJointe(f), url: estImageJointe(f) ? f.url : lienFichierJoint(o.shopifyOrderId, f) }))))}">✎ Modifier la commande</button>`
+            : ''
+        }
       </div>
     </div>
   </div>`;
@@ -5315,6 +5320,7 @@ export function dashboardPage(
       </div>
 
       <div class="mn-pied">
+        <button type="button" class="btn mn-suppr" id="mn-suppr" onclick="supprimerManuelle()" hidden>Supprimer</button>
         <p class="hint" id="mn-statut" role="status"></p>
         <button type="button" class="btn" id="mn-retour" onclick="mnRetour()">Annuler</button>
         <button type="button" class="btn primary" id="mn-go" onclick="mnSuivant()">Suivant →</button>
@@ -5639,11 +5645,13 @@ export function dashboardPage(
        n'est créé sur Shopify, aucun e-mail n'est envoyé. Montant total saisi
        par l'admin (aucun calcul). Rien n'est enregistré avant le bouton final :
        création de la commande, puis envoi des fichiers déposés à l'étape 2.
-       Création seulement : une commande manuelle ne se modifie ni ne se
-       supprime.
+       En MODIFICATION (bouton « ✎ Modifier » d'une carte), le même formulaire
+       s'ouvre prérempli : « Enregistrer » remplace la saisie, les designs et
+       fichiers déjà joints sont conservés (ou retirés un à un), et
+       « Supprimer » efface la commande.
        Les lignes (articles, fichiers) sont construites par le DOM : jamais
        d'innerHTML avec une valeur saisie. */
-    var mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
+    var mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
     function mnVal(id){ var e=document.getElementById(id); return e?e.value:''; }
     function mnSet(id,v){ var e=document.getElementById(id); if(e) e.value=(v==null?'':String(v)); }
     function mnStatut(msg, err){
@@ -5656,7 +5664,10 @@ export function dashboardPage(
       if(txt!=null) e.textContent=txt;
       return e;
     }
-    function mnLibelleFinal(){ return mnCtx.id ? 'Réessayer' : 'Créer la commande'; }
+    function mnLibelleFinal(){
+      if(mnCtx.enregistre) return 'Réessayer';
+      return mnCtx.edition ? 'Enregistrer' : 'Créer la commande';
+    }
     function mnNumeroterArticles(){
       document.querySelectorAll('#mn-articles .mn-article').forEach(function(b,i){
         var n=b.querySelector('.num-art'); if(n) n.textContent=String(i+1);
@@ -5829,6 +5840,29 @@ export function dashboardPage(
         if(e.dataTransfer && e.dataTransfer.files) mnAjouterDesigns(bloc, dl, e.dataTransfer.files);
       });
       bloc.appendChild(haut); bloc.appendChild(det); bloc.appendChild(dz); bloc.appendChild(dl);
+      /* Modification : manches cochées et designs DÉJÀ joints (conservés tant
+         qu'on ne les retire pas). */
+      if(Array.isArray(a.manches)) bloc.dataset.manches=a.manches.join(',');
+      bloc._designs=[];
+      (Array.isArray(a.designs)?a.designs:[]).forEach(function(url){
+        var d={url:String(url||'')};
+        if(!d.url) return;
+        bloc._designs.push(d);
+        var nomF=decodeURIComponent(d.url.split('/').pop()||'Design');
+        var estImg=/[.](png|jpe?g|webp|gif)$/i.test(d.url);
+        var row=mnLigne(nomF, 'Déjà joint', estImg, estImg?d.url:'', dl);
+        var ouvrir=mnEl('a','mn-retirer mn-ouvrir','↗');
+        ouvrir.href=d.url; ouvrir.target='_blank'; ouvrir.rel='noopener'; ouvrir.title='Ouvrir';
+        row.appendChild(ouvrir);
+        var del=mnEl('button','mn-retirer','✕');
+        del.type='button'; del.title="Retirer ce design (à l'enregistrement)";
+        del.addEventListener('click', function(){
+          if(mnCtx.envoi) return;
+          bloc._designs=bloc._designs.filter(function(x){ return x!==d; });
+          row.remove();
+        });
+        row.appendChild(del);
+      });
       document.getElementById('mn-articles').appendChild(bloc);
       mnNumeroterArticles();
       return bloc;
@@ -5854,6 +5888,9 @@ export function dashboardPage(
       var go=document.getElementById('mn-go'), ret=document.getElementById('mn-retour');
       ret.textContent = n===1 ? 'Annuler' : '← Retour';
       go.textContent = n<3 ? 'Suivant →' : mnLibelleFinal();
+      document.getElementById('mn-suppr').hidden=!(mnCtx.edition && n===1 && !mnCtx.enregistre);
+      /* La note se modifie depuis la carte : ici, seulement à la création. */
+      document.getElementById('mn-note-wrap').hidden=mnCtx.edition;
       if(n===3){ mnLignesFacture(); mnRecap(); }
       document.getElementById('mn-corps').scrollTop=0;
     }
@@ -5915,21 +5952,30 @@ export function dashboardPage(
         if(mnVerifier(mnCtx.etape)) mnAller(mnCtx.etape+1);
         return;
       }
-      if(!mnCtx.id && (!mnVerifier(1) || !mnVerifier(2) || !mnVerifier(3))) return;
+      if(!mnCtx.enregistre && (!mnVerifier(1) || !mnVerifier(2) || !mnVerifier(3))) return;
       mnEnregistrer();
     }
-    function ouvrirManuelle(){
-      mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
-      ['mn-nom','mn-email','mn-tel','mn-adr1','mn-cp','mn-ville','mn-total','mn-note']
-        .forEach(function(k){ mnSet(k,''); });
-      mnSet('mn-pays','France');
-      mnSet('mn-date', new Date().toLocaleDateString('sv-SE'));
+    /* @param id, numero, f, fichiers  modification : commande, numéro M-…,
+       formulaire (formulaireDepuisCommande) et fichiers joints existants. */
+    function ouvrirManuelle(id, numero, f, fichiers){
+      f=f||{};
+      var c=f.client||{}, ad=f.adresse||{};
+      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
+      if(id){ mnCtx.id=id; mnCtx.numero=numero||''; mnCtx.edition=true; }
+      mnSet('mn-nom',c.nom); mnSet('mn-email',c.email); mnSet('mn-tel',c.telephone);
+      mnSet('mn-adr1',ad.ligne1); mnSet('mn-cp',ad.codePostal); mnSet('mn-ville',ad.ville);
+      mnSet('mn-pays', id ? ad.pays : (ad.pays||'France'));
+      mnSet('mn-total', f.total ? String(f.total).replace('.',',') : '');
+      mnSet('mn-note','');
+      mnSet('mn-date', f.date || new Date().toLocaleDateString('sv-SE'));
       document.getElementById('mn-articles').textContent='';
-      ajouterArticleManuel();
+      var arts=Array.isArray(f.articles)&&f.articles.length?f.articles:[{}];
+      arts.forEach(function(a){ ajouterArticleManuel(a); });
       document.getElementById('mn-fichiers').textContent='';
+      (Array.isArray(fichiers)?fichiers:[]).forEach(function(x){ mnLigneExistante(x); });
       mnFichiersVide();
       document.querySelectorAll('.mn-input.erreur').forEach(function(i){ i.classList.remove('erreur'); });
-      document.getElementById('mn-titre').textContent='Nouvelle commande';
+      document.getElementById('mn-titre').textContent=id ? 'Modifier la commande '+(numero||'') : 'Nouvelle commande';
       mnStatut('');
       document.getElementById('mn-go').disabled=false;
       mnAller(1);
@@ -5941,16 +5987,17 @@ export function dashboardPage(
       if(mnCtx.file.length && !mnCtx.enregistre &&
          !window.confirm('Fermer sans enregistrer ? Les informations saisies et les fichiers déposés seront perdus.')) return;
       document.getElementById('manuelle-modal').classList.remove('open');
-      /* Commande enregistrée (envoi partiel par exemple) : la liste doit la montrer. */
-      if(mnCtx.enregistre && mnCtx.id){ mnMontrerCommande(mnCtx.id, ''); return; }
-      mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
+      /* Commande enregistrée (envoi partiel), ou fichier retiré : la liste doit
+         la montrer à jour. */
+      if((mnCtx.enregistre || mnCtx.aRecharger) && mnCtx.id){ mnMontrerCommande(mnCtx.id, ''); return; }
+      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
     }
 
     /* ── Étape 3 : récapitulatif ── */
     function mnRecap(){
       var r=document.getElementById('mn-recap'); r.textContent='';
       var t=mnEl('div','mn-carte-titre');
-      var tt=mnEl('span'); tt.appendChild(mnEl('b',null,'Récapitulatif')); tt.appendChild(mnEl('small',null,'Vérifiez avant de créer la commande'));
+      var tt=mnEl('span'); tt.appendChild(mnEl('b',null,'Récapitulatif')); tt.appendChild(mnEl('small',null,mnCtx.edition?'Vérifiez avant d’enregistrer':'Vérifiez avant de créer la commande'));
       t.appendChild(tt); r.appendChild(t);
       var client=mnVal('mn-nom').trim();
       var lignes=[
@@ -5985,14 +6032,16 @@ export function dashboardPage(
     function mnEnregistrer(){
       var go=document.getElementById('mn-go'); go.disabled=true;
       mnCtx.envoi=true;
-      /* Reprise après un échec : la commande existe déjà, on reprend où l'on en était. */
-      if(mnCtx.id){ mnEnvoyerFichiers(0, 0); return; }
+      /* Reprise après un échec d'envoi de fichier : la commande est déjà
+         enregistrée, on reprend où l'on en était. */
+      if(mnCtx.enregistre){ mnEnvoyerFichiers(0, 0); return; }
       var articles=[];
       mnBlocsEnvoyes().forEach(function(b){
         articles.push({
           titre: mnTitre(b),
           quantite: parseInt(b.querySelector('.mn-qte').value,10)||0,
           manches: mnManches(b),
+          designs: (b._designs||[]).map(function(d){ return d.url; }),
           details: b.querySelector('textarea').value
         });
       });
@@ -6001,13 +6050,16 @@ export function dashboardPage(
         adresse:{ ligne1:mnVal('mn-adr1'), codePostal:mnVal('mn-cp'), ville:mnVal('mn-ville'), pays:mnVal('mn-pays') },
         articles:articles,
         date:mnVal('mn-date'), total:mnVal('mn-total'),
-        note: mnVal('mn-note')
+        note: mnCtx.edition ? undefined : mnVal('mn-note')
       };
-      mnStatut('Création de la commande…');
-      mnRequete('POST', '/api/admin/orders/manuelles', corps)
+      mnStatut(mnCtx.edition ? 'Enregistrement…' : 'Création de la commande…');
+      var url = mnCtx.edition
+        ? '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle'
+        : '/api/admin/orders/manuelles';
+      mnRequete('POST', url, corps)
         .then(function(res){
           mnCtx.id=res.id; mnCtx.enregistre=true;
-          mnCtx.numero='M-'+(1000+Math.abs(parseInt(res.id,10)));
+          if(!mnCtx.numero) mnCtx.numero='M-'+(1000+Math.abs(parseInt(res.id,10)));
           mnEnvoyerFichiers(0, 0);
         })
         .catch(function(e){
@@ -6018,10 +6070,10 @@ export function dashboardPage(
     /* Fin : commande créée, fichiers envoyés → on l'ouvre dans la liste. */
     function mnTerminer(echecsFichiers){
       mnCtx.envoi=false;
-      if(!echecsFichiers){ mnMontrerCommande(mnCtx.id, 'Commande '+mnCtx.numero+' créée.'); return; }
+      if(!echecsFichiers){ mnMontrerCommande(mnCtx.id, 'Commande '+mnCtx.numero+(mnCtx.edition?' enregistrée.':' créée.')); return; }
       var go=document.getElementById('mn-go');
       go.disabled=false; go.textContent='Réessayer';
-      mnStatut('Commande '+mnCtx.numero+' créée, mais '+echecsFichiers+" fichier(s) n'ont pas pu être joints (voir l'étape 2).", true);
+      mnStatut('Commande '+mnCtx.numero+(mnCtx.edition?' enregistrée':' créée')+', mais '+echecsFichiers+" fichier(s) n'ont pas pu être joints (voir l'étape 2).", true);
     }
     /* Envoie la file des fichiers, un par un ; les échecs restent dans la file
        (nouvelle tentative au prochain clic). */
@@ -6040,7 +6092,7 @@ export function dashboardPage(
       orderFilter='all'; articleFilter='all';
       var s=document.getElementById('search'); if(s) s.value='';
       memoriserVue('card-'+id);
-      mnCtx={id:null, numero:'', etape:1, enregistre:false, envoi:false, file:[]};
+      mnCtx={id:null, numero:'', edition:false, etape:1, enregistre:false, aRecharger:false, envoi:false, file:[]};
       setTimeout(function(){ location.reload(); }, message ? 450 : 0);
     }
     function mnEnvoyerFichiers(i, echecs){
@@ -6098,9 +6150,51 @@ export function dashboardPage(
       if(!conteneur) mnFichiersVide();
       return row;
     }
+    /* Fichier déjà joint (modification) : ouvrir, ou retirer tout de suite. */
+    function mnLigneExistante(x){
+      var row=mnLigne(x.libelle||x.nom||'Fichier', (x.libelle&&x.nom&&x.libelle!==x.nom)?x.nom+' · déjà joint':'Déjà joint', x.image, x.url);
+      if(x.url){
+        var ouvrir=mnEl('a','mn-retirer mn-ouvrir','↗');
+        ouvrir.href=x.url; ouvrir.target='_blank'; ouvrir.rel='noopener'; ouvrir.title='Ouvrir';
+        row.appendChild(ouvrir);
+      }
+      var del=mnEl('button','mn-retirer','✕');
+      del.type='button'; del.title='Retirer ce fichier de la commande';
+      del.addEventListener('click', function(){
+        if(!window.confirm('Retirer « '+(x.libelle||x.nom||'ce fichier')+' » de la commande ?')) return;
+        del.disabled=true; row.style.opacity='.45';
+        mnRequete('DELETE','/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/fichiers/'+encodeURIComponent(x.id))
+          .then(function(){ row.remove(); mnFichiersVide(); mnCtx.aRecharger=true; })
+          .catch(function(e){ del.disabled=false; row.style.opacity=''; mnStatut(e.message,true); });
+      });
+      row.appendChild(del);
+    }
+    /* Suppression d'une commande manuelle (modification, étape 1). */
+    function supprimerManuelle(){
+      if(!mnCtx.id || !mnCtx.edition || mnCtx.envoi) return;
+      if(!window.confirm('Supprimer définitivement la commande '+(mnCtx.numero||'')+', ses designs et ses fichiers joints ?')) return;
+      mnStatut('Suppression…');
+      mnRequete('DELETE', '/api/admin/orders/'+encodeURIComponent(mnCtx.id)+'/manuelle')
+        .then(function(){
+          document.getElementById('manuelle-modal').classList.remove('open');
+          toast('Commande '+(mnCtx.numero||'')+' supprimée.');
+          memoriserVue();
+          setTimeout(function(){ location.reload(); }, 450);
+        })
+        .catch(function(e){ mnStatut(e.message||'Erreur réseau.', true); });
+    }
+    /* Bouton « ✎ Modifier » d'une carte : formulaire et fichiers en data-*. */
+    document.addEventListener('click', function(ev){
+      var b=ev.target&&ev.target.closest?ev.target.closest('.js-modifier-manuelle'):null;
+      if(!b) return;
+      var f={}, fichiers=[];
+      try{ f=JSON.parse(b.getAttribute('data-form')||'{}'); }catch(e){}
+      try{ fichiers=JSON.parse(b.getAttribute('data-fichiers')||'[]'); }catch(e){}
+      ouvrirManuelle(b.getAttribute('data-order')||'', b.getAttribute('data-numero')||'', f, fichiers);
+    });
     /* Designs d'un article : en file comme les autres fichiers, liés à son bloc. */
     function mnAjouterDesigns(bloc, conteneur, liste){
-      var refus=0, deja=mnCtx.file.filter(function(j){ return j.bloc===bloc; }).length;
+      var refus=0, deja=mnCtx.file.filter(function(j){ return j.bloc===bloc; }).length+((bloc._designs||[]).length);
       for(var i=0;i<liste.length;i++){
         var f=liste[i];
         if(f.size>10*1024*1024 || deja>=5){ refus++; continue; }

@@ -38,7 +38,7 @@ import {
   fichiersJointsValides,
   nouveauFichierJoint,
 } from './fichiers-joints';
-import { estCommandeManuelle, lireSaisieManuelle } from './commandes-manuelles';
+import { RE_DESIGN, estCommandeManuelle, lireSaisieManuelle, ressourceCommande } from './commandes-manuelles';
 import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
@@ -910,6 +910,81 @@ export class AdminController {
     const note = String((req.body as any)?.note ?? '').slice(0, 2000).trim();
     const id = await this.data.creerCommandeManuelle(lu.saisie, note || null);
     res.json({ ok: true, id });
+  }
+
+  /**
+   * POST /api/admin/orders/:id/manuelle — modifie une commande manuelle
+   * (client, articles, designs conservés, montant, date). Les commandes
+   * Shopify ne se modifient jamais ici.
+   */
+  @Post('orders/:id/manuelle')
+  async modifierCommandeManuelle(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (!estCommandeManuelle(orderId)) {
+      res.status(403).json({ ok: false, error: 'Seules les commandes saisies à la main sont modifiables.' });
+      return;
+    }
+    const lu = lireSaisieManuelle(req.body);
+    if ('erreur' in lu) {
+      res.status(400).json({ ok: false, error: lu.erreur });
+      return;
+    }
+    if (!(await this.data.modifierCommandeManuelle(orderId, lu.saisie))) {
+      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
+      return;
+    }
+    res.json({ ok: true, id: orderId });
+  }
+
+  /**
+   * DELETE /api/admin/orders/:id/manuelle — supprime une commande manuelle,
+   * avec ses fichiers joints et ses designs sur Cloudinary.
+   */
+  @Delete('orders/:id/manuelle')
+  async supprimerCommandeManuelle(
+    @Req() req: Request,
+    @Param('id') orderId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    if (!estCommandeManuelle(orderId)) {
+      res.status(403).json({ ok: false, error: 'Seules les commandes saisies à la main peuvent être supprimées.' });
+      return;
+    }
+    const o = await this.data.supprimerCommandeManuelle(orderId);
+    if (!o) {
+      res.status(404).json({ ok: false, error: 'Commande introuvable.' });
+      return;
+    }
+    // Fichiers sur Cloudinary : après la base (un échec laisse un orphelin,
+    // jamais une commande pointant vers un fichier effacé).
+    const ressources: Array<{ publicId: string; resourceType: 'image' | 'raw' }> = [];
+    for (const f of fichiersJointsValides(o.fichiersJoints)) {
+      if (f.publicId) ressources.push({ publicId: f.publicId, resourceType: f.resourceType || 'image' });
+    }
+    for (const li of Array.isArray(o.lineItems) ? (o.lineItems as any[]) : []) {
+      for (const p of Array.isArray(li?.properties) ? li.properties : []) {
+        if (!RE_DESIGN.test(String(p?.name ?? ''))) continue;
+        const r = ressourceCommande(String(p?.value ?? ''));
+        if (r) ressources.push(r);
+      }
+    }
+    for (const r of ressources) {
+      await this.cloudinary
+        .deleteResource(r.publicId, r.resourceType)
+        .catch((e) => this.logger.warn(`Suppression Cloudinary ${r.publicId} : ${(e as Error).message}`));
+    }
+    res.json({ ok: true });
   }
 
   /** POST /api/admin/orders/:id/note — enregistre la note interne. */

@@ -83,12 +83,52 @@ describe('Commandes manuelles', () => {
     expect(r.body.error).toContain('au moins un article');
   });
 
-  it('ne se modifie ni ne se supprime plus', async () => {
+  it('modifie une commande manuelle sans toucher à son suivi, sa note ni ses fichiers', async () => {
     const cookie = await connexion();
     await post('/api/admin/orders/manuelles', cookie, saisie());
-    expect((await post('/api/admin/orders/-1/manuelle', cookie, saisie())).status).toBe(404);
+    await post('/api/admin/orders/-1/status', cookie, { status: 'producing' });
+    const design = 'https://res.cloudinary.com/demo/image/upload/v1/customizer/commandes/M-1001/logo_1.png';
+    const m = await post(
+      '/api/admin/orders/-1/manuelle',
+      cookie,
+      saisie({ total: '120', articles: [{ titre: 'Drapeau personnalisé', quantite: 3, designs: [design] }] }),
+    );
+    expect(m.body).toEqual({ ok: true, id: '-1' });
+    const o = await repo().findOneByOrFail({ shopifyOrderId: '-1' });
+    expect(o.totalPrice).toBe('120.00');
+    expect((o.lineItems as any[])[0]).toMatchObject({ title: 'Drapeau personnalisé', quantity: 3 });
+    expect((o.lineItems as any[])[0].properties).toContainEqual({ name: 'Design', value: design });
+    expect(o.productionStatus).toBe('producing');
+    expect(o.internalNote).toBe('Reçue par e-mail');
+    expect(o.orderNumber).toBe('M-1001');
+    expect(h.shopify.calls.filter((c) => !/fulfill|InProgress|ShippingState/i.test(c.method))).toHaveLength(0);
+  });
+
+  it('supprime une commande manuelle et efface ses fichiers', async () => {
+    const cookie = await connexion();
+    await post('/api/admin/orders/manuelles', cookie, saisie());
+    await repo().update(
+      { shopifyOrderId: '-1' },
+      {
+        fichiersJoints: [
+          { id: 'f1', libelle: 'BAT', nom: 'bat.pdf', url: 'https://res.cloudinary.com/c/raw/upload/v1/bat.pdf', type: 'application/pdf', taille: 1, publicId: 'customizer/commandes/M-1001/bat.pdf', resourceType: 'raw', ajoutePar: 'a', ajouteLe: 'x' },
+        ] as any,
+      },
+    );
     const d = await request(srv()).delete('/api/admin/orders/-1/manuelle').set('X-Forwarded-For', freshIp()).set('Cookie', cookie);
-    expect(d.status).toBe(404);
+    expect(d.body).toEqual({ ok: true });
+    expect(await repo().count()).toBe(0);
+    expect(h.cloudinary.callsTo('deleteResource')[0].args).toEqual(['customizer/commandes/M-1001/bat.pdf', 'raw']);
+  });
+
+  it('refuse sans session, et ne modifie ni ne supprime jamais une commande Shopify', async () => {
+    expect((await post('/api/admin/orders/-1/manuelle', null, saisie())).status).toBe(401);
+    expect((await request(srv()).delete('/api/admin/orders/-1/manuelle').set('X-Forwarded-For', freshIp())).status).toBe(401);
+    const cookie = await connexion();
+    await repo().save({ shopifyOrderId: '123', orderNumber: '#20500', lineItems: [], fromConfigurator: true } as Partial<Order>);
+    expect((await post('/api/admin/orders/123/manuelle', cookie, saisie())).status).toBe(403);
+    const d = await request(srv()).delete('/api/admin/orders/123/manuelle').set('X-Forwarded-For', freshIp()).set('Cookie', cookie);
+    expect(d.status).toBe(403);
     expect(await repo().count()).toBe(1);
   });
 
