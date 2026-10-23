@@ -12,6 +12,12 @@
  *       rattache un TEXTE : son visuel, son fichier de découpe, et sa typo
  *       relue dans le SVG (police, taille, couleur)
  *
+ *   … --commande 20981 --remplacer <url> --libelle "Logo dos" --ligne 4
+ *       REMPLACE un fichier envoyé par erreur (logo d'un autre article)
+ *
+ *   … --commande 20981 --retirer --libelle "Logo cœur (avant détourage)" --ligne 2
+ *       MASQUE un fichier envoyé par erreur
+ *
  * POURQUOI :
  *  - logos : jusqu'au 05/10/2026, les fichiers de la commande étaient collectés
  *    AVANT la fin des envois vers Cloudinary — un logo déposé juste avant le
@@ -111,6 +117,37 @@ async function main(): Promise<void> {
     t[ligne] = parLigne;
     await enregistrer();
     console.log(`✔ « ${libelle} » rattaché à la ligne ${ligne + 1} de ${o.orderNumber} : ${aAjouter}`);
+    await base.destroy();
+    return;
+  }
+
+  /* ── REMPLACER ou MASQUER un fichier envoyé par erreur ──
+     Le thème a pu envoyer le logo d'un AUTRE article du même produit
+     (#20981). La propriété d'origine reste dans la commande Shopify ; le
+     dashboard, la fiche et le ZIP affichent le remplaçant. */
+  const remplacer = arg('--remplacer');
+  const retirer = process.argv.includes('--retirer');
+  if (remplacer || retirer) {
+    if (remplacer && !CLOUDINAIRE.test(remplacer)) throw new Error('--remplacer : URL Cloudinary https attendue.');
+    if (!arg('--libelle')) throw new Error('Précisez la propriété : --libelle "Logo dos"');
+    if (!lignes[ligne]) throw new Error(`La commande n'a pas de ligne ${ligne + 1}.`);
+    const nom = libelle.startsWith('_') ? libelle : `_${libelle}`;
+    const props: any[] = Array.isArray(lignes[ligne]?.properties) ? lignes[ligne].properties : [];
+    if (!props.some((p) => p?.name === nom)) {
+      throw new Error(
+        `La ligne ${ligne + 1} n'a pas de propriété « ${nom} ». Présentes : ` +
+          props.map((p) => p?.name).filter((n) => /^_(Logo|Texte)/.test(String(n))).join(', '),
+      );
+    }
+    const parLigne = { ...(t[ligne] || {}) };
+    parLigne.__remplace = { ...(parLigne.__remplace || {}), [nom]: remplacer || null };
+    t[ligne] = parLigne;
+    await enregistrer();
+    console.log(
+      remplacer
+        ? `✔ « ${nom} » remplacé sur la ligne ${ligne + 1} de ${o.orderNumber} : ${remplacer}`
+        : `✔ « ${nom} » masqué sur la ligne ${ligne + 1} de ${o.orderNumber}`,
+    );
     await base.destroy();
     return;
   }

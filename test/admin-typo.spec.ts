@@ -211,3 +211,41 @@ describe('SVG régénéré à la place d’un SVG corrompu', () => {
     expect(html).toContain('régénéré, gras/italique inconnus');
   });
 });
+
+describe('fichier envoyé par erreur, remplacé ou masqué (#20981)', () => {
+  const { proprietesCorrigees } = require('../src/shared/zones-texte');
+  const FAUX = 'https://res.cloudinary.com/demo/image/upload/v1/logo_vert.png';
+  const BON = 'https://res.cloudinary.com/demo/image/upload/v2/logo_bleu.png';
+  const AVANT = 'https://res.cloudinary.com/demo/image/upload/v1/logo_vert_avant.png';
+  const props = [
+    { name: '_Logo dos', value: FAUX },
+    { name: '_Logo cœur (avant détourage)', value: AVANT },
+    { name: 'Taille', value: 'M' },
+  ];
+
+  it('remplace, masque, et ignore une URL étrangère', () => {
+    const r = proprietesCorrigees(props, {
+      __remplace: { '_Logo dos': BON, '_Logo cœur (avant détourage)': null },
+    });
+    expect(r).toEqual([{ name: '_Logo dos', value: BON }, { name: 'Taille', value: 'M' }]);
+    expect(proprietesCorrigees(props, { __remplace: { '_Logo dos': 'https://evil.example/x.png' } })[0].value).toBe(FAUX);
+    expect(proprietesCorrigees(props, null)).toBe(props);
+  });
+
+  it('la carte du dashboard montre le remplaçant, plus le fichier erroné', () => {
+    const html = dashboardPage(
+      [
+        {
+          shopifyOrderId: '20981', orderNumber: 20981, totalPrice: '60',
+          lineItems: [{ title: 'Textile - T-shirt Polyester', quantity: 1, properties: props }],
+          typoRetrouvee: { 0: { __remplace: { '_Logo dos': BON, '_Logo cœur (avant détourage)': null } } },
+          productionStatus: 'to_produce', financialStatus: 'paid', receivedAt: new Date(), shopifyCreatedAt: new Date(),
+        } as unknown as Order,
+      ],
+      [], [], 'https://exemple.fr', 'boutique', { limits: { orders: 300, quotes: 500 } },
+    );
+    expect(html).toContain(BON);
+    expect(html).not.toContain(FAUX);
+    expect(html).not.toContain(AVANT);
+  });
+});

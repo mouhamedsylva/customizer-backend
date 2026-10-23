@@ -49,6 +49,7 @@ import {
   assetsRattaches,
   pngRegenere,
   pngRegeneresSansOrigine,
+  proprietesCorrigees,
   svgRegenere,
   svgRegeneresSansOrigine,
 } from '../shared/zones-texte';
@@ -1322,10 +1323,11 @@ export class AdminController {
     const files: Array<{ name: string; url: string; rawId?: string }> = [];
     const items = Array.isArray(order.lineItems) ? order.lineItems : [];
     items.forEach((li: any, i: number) => {
+      // Fichiers remplacés ou masqués après coup : mêmes que sur la carte.
       const props: Array<{ name: string; value: string }> = Array.isArray(
         li.properties,
       )
-        ? li.properties
+        ? proprietesCorrigees(li.properties, (order as any).typoRetrouvee?.[i])
         : [];
       props.forEach((p) => {
         if (typeof p.value !== 'string' || !/^https?:\/\//i.test(p.value)) return;

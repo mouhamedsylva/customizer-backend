@@ -97,6 +97,34 @@ export function logoManquant(nom: unknown): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * Propriétés d'une ligne, CORRIGÉES par `typoRetrouvee[ligne].__remplace`
+ * (scripts/retrouver-logos-commande --remplacer / --retirer).
+ *
+ * `{ "_Logo dos": "<url>" }` remplace le fichier ; `null` masque la
+ * propriété. Sert quand le thème a envoyé le MAUVAIS fichier (#20981 : deux
+ * t-shirts du même produit partageaient leurs logos). La commande Shopify
+ * n'est pas modifiée. Une URL qui n'est ni Cloudinary ni du thème est ignorée.
+ */
+export function proprietesCorrigees<P extends { name: string; value: unknown }>(
+  props: P[],
+  parLigne: unknown,
+): P[] {
+  const table = (parLigne as any)?.__remplace;
+  if (!Array.isArray(props) || !table || typeof table !== 'object') return props;
+  const out: P[] = [];
+  for (const p of props) {
+    if (!p || !Object.prototype.hasOwnProperty.call(table, p.name)) {
+      out.push(p);
+      continue;
+    }
+    const v = table[p.name];
+    if (v === null) continue;
+    out.push(cloudinaire(v) || assetDuTheme(v) ? { ...p, value: v } : p);
+  }
+  return out;
+}
+
 export function assetsRattaches(parLigne: unknown): Array<{ label: string; url: string }> {
   const liste = (parLigne as any)?.__assets;
   if (!Array.isArray(liste)) return [];

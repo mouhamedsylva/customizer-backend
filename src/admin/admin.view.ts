@@ -28,6 +28,7 @@ import {
   logoManquant,
   pngRegeneresSansOrigine,
   pngRegenere,
+  proprietesCorrigees,
   svgRegenere,
   svgRegeneresSansOrigine,
 } from '../shared/zones-texte';
@@ -2725,7 +2726,17 @@ function typosDeLigne(li: any): Array<Array<{ name: string; value: string }>> {
 function avecTypoRetrouvee(o: Order, items: any[]): any[] {
   const t: any = (o as any).typoRetrouvee;
   if (!t) return items;
-  return items.map((li, i) => (t[i] ? { ...li, __typoRetrouvee: t[i] } : li));
+  /* Fichiers remplacés ou masqués après coup (`__remplace`) : appliqués ICI,
+     une seule fois, pour la carte comme pour la fiche de production. */
+  return items.map((li, i) =>
+    t[i]
+      ? {
+          ...li,
+          properties: Array.isArray(li?.properties) ? proprietesCorrigees(li.properties, t[i]) : li?.properties,
+          __typoRetrouvee: t[i],
+        }
+      : li,
+  );
 }
 
 function specsTypo(props: Array<{ name: string; value: string }>): string {
