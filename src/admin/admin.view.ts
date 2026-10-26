@@ -908,7 +908,12 @@ body{
    du fichier client, ni le recto du verso. Chacun porte désormais son
    intitulé. */
 .assets{display:flex;gap:10px;flex-wrap:wrap}
-.asset{display:flex;flex-direction:column;gap:5px;width:72px;margin:0}
+.asset{display:flex;flex-direction:column;gap:5px;width:72px;margin:0;position:relative}
+/* Même image répétée (une ligne par pièce) : une vignette, et son nombre. */
+.asset-n{position:absolute;top:4px;right:4px;background:var(--ink,#1a1a1a);color:#fff;font-size:10px;font-weight:700;line-height:1;padding:3px 5px;border-radius:999px}
+/* Devis : vignettes AU-DESSUS des détails. Côte à côte, une longue rangée de
+   vignettes réduisait la colonne des détails à quelques pixels. */
+.item.item-devis{grid-template-columns:1fr}
 .asset figcaption{
   font-size:10px;line-height:1.25;color:var(--muted);text-align:center;
   /* Deux lignes au plus : « Visuel client — VERSO » tient, sans étirer la
@@ -3621,6 +3626,38 @@ function groupAggregate(rows: any[]): {
   return { sizes, matrix, colTotals, grandTotal, flocks };
 }
 
+/**
+ * Détails d'un devis, lignes IDENTIQUES additionnées — pour l'affichage.
+ *
+ * Une répartition par tailles envoyait une ligne par pièce : 33 fois
+ * « 1× T-shirt coton — Couleur : Camel — M ». Même texte après « N× » : une
+ * seule pastille « 33× … », à la place de la première occurrence. Les lignes
+ * sans quantité (résumé « Commande sur devis : … ») restent telles quelles.
+ * Les données enregistrées ne changent pas.
+ */
+export function detailsRegroupes(details: unknown[]): string[] {
+  const LIGNE = /^\s*(\d+)\s*×\s*(.+?)\s*$/;
+  const out: Array<{ texte: string; qty: number | null }> = [];
+  const parTexte = new Map<string, { texte: string; qty: number | null }>();
+  for (const brut of Array.isArray(details) ? details : []) {
+    const s = String(brut ?? '');
+    const m = LIGNE.exec(s);
+    if (!m) {
+      out.push({ texte: s, qty: null });
+      continue;
+    }
+    const deja = parTexte.get(m[2]);
+    if (deja && deja.qty !== null) {
+      deja.qty += Number(m[1]);
+      continue;
+    }
+    const e = { texte: m[2], qty: Number(m[1]) };
+    parTexte.set(m[2], e);
+    out.push(e);
+  }
+  return out.map((e) => (e.qty === null ? e.texte : `${e.qty}× ${e.texte}`));
+}
+
 
 function quoteCard(
   q: Quote,
@@ -3647,30 +3684,40 @@ function quoteCard(
    * agrandissable au clic (js-zoom). */
   const previews: any[] = Array.isArray(coin.previews) ? coin.previews : [];
 
-  const vignette = (url: string, titre: string, cls = '') =>
+  const vignette = (url: string, titre: string, cls = '', n = 1) =>
     `<figure class="asset${cls ? ' ' + cls : ''}">
        <img class="thumb js-zoom" src="${esc(url)}" title="${esc(titre)}"
             data-zoom="${esc(url)}" alt="${esc(titre)}">
+       ${n > 1 ? `<span class="asset-n" title="${n} lignes portent cette image">×${n}</span>` : ''}
        <figcaption>${esc(titre)}</figcaption>
      </figure>`;
 
-  const blocs: string[] = [];
+  /* UNE VIGNETTE PAR IMAGE. Une répartition par tailles envoyait une ligne —
+     donc un aperçu — par pièce : 66 vignettes identiques pour 2 t-shirts
+     réels. Même URL et même libellé : une seule, avec son nombre. */
+  const vues: Array<{ url: string; titre: string; cls: string; n: number }> = [];
+  const ajouterVue = (url: string, titre: string, cls = '') => {
+    const deja = vues.find((v) => v.url === url && v.titre === titre);
+    if (deja) deja.n += 1;
+    else vues.push({ url, titre, cls, n: 1 });
+  };
   previews.forEach((p) => {
     const face = String(p?.label || '').trim();
     if (isImg(p?.base)) {
-      blocs.push(vignette(p.base, face ? `Rendu — ${face}` : 'Rendu'));
+      ajouterVue(p.base, face ? `Rendu — ${face}` : 'Rendu');
     }
     if (isImg(p?.logo)) {
       /* Le fichier source est marqué : c'est lui qui part en production, et
          c'est celui que l'atelier cherche en priorité. */
-      blocs.push(vignette(p.logo, face ? `Visuel client — ${face}` : 'Visuel client', 'is-source'));
+      ajouterVue(p.logo, face ? `Visuel client — ${face}` : 'Visuel client', 'is-source');
     }
   });
+  const blocs = vues.map((v) => vignette(v.url, v.titre, v.cls, v.n));
 
   const thumbs = blocs.length
     ? `<div class="assets">${blocs.join('')}</div>`
     : `<div class="no-thumb">Sans aperçu</div>`;
-  const details: string[] = Array.isArray(coin.details) ? coin.details : [];
+  const details: string[] = detailsRegroupes(Array.isArray(coin.details) ? coin.details : []);
   const search = esc([c.nom, c.email, coin.name].join(' ').toLowerCase());
   const st = quoteStatus(q);
   const isPaid = st.key === 'paid';
@@ -3733,7 +3780,7 @@ function quoteCard(
           }
       </div>` : ''}
       <div class="section-lbl lbl">${group ? 'Design commun' : 'Détail du produit'}</div>
-      <div class="item">
+      <div class="item item-devis">
         ${thumbs}
         <div class="item-body">
           <div class="specs">${details.map((x) => `<span class="spec">${esc(x)}</span>`).join('') || '<span class="empty">—</span>'}</div>
