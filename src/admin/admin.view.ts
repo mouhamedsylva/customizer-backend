@@ -33,6 +33,7 @@ import {
   svgRegeneresSansOrigine,
 } from '../shared/zones-texte';
 import { scriptTva, TVA_TAUX_DEFAUT } from '../shared/tva';
+import { LigneGroupe, anomaliesGroupe, designCommun, lignesDuGroupe } from './groupe-commande';
 
 /**
  * Échappement HTML.
@@ -1497,6 +1498,32 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 }
 /* Tableau de la liste des personnes (commande de groupe). */
 .grp-list-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:6px}
+/* ── Commande de groupe compacte ─────────────────────────────────────────
+   Le tableau défile dans son cadre, en-tête figé : 30 personnes tiennent
+   sur un écran au lieu de 30 blocs répétés. */
+.grp-scroll{max-height:480px;overflow:auto}
+.grp-scroll thead th{position:sticky;top:0;z-index:1;background:var(--raise,#f6f4f1)}
+.grp-recap{margin-top:6px;max-width:100%;overflow-x:auto}
+.grp-agg{min-width:0;width:auto;border:1px solid var(--line);border-radius:10px}
+.grp-design{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px;align-items:start;margin-top:6px}
+@media (max-width:760px){.grp-design{grid-template-columns:1fr}}
+.grp-svgs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.grp-typo{margin-top:10px;font-size:12.5px}
+.grp-typo .k{font-weight:700;color:var(--muted);margin-right:6px}
+.grp-viewer{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--raise,#f6f4f1)}
+.grp-viewer-bar{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;margin-bottom:8px;flex-wrap:wrap}
+.grp-viewer-bar select{flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;font:inherit;font-weight:500}
+.grp-planche{display:block;width:100%;height:auto;border-radius:8px;background:#fff;cursor:zoom-in}
+.grp-filtre{width:100%;max-width:360px;margin-top:6px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;font:inherit}
+.grp-texte{height:28px;max-width:110px;object-fit:contain;background:#3a3a3a;border-radius:4px;padding:2px 4px;cursor:zoom-in}
+.grp-ok{color:#1f8a4c;font-weight:700}
+.grp-ko{display:inline-block;color:#b42318;background:#fdecea;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;margin:1px 0}
+.grp-list tr.grp-alerte td{background:#fff7f6}
+.badge-alerte{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:#fdecea;color:#b42318;font-size:10.5px;font-weight:800;letter-spacing:.02em;vertical-align:middle}
+.btn-mini{padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.btn-mini:hover{border-color:var(--accent,#e2541b)}
+.grp-detail{margin-top:8px;border:1px dashed var(--line);border-radius:10px;padding:8px 12px}
+.grp-detail summary{cursor:pointer;font-weight:700;font-size:12.5px}
 .grp-list{width:100%;border-collapse:collapse;font-size:12.5px;min-width:420px}
 .grp-list th{
   text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
@@ -3027,6 +3054,127 @@ function groupRowsFromItems(items: any[]): { rows: any[]; label: string } | null
   return rows.length ? { rows, label } : null;
 }
 
+/**
+ * Bloc COMPACT d'une commande de groupe : récapitulatif tailles × couleurs,
+ * design commun affiché une seule fois, planche consultable pour n'importe
+ * quel nom, et tableau des personnes avec contrôles automatiques.
+ *
+ * Remplace la répétition, personne par personne, de toutes les vignettes :
+ * 30 blocs identiques à faire défiler, où une erreur (#21189, « MOMO » sur la
+ * ligne d'AITO) passait inaperçue. Logique dans groupe-commande.ts.
+ *
+ * @param lignes   sortie de `lignesDuGroupe` (items corrigés)
+ * @param alertes  sortie de `anomaliesGroupe`
+ * @param typos    `groupRowsFromItems(...).rows`, même ordre que `lignes`
+ */
+function blocGroupeCompact(
+  lignes: LigneGroupe[],
+  alertes: Map<number, string[]>,
+  typos: any[],
+  libelle: string,
+): string {
+  const total = lignes.reduce((s, l) => s + (l.qty || 0), 0);
+  const nbAlertes = alertes.size;
+
+  // 1) Récapitulatif tailles × couleurs (même tableau croisé que la fiche).
+  const agg = groupAggregate(lignes.map((l) => ({ size: l.taille, color: l.couleur, qty: l.qty })));
+  const recap = agg.matrix.length
+    ? `<div class="grp-recap"><table class="grp-list grp-agg">
+        <thead><tr><th>Couleur</th>${agg.sizes.map((s) => `<th class="num">${esc(s)}</th>`).join('')}<th class="num">Total</th></tr></thead>
+        <tbody>${agg.matrix
+          .map(
+            (m) =>
+              `<tr><td>${colorCell(m.color)}</td>${agg.sizes
+                .map((s) => `<td class="num">${m.counts[s] || '<span class="empty">·</span>'}</td>`)
+                .join('')}<td class="num"><b>${m.total}</b></td></tr>`,
+          )
+          .join('')}</tbody>
+      </table></div>`
+    : '';
+
+  // 2) Design commun + visualiseur de planche.
+  const commun = designCommun(lignes);
+  const vignettes = commun.images
+    .map(
+      (f) => `<figure class="asset">
+        <img class="thumb js-zoom" src="${esc(f.url)}" data-zoom="${esc(f.url)}" alt="${esc(f.nom)}" title="${esc(f.nom)}">
+        <figcaption>${esc(f.nom)}</figcaption>
+      </figure>`,
+    )
+    .join('');
+  const svgs = commun.svgs
+    .map((f) => `<a class="dl" href="${esc(f.url)}" target="_blank" rel="noopener" download>↓ ${esc(f.nom)}</a>`)
+    .join('');
+  const typo0 = typos.find((r) => r && r.textProperties);
+  const avecPlanche = lignes.filter((l) => l.apercu);
+  const premiere = avecPlanche[0];
+  const viewer = premiere
+    ? `<div class="grp-viewer">
+        <label class="grp-viewer-bar">Voir le design avec le nom
+          <select class="js-grp-select">${avecPlanche
+            .map((l) => `<option value="${esc(l.apercu)}">${esc(l.nom || '—')}${l.taille ? ' · ' + esc(l.taille) : ''}</option>`)
+            .join('')}</select>
+        </label>
+        <img class="grp-planche js-zoom" src="${esc(premiere.apercu)}" data-zoom="${esc(premiere.apercu)}" alt="Planche de ${esc(premiere.nom)}">
+      </div>`
+    : '';
+
+  const designHtml = `<div class="grp-design">
+      <div class="grp-design-fichiers">
+        ${vignettes ? `<div class="assets">${vignettes}</div>` : '<span class="empty">Aucun fichier commun.</span>'}
+        ${svgs ? `<div class="grp-svgs">${svgs}</div>` : ''}
+        ${typo0 ? `<div class="grp-typo"><span class="k">Typo du nom</span> ${typoCell(typo0.textProperties)}</div>` : ''}
+      </div>
+      ${viewer}
+    </div>`;
+
+  // 3) Tableau des personnes.
+  const avecTypo = typos.some((r) => r && r.textProperties);
+  const corps = lignes
+    .map((l, i) => {
+      const al = alertes.get(l.index) || [];
+      const recherche = [l.nom, l.taille, l.couleur].join(' ').toLowerCase();
+      return `<tr data-q="${esc(recherche)}"${al.length ? ' class="grp-alerte"' : ''}>
+        <td>${l.nom ? esc(l.nom) : '<span class="empty">—</span>'}</td>
+        <td>${esc(l.taille || '')}</td>
+        <td>${colorCell(l.couleur || '')}</td>
+        ${avecTypo ? `<td>${typoCell(typos[i] && typos[i].textProperties)}</td>` : ''}
+        <td class="num">${esc(l.qty)}</td>
+        <td>${
+          l.texte && isImg(l.texte)
+            ? `<img class="grp-texte js-zoom" src="${esc(l.texte)}" data-zoom="${esc(l.texte)}" alt="Texte ${esc(l.nom)}">`
+            : l.nom ? '<span class="grp-ko">manquant</span>' : '<span class="empty">—</span>'
+        }</td>
+        <td>${
+          l.apercu
+            ? `<button type="button" class="btn-mini js-grp-voir" data-apercu="${esc(l.apercu)}" data-nom="${esc(l.nom)}">Voir</button>`
+            : '<span class="empty">—</span>'
+        }</td>
+        <td>${al.length ? al.map((a) => `<span class="grp-ko">⚠ ${esc(a)}</span>`).join(' ') : '<span class="grp-ok">✓</span>'}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<div class="grp-bloc">
+    <div class="section-lbl lbl">
+      Commande de groupe · ${esc(libelle)}
+      <span class="badge-group">Groupe</span>
+      ${nbAlertes ? `<span class="badge-alerte">⚠ ${nbAlertes} à vérifier</span>` : ''}
+    </div>
+    ${recap}
+    <div class="section-lbl lbl">Design commun</div>
+    ${designHtml}
+    <div class="section-lbl lbl">Personnes (${lignes.length} lignes · ${total} pièces)</div>
+    <input type="search" class="grp-filtre js-grp-filtre" placeholder="Rechercher un nom, une taille, une couleur…" aria-label="Filtrer la liste">
+    <div class="grp-list-wrap grp-scroll">
+      <table class="grp-list">
+        <thead><tr><th>Nom floqué</th><th>Taille</th><th>Couleur</th>${avecTypo ? '<th>Typo</th>' : ''}<th class="num">Qté</th><th>Texte</th><th>Planche</th><th>Contrôle</th></tr></thead>
+        <tbody>${corps}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 function groupBlockForOrder(q?: Quote, items?: any[]): string {
   // 1) Source privilégiée : les line items de la commande (flux panier actuel).
   let rows: any[] = [];
@@ -3291,7 +3439,19 @@ function orderCard(o: Order, srcQuote?: Quote): string {
 
   // Un groupe est détecté si une ligne porte la propriété « Liste » (flux
   // panier), ou via l'ancien devis source. Sert au filtre + badge.
-  const groupBlock = groupBlockForOrder(srcQuote, items);
+  /* Lignes CORRIGÉES (fichiers remplacés, textes redessinés) : le bloc de
+     groupe et ses contrôles reflètent les réparations faites depuis le VPS. */
+  const itemsCorr = avecTypoRetrouvee(o, items);
+  const lignesGrp = lignesDuGroupe(itemsCorr);
+  const alertesGrp = anomaliesGroupe(lignesGrp);
+  const groupBlock = lignesGrp.length
+    ? blocGroupeCompact(
+        lignesGrp,
+        alertesGrp,
+        (groupRowsFromItems(itemsCorr) || { rows: [] }).rows,
+        (groupRowsFromItems(itemsCorr) || { label: '' }).label || 'Groupe',
+      )
+    : groupBlockForOrder(srcQuote, items);
   const isGroup = !!groupBlock;
 
   // Familles d'articles (patchs, textiles…) : filtre « par article ».
@@ -3309,6 +3469,7 @@ function orderCard(o: Order, srcQuote?: Quote): string {
           ${o.seen ? '' : '<span class="badge-new">nouveau</span>'}
           ${manuelle ? '<span class="badge-manuelle" title="Commande saisie à la main dans le dashboard, absente de Shopify">Saisie manuelle</span>' : ''}
           ${isGroup ? '<span class="badge-group">Groupe</span>' : ''}
+          ${alertesGrp.size ? `<span class="badge-alerte" title="Contrôles automatiques de la commande de groupe">⚠ ${alertesGrp.size} à vérifier</span>` : ''}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
       </div>
@@ -3348,7 +3509,21 @@ function orderCard(o: Order, srcQuote?: Quote): string {
            fois le même article — le détail des tailles est déjà donné par le
            tableau récapitulatif juste au-dessus. On n'en montre donc qu'une,
            avec la quantité totale. */
-        const rows = collapseSizeGroup(avecTypoRetrouvee(o, items));
+        /* Commande de groupe : le design commun et le tableau des personnes
+           sont déjà en tête. Le détail ligne par ligne est replié ; seuls les
+           articles hors groupe (supplément manche…) restent dépliés. */
+        if (lignesGrp.length) {
+          const duGroupe = new Set(lignesGrp.map((l) => l.index));
+          const hors = itemsCorr.filter((_li: any, i: number) => !duGroupe.has(i));
+          const dedans = itemsCorr.filter((_li: any, i: number) => duGroupe.has(i));
+          return (
+            collapseSizeGroup(hors).map(itemRow).join('') +
+            `<details class="grp-detail"><summary>Voir le détail ligne par ligne (${dedans.length})</summary>${collapseSizeGroup(dedans)
+              .map(itemRow)
+              .join('')}</details>`
+          );
+        }
+        const rows = collapseSizeGroup(itemsCorr);
         return (
           rows.map(itemRow).join('') ||
           '<div class="kv"><span class="empty">Aucun article.</span></div>'
@@ -7897,6 +8072,38 @@ export function dashboardPage(
     }
     function zoom(u){var lb=document.getElementById('lb');var im=document.getElementById('lb-img');im.classList.toggle('svg',/\\.svg(\\?|#|$)/i.test(u));im.src=u;lb.classList.add('open');}
 
+    /* ── Commande de groupe : planche d'une personne, recherche ─────────────
+       Les URL viennent d'attributs data-* échappés côté serveur. */
+    function grpAfficher(bloc, url, nom){
+      if(!bloc || !url) return;
+      var planche = bloc.querySelector('.grp-planche');
+      if(planche){
+        planche.setAttribute('src', url);
+        planche.setAttribute('data-zoom', url);
+        planche.setAttribute('alt', 'Planche de ' + nom);
+      }
+      var sel = bloc.querySelector('.js-grp-select');
+      if(sel) sel.value = url;
+    }
+    document.addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (!t || !t.classList || !t.classList.contains('js-grp-select')) return;
+      var opt = t.options[t.selectedIndex];
+      grpAfficher(t.closest('.grp-bloc'), t.value, opt ? opt.text : '');
+    });
+    document.addEventListener('input', function (ev) {
+      var t = ev.target;
+      if (!t || !t.classList || !t.classList.contains('js-grp-filtre')) return;
+      var bloc = t.closest('.grp-bloc');
+      if (!bloc) return;
+      var q = String(t.value || '').toLowerCase().trim();
+      var lignes = bloc.querySelectorAll('tr[data-q]');
+      for (var i = 0; i < lignes.length; i++) {
+        var txt = lignes[i].getAttribute('data-q') || '';
+        lignes[i].style.display = (!q || txt.indexOf(q) !== -1) ? '' : 'none';
+      }
+    });
+
     /* ── Écouteurs délégués : les données ne transitent plus par onclick ──
        Un attribut onclick est du CODE : y interpoler une valeur venant du
        formulaire public de devis permettait, avec un simple antislash final,
@@ -7909,6 +8116,16 @@ export function dashboardPage(
 
       var img = t.closest('.js-zoom');
       if (img) { zoom(img.getAttribute('data-zoom') || ''); return; }
+
+      /* Commande de groupe : « Voir » la planche d'une personne. */
+      var gv = t.closest('.js-grp-voir');
+      if (gv) {
+        var blocV = gv.closest('.grp-bloc');
+        grpAfficher(blocV, gv.getAttribute('data-apercu') || '', gv.getAttribute('data-nom') || '');
+        var vw = blocV && blocV.querySelector('.grp-viewer');
+        if (vw && vw.scrollIntoView) vw.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        return;
+      }
 
       var inv = t.closest('.js-invoice');
       if (inv) {
