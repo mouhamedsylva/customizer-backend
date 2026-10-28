@@ -67,4 +67,46 @@ describe('ShopifyService.lireTaxes', () => {
     expect(t.rate).toBe(0.2);
     expect(t.taxesIncluded).toBe(false);
   });
+
+  it('une même TVA listée par ligne ne compte qu’une fois (devis de 68 lignes)', () => {
+    const tax_lines = Array.from({ length: 68 }, () => ({ title: 'TVA', rate: 0.2, price: '4.32' }));
+    const t = ShopifyService.lireTaxes({ subtotal_price: '1709.40', total_tax: '284.90', tax_lines });
+    expect(t.rate).toBe(0.2); // et non 13,6 (1 360 %)
+    // Coin sans prix unitaire, saisi 9 € HT × 50 : 540 € TTC, et non 6 570 €.
+    expect(ttcLigne(9, 50, cfg({ taxesIncluded: false, rate: t.rate }))).toBe(540);
+    expect(ttcLigne(9, 50, cfg({ taxesIncluded: true, rate: t.rate }))).toBe(540);
+  });
+
+  it('des taxes différentes se cumulent toujours (TPS + TVQ)', () => {
+    const t = ShopifyService.lireTaxes({
+      subtotal_price: '100.00',
+      total_tax: '14.98',
+      tax_lines: [{ title: 'TPS', rate: 0.05 }, { title: 'TVQ', rate: 0.09975 }],
+    });
+    expect(t.rate).toBeCloseTo(0.14975, 5);
+  });
+
+  it('cumul incohérent (> 100 %) : repli sur le taux d’une ligne d’article', () => {
+    const t = ShopifyService.lireTaxes({
+      subtotal_price: '100.00',
+      total_tax: '20.00',
+      tax_lines: [{ title: 'A', rate: 0.9 }, { title: 'B', rate: 0.9 }],
+      line_items: [{ tax_lines: [{ title: 'TVA', rate: 0.2 }] }],
+    });
+    expect(t.rate).toBe(0.2);
+  });
+});
+
+describe('fenêtre de chiffrage : récapitulatif TVA séparé', () => {
+  it('le script de la page distingue prix catalogue (TTC) et articles saisis HT', () => {
+    const { dashboardPage } = require('../src/admin/admin.view');
+    const html: string = dashboardPage([], [], [], 'https://x', '', { limits: { orders: 300, quotes: 500 } });
+    expect(html).toContain('function afficherTvaFamilles(lu)');
+    expect(html).toContain('Articles au prix catalogue');
+    expect(html).toContain('Articles sans prix unitaire');
+    // Les scripts de la page restent syntaxiquement valides.
+    const re = /<script[^>]*>([\s\S]*?)<\/script>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html))) if (m[1].trim()) expect(() => new Function(m![1])).not.toThrow();
+  });
 });

@@ -5,7 +5,7 @@
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
-import { articlesDuDevis } from '../quotes/articles-devis';
+import { articlesDuDevis, regrouperLignes } from '../quotes/articles-devis';
 import {
   cleCatalogue,
   cleDevisSimple,
@@ -3808,29 +3808,11 @@ function groupAggregate(rows: any[]): {
  * « 1× T-shirt coton — Couleur : Camel — M ». Même texte après « N× » : une
  * seule pastille « 33× … », à la place de la première occurrence. Les lignes
  * sans quantité (résumé « Commande sur devis : … ») restent telles quelles.
- * Les données enregistrées ne changent pas.
+ * Les données enregistrées ne changent pas. Même règle que la fenêtre de
+ * chiffrage et le brouillon Shopify : `regrouperLignes` (articles-devis.ts).
  */
 export function detailsRegroupes(details: unknown[]): string[] {
-  const LIGNE = /^\s*(\d+)\s*×\s*(.+?)\s*$/;
-  const out: Array<{ texte: string; qty: number | null }> = [];
-  const parTexte = new Map<string, { texte: string; qty: number | null }>();
-  for (const brut of Array.isArray(details) ? details : []) {
-    const s = String(brut ?? '');
-    const m = LIGNE.exec(s);
-    if (!m) {
-      out.push({ texte: s, qty: null });
-      continue;
-    }
-    const deja = parTexte.get(m[2]);
-    if (deja && deja.qty !== null) {
-      deja.qty += Number(m[1]);
-      continue;
-    }
-    const e = { texte: m[2], qty: Number(m[1]) };
-    parTexte.set(m[2], e);
-    out.push(e);
-  }
-  return out.map((e) => (e.qty === null ? e.texte : `${e.qty}× ${e.texte}`));
+  return regrouperLignes(details);
 }
 
 
@@ -8250,6 +8232,34 @@ export function dashboardPage(
       el.style.display = '';
     }
 
+    /* Récapitulatif d'un devis MULTI-ARTICLES, en deux lignes :
+       - articles au prix catalogue : déjà TTC, aucune TVA ajoutée ;
+       - articles sans prix unitaire : HT saisi + TVA = TTC.
+       Le « HT : … + TVA » global laissait croire que la TVA s'ajoutait aussi
+       aux t-shirts, dont le prix public est pourtant taxes incluses. */
+    function afficherTvaFamilles(lu){
+      var el = document.getElementById('inv-tva');
+      if (!el) return;
+      if (!(lu.total > 0)) { el.style.display = 'none'; el.textContent = ''; return; }
+      var lignes = [];
+      if (lu.catalogueTtc > 0) {
+        lignes.push('Articles au prix catalogue : <strong>' + euro(lu.catalogueTtc) +
+                    ' TTC</strong> (TVA incluse, rien d’ajouté)');
+      }
+      if (lu.saisiHt > 0) {
+        lignes.push(invTaxe.taxExempt
+          ? 'Articles sans prix unitaire : <strong>' + euro(lu.saisiHt) + ' HT</strong> · client <strong>exonéré de TVA</strong>'
+          : 'Articles sans prix unitaire : ' + euro(lu.saisiHt) + ' HT + TVA ' + tauxTexte(tauxTva()) +
+            ' % (' + euro(lu.saisiTtc - lu.saisiHt) + ') = <strong>' + euro(lu.saisiTtc) + ' TTC</strong>');
+      }
+      if (lu.saisiHt > 0 && !invTaxe.taxExempt && invTaxe.rate === null) {
+        lignes.push('<span style="color:var(--warn)">TVA supposée ' + tauxTexte(tauxTva()) +
+                    ' % : le montant exact sera vérifié par Shopify avant l’envoi.</span>');
+      }
+      el.innerHTML = lignes.join('<br>');
+      el.style.display = lignes.length ? '' : 'none';
+    }
+
     /* Charge les réglages de TVA du devis ouvert. La réponse est ignorée si
        l'opérateur a entre-temps ouvert un AUTRE devis : sans cette garde, le
        taux d'un client s'afficherait sous le total d'un autre. */
@@ -8689,6 +8699,10 @@ export function dashboardPage(
      */
     function lireTarifsFamilles(){
       var tarifs = {}, parIndex = [], total = 0, ttc = 0, complet = true;
+      /* Totaux SÉPARÉS : les prix catalogue sont déjà TTC (rien ne s'y
+         ajoute) ; seuls les articles sans prix unitaire, saisis HT, portent
+         une TVA. Le récapitulatif sous le total les distingue. */
+      var catalogueTtc = 0, saisiHt = 0, saisiTtc = 0;
       invFamilles.forEach(function(f, i){
         var champ = document.querySelector('#inv-familles [data-fam="'+i+'"]');
         var v = champ ? parseFloat(champ.value) : NaN;
@@ -8713,6 +8727,8 @@ export function dashboardPage(
           parIndex[i] = envoye;
           total += sousTotal;
           ttc += ttcL;
+          if (enTtc) { catalogueTtc += ttcL; }
+          else { saisiHt += sousTotal; saisiTtc += ttcL; }
           /* Famille : sous-total HT, il répond au prix HT saisi à côté — ou
              TTC pour une ligne au prix catalogue, saisie TTC.
              Article : total TTC de la ligne, qui s'additionne au total en tête. */
@@ -8726,7 +8742,8 @@ export function dashboardPage(
           if (cellule) { cellule.textContent = '—'; cellule.className = 'inv-fam-total is-empty'; }
         }
       });
-      return { tarifs: tarifs, parIndex: parIndex, total: arrondi(total), ttc: arrondi(ttc), complet: complet };
+      return { tarifs: tarifs, parIndex: parIndex, total: arrondi(total), ttc: arrondi(ttc), complet: complet,
+               catalogueTtc: arrondi(catalogueTtc), saisiHt: arrondi(saisiHt), saisiTtc: arrondi(saisiTtc) };
     }
 
     function updateInvoiceTotal(){
@@ -8738,7 +8755,7 @@ export function dashboardPage(
         var grandEl = document.getElementById('inv-grand');
         // En tête : le TTC, c'est-à-dire ce que le client paiera.
         if (grandEl) grandEl.textContent = lu.total > 0 ? euro(lu.ttc) : '—';
-        afficherTva(lu.total, lu.ttc);
+        afficherTvaFamilles(lu);
         invTtcAffiche = lu.total > 0 ? lu.ttc : null;
         return;
       }

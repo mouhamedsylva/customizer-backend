@@ -40,15 +40,63 @@ export function lire(lignes: unknown): ArticleDevis[] {
   return out;
 }
 
+/**
+ * Lignes « N× … » IDENTIQUES fusionnées, quantités additionnées, à la place de
+ * la première occurrence. Les lignes sans quantité (résumé « Commande sur
+ * devis : … ») restent telles quelles, à leur place.
+ *
+ * Une répartition par tailles envoyait une ligne PAR PIÈCE : 33 fois
+ * « 1× T-shirt coton — Couleur : Camel — M ». La fenêtre de chiffrage en
+ * listait 33, et le brouillon Shopify recevait 33 lignes. Après fusion :
+ * « 33× T-shirt coton — Couleur : Camel — M ». Des options différentes
+ * (Camel M / Camel L) ne sont jamais fusionnées.
+ *
+ * SEULES LES LIGNES « 1× » se fusionnent — la signature d'une ligne par
+ * pièce. Deux lignes « 10× Patch personnalisé » identiques restent deux
+ * articles : ce sont deux designs, qui peuvent porter deux prix différents.
+ */
+export function regrouperLignes(lignes: unknown): string[] {
+  if (!Array.isArray(lignes)) return [];
+  const out: Array<{ texte: string; qty: number | null }> = [];
+  const parTexte = new Map<string, { texte: string; qty: number | null }>();
+  for (const brut of lignes) {
+    const s = String(brut ?? '');
+    const m = LIGNE.exec(s);
+    if (!m) {
+      out.push({ texte: s, qty: null });
+      continue;
+    }
+    if (Number(m[1]) !== 1) {
+      out.push({ texte: m[2], qty: Number(m[1]) }); // jamais fusionnée
+      continue;
+    }
+    const deja = parTexte.get(m[2]);
+    if (deja && deja.qty !== null) {
+      deja.qty += 1;
+      continue;
+    }
+    const e = { texte: m[2], qty: 1 };
+    parTexte.set(m[2], e);
+    out.push(e);
+  }
+  return out.map((e) => (e.qty === null ? e.texte : `${e.qty}× ${e.texte}`));
+}
+
 export function articlesDuDevis(quoteData: any): ArticleDevis[] | null {
   const coin = quoteData?.coin;
   if (!coin || quoteData?.group?.rows?.length) return null; // commande de groupe : autre mode
   const total = Number(coin.qty);
   if (!Number.isFinite(total) || total <= 0) return null;
 
+  /* Lignes identiques REGROUPÉES : un article par produit et options, et non
+     un par pièce (voir regrouperLignes). */
   const candidats = [
-    lire(coin.details),
-    lire((Array.isArray(coin.familles) ? coin.familles : []).flatMap((f: any) => f?.lignes ?? [])),
+    lire(regrouperLignes(coin.details)),
+    lire(
+      (Array.isArray(coin.familles) ? coin.familles : []).flatMap((f: any) =>
+        regrouperLignes(f?.lignes ?? []),
+      ),
+    ),
   ];
   for (const articles of candidats) {
     if (articles.length >= 2 && articles.reduce((s, a) => s + a.qty, 0) === total) {
@@ -132,6 +180,12 @@ export function appliquerQuantites(
 
   const copie = JSON.parse(JSON.stringify(quoteData));
   const c = copie.coin;
+  /* Même découpage que `articlesDuDevis` : lignes identiques regroupées, sans
+     quoi 66 lignes « 1× » ne correspondraient pas aux 4 quantités reçues. */
+  if (Array.isArray(c.details)) c.details = regrouperLignes(c.details);
+  if (Array.isArray(c.familles)) {
+    for (const f of c.familles) if (Array.isArray(f?.lignes)) f.lignes = regrouperLignes(f.lignes);
+  }
 
   // `details` : réécrit s'il porte exactement ces lignes « N× ».
   const nbDetails = lire(c.details).length;
@@ -150,7 +204,7 @@ export function appliquerQuantites(
          (produit, options, quantité d'origine). Si les articles viennent
          eux-mêmes des familles, l'ordre aplati EST le bon. */
       // Produit unique (articles null) : une seule ligne, rien à rattacher.
-      const depuisDetails = !!articles && lire(coin.details).length === quantites.length;
+      const depuisDetails = !!articles && lire(c.details).length === quantites.length;
       const cible = depuisDetails ? rattacherFamilles(articles || [], c.familles) : null;
       if (depuisDetails && !cible) {
         throw new Error(

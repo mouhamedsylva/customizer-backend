@@ -361,18 +361,27 @@ export class ShopifyService {
   } {
     const taux = (lignes: unknown): number | null => {
       if (!Array.isArray(lignes)) return null;
-      /* Plusieurs lignes de taxe se cumulent (taxes combinées hors UE) : on
-         additionne leurs taux, comme Shopify pour le total. */
-      const rates = lignes
-        .map((t) => Number(t?.rate))
-        .filter((r) => Number.isFinite(r) && r >= 0);
-      return rates.length ? rates.reduce((a, b) => a + b, 0) : null;
+      /* Des taxes DIFFÉRENTES se cumulent (TPS + TVQ hors UE) : on additionne
+         leurs taux. Mais une MÊME taxe ne compte qu'une fois : sur un brouillon
+         de 68 lignes, Shopify listait « TVA 20 % » 68 fois — l'addition donnait
+         1 360 %, et 9 € HT × 50 coins s'affichaient 6 570 € TTC. Regroupement
+         par intitulé (à défaut, par taux). */
+      const parTaxe = new Map<string, number>();
+      for (const t of lignes) {
+        const r = Number(t?.rate);
+        if (!Number.isFinite(r) || r < 0) continue;
+        const cle = String(t?.title || '').trim().toLowerCase() || `taux:${r}`;
+        if (!parTaxe.has(cle)) parTaxe.set(cle, r);
+      }
+      return parTaxe.size ? [...parTaxe.values()].reduce((a, b) => a + b, 0) : null;
     };
+    // Au-delà de 100 %, le cumul est incohérent : on ne s'y fie pas.
+    const plausible = (r: number | null) => (r !== null && r <= 1 ? r : null);
 
-    let rate = taux(draft.tax_lines);
+    let rate = plausible(taux(draft.tax_lines));
     if (rate === null && Array.isArray(draft.line_items)) {
       for (const li of draft.line_items) {
-        rate = taux(li?.tax_lines);
+        rate = plausible(taux(li?.tax_lines));
         if (rate !== null) break;
       }
     }
