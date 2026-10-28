@@ -2066,23 +2066,60 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   font-size:11px;font-weight:700;letter-spacing:.03em;
   color:var(--muted);margin-left:3px;
 }
-/* Une ligne par famille : libellé + quantité, champ de prix, total de ligne. */
-.inv-fam{
-  display:flex;align-items:center;gap:12px;
-  padding:9px 0;border-bottom:1px solid var(--line-soft);
-}
+/* ── Fenêtre de chiffrage : tableau aligné ──────────────────────────────────
+   Une ligne = Article | Prix unitaire (+ HT/TTC) | Qté | Total TTC. Les
+   champs étaient empilés et le total flottait : on ne voyait ni ce qui
+   restait à saisir, ni ce qui était HT ou TTC. */
+#inv-modal .modal-box{width:min(96vw,760px);padding-bottom:0}
+.inv-section{margin-top:14px}
+.inv-section h4{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.inv-section h4 .inv-compte{text-transform:none;letter-spacing:0;font-weight:700;font-size:11px;
+  padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.inv-section h4 .inv-compte.is-ok{background:color-mix(in srgb,#1f8a4c 14%,transparent);color:#1f8a4c}
+.inv-section.is-catalogue{opacity:.92}
+.inv-tete,.inv-fam{display:grid;grid-template-columns:minmax(0,1fr) 128px 78px 104px;gap:10px;align-items:center}
+.inv-tete{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--faint);padding:0 4px 4px;border-bottom:1px solid var(--line)}
+.inv-tete span:nth-child(n+2){text-align:right}
+.inv-fam{padding:9px 4px;border-bottom:1px solid var(--line-soft);border-radius:8px}
 .inv-fam:last-child{border-bottom:none}
-.inv-fam-nom{flex:1;min-width:0;font-size:13px;font-weight:600}
+.inv-fam.is-vide{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.inv-fam-nom{min-width:0;font-size:13px;font-weight:700}
 .inv-fam-nom small{display:block;font-weight:500;color:var(--muted);font-size:11.5px;margin-top:1px}
+.inv-fam-nom .inv-palier{color:var(--accent);font-weight:600}
+.inv-prix{display:flex;align-items:center;justify-content:flex-end;gap:5px}
+.inv-unite{flex:none;font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 6px;border-radius:6px;
+  background:var(--raise);color:var(--muted)}
+.inv-unite.is-ht{background:var(--accent-soft);color:var(--accent)}
 .inv-fam input{
-  width:96px;flex:none;padding:8px 10px;border:1px solid var(--line);border-radius:9px;
+  width:100%;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:9px;
   background:var(--paper);color:var(--ink);font:inherit;font-size:14px;font-weight:700;
   outline:none;text-align:right;
 }
+.inv-fam.is-vide input[data-fam]{border-color:var(--accent)}
 .inv-fam input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-/* Total de la ligne : largeur fixe pour que la colonne reste alignée. */
-.inv-fam-total{width:92px;flex:none;text-align:right;font-size:13.5px;font-weight:700}
+.inv-qte{text-align:right}
+.inv-qte small{display:block;font-size:10.5px;color:var(--warn,#b45309);margin-top:2px;min-height:0}
+.inv-fam-total{text-align:right;font-size:13.5px;font-weight:700;white-space:nowrap}
 .inv-fam-total.is-empty{color:var(--faint);font-weight:500}
+@media (max-width:620px){
+  .inv-tete{display:none}
+  .inv-fam{grid-template-columns:1fr 1fr;row-gap:6px}
+  .inv-fam-nom{grid-column:1/-1}
+}
+/* Message au client, replié par défaut. */
+.inv-msg-bloc{margin-top:16px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.inv-msg-bloc summary{cursor:pointer;font-size:12.5px;font-weight:700}
+.inv-msg-bloc summary span{color:var(--muted);font-weight:500}
+.inv-msg-bloc textarea{margin-top:10px}
+/* Pied FIXE : total, TVA, reste à saisir et envoi restent visibles. */
+.inv-pied{position:sticky;bottom:0;z-index:2;margin:16px -24px 0;padding:12px 24px 14px;
+  background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -10px 24px rgba(0,0,0,.06)}
+.inv-pied .inv-grand{margin-bottom:6px}
+.inv-pied .inv-tva{margin:0 0 4px;padding:0 4px}
+.inv-pied .modal-actions{margin-top:8px}
+.inv-reste{margin:4px 0 0;padding:0 4px;text-align:right;font-size:12.5px;font-weight:700;color:var(--accent)}
 .price-row{display:flex;gap:14px;align-items:flex-end}
 .price-row>div:first-child{flex:1}
 .price-input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;
@@ -2211,6 +2248,7 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   /* — Modales : plein écran utile — */
   .modal{padding:12px}
   .modal-box{padding:18px;max-height:calc(100vh - 24px)}
+  .inv-pied{margin:16px -18px 0;padding:10px 18px 12px}
   .modal-actions{flex-direction:column-reverse;gap:8px}
   .modal-actions .btn{width:100%}
 
@@ -5031,19 +5069,6 @@ export function dashboardPage(
       <h3>Chiffrer et envoyer la facture</h3>
       <p class="sub" id="inv-sub"></p>
 
-      <!-- TOTAL GÉNÉRAL, en tête : c'est le montant que verra le client, et
-           ce que l'admin vérifie en dernier avant d'envoyer. Il se met à jour
-           à chaque frappe, quel que soit le mode de saisie. -->
-      <div class="inv-grand" id="inv-grand-block" style="display:none">
-        <span class="lbl">Total de la commande <small class="inv-ttc">TTC</small></span>
-        <strong id="inv-grand" class="mono">—</strong>
-      </div>
-
-      <!-- DÉTAIL HT → TTC. Les prix sont saisis HORS TAXE ; la TVA s'y ajoute
-           et le total ci-dessus est le TTC payé par le client. Voir le bloc
-           « TVA : les prix sont SAISIS HORS TAXE » dans le script. -->
-      <p class="inv-tva" id="inv-tva" style="display:none"></p>
-
       <!-- MULTI-PRODUITS : une ligne de prix par famille.
            Un panier mêlant patchs, coins et textiles partait sur un prix unique
            appliqué à toutes les pièces — un patch à 2 € et un sweatshirt à 40 €
@@ -5096,8 +5121,11 @@ export function dashboardPage(
         </p>
       </div>
 
-      <label class="lbl" style="margin-top:16px">Message au client</label>
-      <textarea id="inv-msg"></textarea>
+      <!-- Message pré-rédigé, REPLIÉ : la fenêtre se concentre sur les prix. -->
+      <details class="inv-msg-bloc">
+        <summary>Message au client <span>(modifier)</span></summary>
+        <textarea id="inv-msg"></textarea>
+      </details>
 
       <!-- Section pièces jointes -->
       <div class="attach-section" style="margin-top:16px">
@@ -5124,11 +5152,21 @@ export function dashboardPage(
         <p id="inv-upload-status" class="hint" style="margin-top:8px;display:none"></p>
       </div>
 
-      <div class="modal-actions">
-        <button class="btn" onclick="closeInvoice()">Annuler</button>
-        <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer la facture</button>
+      <!-- PIED FIXE : le total client, son détail TVA et le bouton d'envoi
+           restent visibles pendant qu'on fait défiler les articles. -->
+      <div class="inv-pied">
+        <div class="inv-grand" id="inv-grand-block" style="display:none">
+          <span class="lbl">Total client <small class="inv-ttc">TTC</small></span>
+          <strong id="inv-grand" class="mono">—</strong>
+        </div>
+        <p class="inv-tva" id="inv-tva" style="display:none"></p>
+        <p class="inv-reste" id="inv-reste" style="display:none"></p>
+        <div class="modal-actions">
+          <button class="btn" onclick="closeInvoice()">Annuler</button>
+          <button class="btn primary" id="inv-send" onclick="sendInvoice()">Envoyer la facture</button>
+        </div>
+        <p class="hint" id="inv-status" style="margin-top:8px"></p>
       </div>
-      <p class="hint" id="inv-status" style="margin-top:12px"></p>
     </div>
   </div>
 
@@ -8467,6 +8505,12 @@ export function dashboardPage(
       st.textContent=''; st.className='hint';
       var btn=document.getElementById('inv-send');
       btn.disabled=false; btn.textContent='Envoyer la facture';
+      /* Prix manquants : bouton bloqué et compteur, dès l'ouverture. */
+      var resteEl = document.getElementById('inv-reste');
+      if (resteEl) { resteEl.style.display = 'none'; resteEl.textContent = ''; }
+      if (invFamilles.length) majResteASaisir();
+      var msgBloc = document.querySelector('#inv-modal .inv-msg-bloc');
+      if (msgBloc) msgBloc.open = false;
       document.getElementById('inv-modal').classList.add('open');
       setTimeout(function(){
         /* Le premier champ à remplir, selon le mode : en multi-familles le
@@ -8534,7 +8578,7 @@ export function dashboardPage(
       var note = document.querySelector('#inv-familles [data-fam-note="' + i + '"]');
       if (note) {
         var f0 = invFamilles[i];
-        note.textContent = q !== f0.qtyInitiale ? 'avant : ' + f0.qtyInitiale : '';
+        note.textContent = q !== f0.qtyInitiale ? 'demandé : ' + f0.qtyInitiale : '';
       }
       var cle = invFamilles[i].cle;
       if (cle) {
@@ -8560,6 +8604,14 @@ export function dashboardPage(
             champ.removeAttribute('data-ttc');
             champ.placeholder = 'sur demande';
           }
+        });
+        /* Le palier et l'étiquette HT / TTC suivent la nouvelle quantité. */
+        invFamilles.forEach(function(f, j){
+          if (f.cle !== cle) return;
+          var champJ = document.querySelector('#inv-familles [data-fam="' + j + '"]');
+          var pal = document.querySelector('#inv-familles [data-fam-palier="' + j + '"]');
+          if (pal) pal.textContent = texteDePalier(total, f.grille, !!(champJ && champJ.getAttribute('data-ttc') === '1') || (f.prixHt !== null && f.prixHt !== undefined));
+          majUniteLigne(j);
         });
       }
       updateInvoiceTotal();
@@ -8599,29 +8651,47 @@ export function dashboardPage(
       }
       if (!multi) return;
 
-      invFamilles.forEach(function(f, i){
-        var ligne = document.createElement('div');
-        ligne.className = 'inv-fam';
+      /* Palier de quantité appliqué au prix catalogue, à partir du total du
+         même produit dans le devis (même règle que palierDepuisGrille). */
+      var totauxParCle = {};
+      invFamilles.forEach(function(f){ if (f.cle) totauxParCle[f.cle] = (totauxParCle[f.cle] || 0) + f.qty; });
 
-        var nom = document.createElement('div');
-        nom.className = 'inv-fam-nom';
+      var estCatalogue = function(f){
+        return (f.prixTtc !== null && f.prixTtc !== undefined) || (f.prixHt !== null && f.prixHt !== undefined);
+      };
+      var aChiffrer = [], auCatalogue = [];
+      invFamilles.forEach(function(f, i){ (estCatalogue(f) ? auCatalogue : aChiffrer).push(i); });
+
+      var creer = function(tag, cls, texte){
+        var el = document.createElement(tag);
+        if (cls) el.className = cls;
+        if (texte !== undefined) el.textContent = texte;
+        return el;
+      };
+      var entete = function(){
+        var t = creer('div', 'inv-tete');
+        ['Article', 'Prix unitaire', 'Qté', 'Total TTC'].forEach(function(x){ t.appendChild(creer('span', '', x)); });
+        return t;
+      };
+
+      var construireLigne = function(i){
+        var f = invFamilles[i];
+        var ligne = creer('div', 'inv-fam');
+        ligne.setAttribute('data-fam-ligne', String(i));
+
         /* textContent et non innerHTML : le libellé vient des données du
            devis, donc du client. */
-        nom.textContent = f.libelle;
-        if (f.options) {
-          var opts = document.createElement('small');
-          opts.textContent = f.options;
-          nom.appendChild(opts);
-        }
-        var qte = document.createElement('small');
+        var nom = creer('div', 'inv-fam-nom', f.libelle);
+        if (f.options) nom.appendChild(creer('small', '', f.options));
         var catalogue = f.prixTtc !== null && f.prixTtc !== undefined;
-        /* Ligne au prix catalogue : saisie TTC, aucune TVA ajoutée. Le prix
-           reste modifiable (geste commercial), il reste alors TTC. */
         var catalogueHt = !catalogue && f.prixHt !== null && f.prixHt !== undefined;
-        qte.textContent = f.qty + ' pièce(s)' +
-          (catalogue ? ' · prix catalogue TTC' : (catalogueHt ? ' · prix catalogue HT' : ' · prix HT'));
-        qte.setAttribute('data-fam-pieces', String(i));
-        nom.appendChild(qte);
+        var pieces = creer('small', '', f.qty + ' pièce(s)' +
+          (catalogue ? ' · prix catalogue TTC' : (catalogueHt ? ' · prix catalogue HT' : ' · prix à saisir HT')));
+        pieces.setAttribute('data-fam-pieces', String(i));
+        nom.appendChild(pieces);
+        var palier = creer('small', 'inv-palier', texteDePalier(totauxParCle[f.cle] || f.qty, f.grille, catalogue || catalogueHt));
+        palier.setAttribute('data-fam-palier', String(i));
+        nom.appendChild(palier);
 
         var champ = document.createElement('input');
         champ.type = 'number';
@@ -8642,51 +8712,134 @@ export function dashboardPage(
           f.prixManuel = true; // saisi à la main : le palier ne l'écrase plus
           updateInvoiceTotal();
         });
+        var prix = creer('div', 'inv-prix');
+        prix.appendChild(champ);
+        var unite = creer('span', 'inv-unite');
+        unite.setAttribute('data-fam-unite', String(i));
+        prix.appendChild(unite);
 
-        var total = document.createElement('div');
-        total.className = 'inv-fam-total is-empty';
-        total.setAttribute('data-fam-total', String(i));
-        total.textContent = '—';
-
-        ligne.appendChild(nom);
-        /* Prix unitaire, et SOUS lui la quantité de la ligne : même colonne,
-           pour que les deux champs gardent une largeur lisible. */
-        var colonne = document.createElement('div');
-        colonne.className = 'inv-fam-saisie';
-        colonne.style.display = 'flex';
-        colonne.style.flexDirection = 'column';
-        colonne.style.gap = '4px';
-        colonne.style.flex = 'none';
-        colonne.appendChild(champ);
+        var qte = creer('div', 'inv-qte');
         /* Quantité corrigeable, par article (hors commande de groupe). */
         if (invParArticle && invQteModifiable) {
-          var boiteQte = document.createElement('div');
-          boiteQte.className = 'inv-fam-qte';
           var champQte = document.createElement('input');
           champQte.type = 'number';
           champQte.min = '1';
           champQte.max = '100000';
           champQte.step = '1';
           champQte.value = String(f.qty);
-          champQte.style.width = '100%';   // même largeur que le prix, au-dessus
           champQte.setAttribute('data-fam-qty', String(i));
           champQte.setAttribute('aria-label', 'Quantité — ' + f.libelle);
           champQte.addEventListener('input', function(){ changerQuantiteArticle(i, champQte.value); });
-          var lblQte = document.createElement('small');
-          lblQte.textContent = 'Quantité';
-          lblQte.style.display = 'block';
-          var noteQte = document.createElement('small');
-          noteQte.setAttribute('data-fam-note', String(i));
-          noteQte.style.display = 'block';
-          boiteQte.appendChild(lblQte);
-          boiteQte.appendChild(champQte);
-          boiteQte.appendChild(noteQte);
-          colonne.appendChild(boiteQte);
+          qte.appendChild(champQte);
+        } else {
+          qte.appendChild(creer('span', 'mono', String(f.qty)));
         }
-        ligne.appendChild(colonne);
+        var noteQte = creer('small', '');
+        noteQte.setAttribute('data-fam-note', String(i));
+        qte.appendChild(noteQte);
+
+        var total = creer('div', 'inv-fam-total is-empty', '—');
+        total.setAttribute('data-fam-total', String(i));
+
+        ligne.appendChild(nom);
+        ligne.appendChild(prix);
+        ligne.appendChild(qte);
         ligne.appendChild(total);
-        liste.appendChild(ligne);
-      });
+        return ligne;
+      };
+
+      var section = function(titre, indices, cls, compteId){
+        if (!indices.length) return;
+        var bloc = creer('div', 'inv-section' + (cls ? ' ' + cls : ''));
+        var h = creer('h4', '', titre);
+        if (compteId) {
+          var compte = creer('span', 'inv-compte');
+          compte.id = compteId;
+          h.appendChild(compte);
+        }
+        bloc.appendChild(h);
+        bloc.appendChild(entete());
+        indices.forEach(function(i){ bloc.appendChild(construireLigne(i)); });
+        liste.appendChild(bloc);
+      };
+      /* À CHIFFRER d'abord : c'est là que l'admin a du travail. */
+      section('À chiffrer', aChiffrer, 'is-a-chiffrer', 'inv-a-chiffrer-n');
+      section('Prix catalogue', auCatalogue, 'is-catalogue', '');
+      invFamilles.forEach(function(f, i){ majUniteLigne(i); });
+
+      /* ENTRÉE : passe au prix suivant à saisir (puis au bouton d'envoi). */
+      if (liste.getAttribute('data-entree') !== '1') {
+        liste.setAttribute('data-entree', '1');
+        liste.addEventListener('keydown', function(ev){
+          if (ev.key !== 'Enter') return;
+          var cible = ev.target;
+          if (!cible || cible.tagName !== 'INPUT') return;
+          ev.preventDefault();
+          var champs = Array.prototype.slice.call(liste.querySelectorAll('input[data-fam]'));
+          var vide = function(c){ return !(parseFloat(c.value) > 0); };
+          var apres = champs.slice(champs.indexOf(cible) + 1);
+          var suivant = apres.filter(vide)[0] || champs.filter(vide)[0] || apres[0];
+          var envoi = document.getElementById('inv-send');
+          if (suivant && suivant !== cible) suivant.focus();
+          else if (envoi && !envoi.disabled) envoi.focus();
+        });
+      }
+    }
+
+    /* « Palier 20–49 pièces » sous un prix catalogue : d'où vient le prix. */
+    function texteDePalier(qty, grille, catalogue){
+      if (!catalogue || !grille || !grille.tiers || !grille.tiers.length) return '';
+      var t = grille.tiers;   // triés par min décroissant
+      for (var k = 0; k < t.length; k++) {
+        if (t[k].min <= qty) {
+          var haut = k > 0 ? t[k - 1].min - 1 : 0;
+          if (haut > t[k].min) return 'Palier ' + t[k].min + '–' + haut + ' pièces';
+          if (haut === t[k].min) return 'Palier ' + t[k].min + ' pièces';
+          return 'Palier ' + t[k].min + ' pièces et plus';
+        }
+      }
+      return '';
+    }
+
+    /* Prix manquants : lignes surlignées, compteur « À chiffrer », et envoi
+       bloqué tant qu'il en reste — avec le nombre, pour que l'admin sache
+       pourquoi le bouton ne répond pas. */
+    function majResteASaisir(){
+      var lignes = document.querySelectorAll('#inv-familles .inv-fam');
+      var reste = 0, aChiffrerReste = 0;
+      for (var k = 0; k < lignes.length; k++) {
+        var champ = lignes[k].querySelector('input[data-fam]');
+        var vide = !(champ && parseFloat(champ.value) > 0);
+        lignes[k].classList.toggle('is-vide', vide);
+        if (vide) {
+          reste++;
+          if (lignes[k].closest('.is-a-chiffrer')) aChiffrerReste++;
+        }
+      }
+      var compte = document.getElementById('inv-a-chiffrer-n');
+      if (compte) {
+        compte.textContent = aChiffrerReste
+          ? aChiffrerReste + ' prix à saisir'
+          : 'tous saisis ✓';
+        compte.className = 'inv-compte' + (aChiffrerReste ? '' : ' is-ok');
+      }
+      var el = document.getElementById('inv-reste');
+      if (el) {
+        el.textContent = reste ? 'Reste ' + reste + ' prix à saisir avant l’envoi' : '';
+        el.style.display = reste ? '' : 'none';
+      }
+      var btn = document.getElementById('inv-send');
+      if (btn && btn.textContent === 'Envoyer la facture') btn.disabled = reste > 0;
+    }
+
+    /* Étiquette HT / TTC collée au champ de prix d'une ligne. */
+    function majUniteLigne(i){
+      var champ = document.querySelector('#inv-familles [data-fam="' + i + '"]');
+      var u = document.querySelector('#inv-familles [data-fam-unite="' + i + '"]');
+      if (!champ || !u) return;
+      var ttc = champ.getAttribute('data-ttc') === '1';
+      u.textContent = ttc ? 'TTC' : 'HT';
+      u.className = 'inv-unite' + (ttc ? '' : ' is-ht');
     }
 
     /**
@@ -8756,6 +8909,7 @@ export function dashboardPage(
         // En tête : le TTC, c'est-à-dire ce que le client paiera.
         if (grandEl) grandEl.textContent = lu.total > 0 ? euro(lu.ttc) : '—';
         afficherTvaFamilles(lu);
+        majResteASaisir();
         invTtcAffiche = lu.total > 0 ? lu.ttc : null;
         return;
       }

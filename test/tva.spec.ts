@@ -104,6 +104,12 @@ describe('fenêtre de chiffrage : récapitulatif TVA séparé', () => {
     expect(html).toContain('function afficherTvaFamilles(lu)');
     expect(html).toContain('Articles au prix catalogue');
     expect(html).toContain('Articles sans prix unitaire');
+    // Nouvelle mise en page : pied fixe, message replié, contrôle des prix manquants.
+    expect(html).toContain('class="inv-pied"');
+    expect(html).toContain('<details class="inv-msg-bloc">');
+    expect(html).toContain('id="inv-reste"');
+    expect(html).toContain('function majResteASaisir()');
+    expect(html).toContain('function texteDePalier(qty, grille, catalogue)');
     // Les scripts de la page restent syntaxiquement valides.
     const re = /<script[^>]*>([\s\S]*?)<\/script>/g;
     let m: RegExpExecArray | null;
