@@ -2103,6 +2103,7 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .inv-qte small{display:block;font-size:10.5px;color:var(--warn,#b45309);margin-top:2px;min-height:0}
 .inv-fam-total{text-align:right;font-size:13.5px;font-weight:700;white-space:nowrap}
 .inv-fam-total.is-empty{color:var(--faint);font-weight:500}
+.inv-fam-ttc{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-top:2px}
 @media (max-width:620px){
   .inv-tete{display:none}
   .inv-fam{grid-template-columns:1fr 1fr;row-gap:6px}
@@ -8670,7 +8671,7 @@ export function dashboardPage(
       };
       var entete = function(){
         var t = creer('div', 'inv-tete');
-        ['Article', 'Prix unitaire', 'Qté', 'Total TTC'].forEach(function(x){ t.appendChild(creer('span', '', x)); });
+        ['Article', 'Prix unitaire', 'Qté', 'Total'].forEach(function(x){ t.appendChild(creer('span', '', x)); });
         return t;
       };
 
@@ -8886,7 +8887,18 @@ export function dashboardPage(
              TTC pour une ligne au prix catalogue, saisie TTC.
              Article : total TTC de la ligne, qui s'additionne au total en tête. */
           if (cellule) {
-            cellule.textContent = (invParArticle || enTtc) ? euro(ttcL) + ' TTC' : euro(sousTotal);
+            /* Ligne saisie HT : le total HT d'abord (ce que l'admin vient de
+               saisir), et SOUS lui ce qu'il devient TTC — la TVA ne tombe pas
+               d'un coup dans le total. Ligne catalogue : déjà TTC. */
+            if (!enTtc) {
+              cellule.textContent = euro(sousTotal) + ' HT';
+              var sousTtc = document.createElement('small');
+              sousTtc.className = 'inv-fam-ttc';
+              sousTtc.textContent = '→ ' + euro(ttcL) + ' TTC';
+              cellule.appendChild(sousTtc);
+            } else {
+              cellule.textContent = euro(ttcL) + ' TTC';
+            }
             cellule.className = 'inv-fam-total';
           }
         } else {
