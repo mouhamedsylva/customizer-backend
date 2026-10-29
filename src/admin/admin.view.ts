@@ -1515,11 +1515,25 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .grp-viewer-bar select{flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;font:inherit;font-weight:500}
 .grp-planche{display:block;width:100%;height:auto;border-radius:8px;background:#fff;cursor:zoom-in}
 .grp-filtre{width:100%;max-width:360px;margin-top:6px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;font:inherit}
-.grp-texte{height:28px;max-width:110px;object-fit:contain;background:#3a3a3a;border-radius:4px;padding:2px 4px;cursor:zoom-in}
+/* Visuel du nom sur DAMIER, comme les vignettes .thumb et l'agrandissement :
+   un fond gris foncé rendait illisible un texte noir ; le damier convient au
+   noir comme au blanc. */
+.grp-texte{height:32px;max-width:120px;object-fit:contain;border:1px solid var(--line);border-radius:5px;padding:2px 5px;cursor:zoom-in;
+  background-color:#d4d4d8;
+  background-image:
+    linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%),
+    linear-gradient(45deg,#bcbcc2 25%,transparent 25%,transparent 75%,#bcbcc2 75%);
+  background-size:10px 10px;
+  background-position:0 0,5px 5px}
 .grp-ok{color:#1f8a4c;font-weight:700}
-.grp-ko{display:inline-block;color:#b42318;background:#fdecea;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;margin:1px 0}
-.grp-list tr.grp-alerte td{background:#fff7f6}
-.badge-alerte{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:#fdecea;color:#b42318;font-size:10.5px;font-weight:800;letter-spacing:.02em;vertical-align:middle}
+/* Contrôles de groupe en AMBRE, pas en rouge : ce sont des points à
+   vérifier, pas des erreurs bloquantes. */
+.grp-ko{display:inline-block;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;margin:1px 0}
+.grp-list tr.grp-alerte td{background:#fffbeb}
+.badge-alerte{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:#fef3c7;border:1px solid #fcd34d;color:#92400e;font-size:10.5px;font-weight:800;letter-spacing:.02em;vertical-align:middle}
+:root[data-theme="dark"] .grp-ko,
+:root[data-theme="dark"] .badge-alerte{color:#fbbf24;background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.35)}
+:root[data-theme="dark"] .grp-list tr.grp-alerte td{background:rgba(251,191,36,.06)}
 .btn-mini{padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;font:inherit;font-size:12px;cursor:pointer}
 .btn-mini:hover{border-color:var(--accent,#e2541b)}
 .grp-detail{margin-top:8px;border:1px dashed var(--line);border-radius:10px;padding:8px 12px}
