@@ -2084,7 +2084,7 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
    Une ligne = Article | Prix unitaire (+ HT/TTC) | Qté | Total TTC. Les
    champs étaient empilés et le total flottait : on ne voyait ni ce qui
    restait à saisir, ni ce qui était HT ou TTC. */
-#inv-modal .modal-box{width:min(96vw,760px);padding-bottom:0}
+#inv-modal .modal-box{width:min(96vw,840px);padding-bottom:0}
 .inv-section{margin-top:14px}
 .inv-section h4{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;
   letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
@@ -2092,7 +2092,8 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
 .inv-section h4 .inv-compte.is-ok{background:color-mix(in srgb,#1f8a4c 14%,transparent);color:#1f8a4c}
 .inv-section.is-catalogue{opacity:.92}
-.inv-tete,.inv-fam{display:grid;grid-template-columns:minmax(0,1fr) 128px 78px 104px;gap:10px;align-items:center}
+.inv-tete,.inv-fam{display:grid;grid-template-columns:minmax(0,1fr) 128px 78px 104px 96px;gap:10px;align-items:center}
+.inv-actions{text-align:right}
 .inv-tete{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
   color:var(--faint);padding:0 4px 4px;border-bottom:1px solid var(--line)}
 .inv-tete span:nth-child(n+2){text-align:right}
@@ -2119,9 +2120,10 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .inv-fam-total.is-empty{color:var(--faint);font-weight:500}
 .inv-fam-ttc{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-top:2px}
 /* Retirer un article (le client s'est trompé). */
-.inv-retirer{display:inline-block;margin-top:5px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;
-  background:transparent;color:var(--muted);font:inherit;font-size:11px;font-weight:700;cursor:pointer}
-.inv-retirer:hover:not(:disabled){border-color:#d97706;color:#b45309}
+.inv-retirer{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;border:1px solid #fcd34d;border-radius:8px;
+  background:#fffbeb;color:#92400e;font:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.inv-retirer:hover:not(:disabled){background:#fef3c7;border-color:#f59e0b}
+:root[data-theme="dark"] .inv-retirer{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.4);color:#fbbf24}
 .inv-retirer:disabled{opacity:.45;cursor:not-allowed}
 .inv-fam.is-retire{opacity:.55;background:transparent}
 .inv-fam.is-retire .inv-fam-nom{text-decoration:line-through}
@@ -8695,7 +8697,7 @@ export function dashboardPage(
       };
       var entete = function(){
         var t = creer('div', 'inv-tete');
-        ['Article', 'Prix unitaire', 'Qté', 'Total'].forEach(function(x){ t.appendChild(creer('span', '', x)); });
+        ['Article', 'Prix unitaire', 'Qté', 'Total', invParArticle ? 'Actions' : ''].forEach(function(x){ t.appendChild(creer('span', '', x)); });
         return t;
       };
 
@@ -8717,15 +8719,6 @@ export function dashboardPage(
         var palier = creer('small', 'inv-palier', texteDePalier(totauxParCle[f.cle] || f.qty, f.grille, catalogue || catalogueHt));
         palier.setAttribute('data-fam-palier', String(i));
         nom.appendChild(palier);
-        /* RETIRER l'article (le client s'est trompé) : il disparaîtra du devis
-           et de la facture à l'envoi. Réversible jusque-là. */
-        if (invParArticle) {
-          var retirer = creer('button', 'inv-retirer', '× Retirer');
-          retirer.type = 'button';
-          retirer.setAttribute('data-fam-retirer', String(i));
-          retirer.addEventListener('click', function(){ basculerRetrait(i); });
-          nom.appendChild(retirer);
-        }
 
         var champ = document.createElement('input');
         champ.type = 'number';
@@ -8775,10 +8768,23 @@ export function dashboardPage(
         var total = creer('div', 'inv-fam-total is-empty', '—');
         total.setAttribute('data-fam-total', String(i));
 
+        /* Colonne ACTIONS : retirer l'article (le client s'est trompé). Il
+           disparaîtra du devis et de la facture à l'envoi ; réversible
+           jusque-là. */
+        var actions = creer('div', 'inv-actions');
+        if (invParArticle) {
+          var retirer = creer('button', 'inv-retirer', '🗑 Retirer');
+          retirer.type = 'button';
+          retirer.setAttribute('data-fam-retirer', String(i));
+          retirer.addEventListener('click', function(){ basculerRetrait(i); });
+          actions.appendChild(retirer);
+        }
+
         ligne.appendChild(nom);
         ligne.appendChild(prix);
         ligne.appendChild(qte);
         ligne.appendChild(total);
+        ligne.appendChild(actions);
         return ligne;
       };
 
@@ -8859,7 +8865,7 @@ export function dashboardPage(
         for (var k = 0; k < champs.length; k++) champs[k].disabled = !!f.retire;
         var b = ligne.querySelector('[data-fam-retirer]');
         if (b) {
-          b.textContent = f.retire ? '↺ Rétablir' : '× Retirer';
+          b.textContent = f.retire ? '↺ Rétablir' : '🗑 Retirer';
           b.disabled = !f.retire && restants <= 1;
           b.title = b.disabled ? 'Il doit rester au moins un article sur la facture' : '';
         }
