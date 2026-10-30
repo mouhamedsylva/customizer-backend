@@ -39,7 +39,7 @@ import {
   nouveauFichierJoint,
 } from './fichiers-joints';
 import { RE_DESIGN, RE_LOGO, estCommandeManuelle, lireSaisieManuelle, ressourceCommande } from './commandes-manuelles';
-import { appliquerQuantites, articlesDuDevis } from '../quotes/articles-devis';
+import { appliquerQuantites, articlesDuDevis, articlesOuUnique, retirerArticles } from '../quotes/articles-devis';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
@@ -279,6 +279,9 @@ export class AdminController {
        article (ordre de articlesDuDevis), ou une seule pour un devis à produit
        unique. Absent : quantités inchangées. */
     @Body('quantites') quantites: unknown,
+    /* ARTICLES RETIRÉS par l'admin (le client s'est trompé) : positions dans
+       l'ordre de articlesDuDevis. Retirés du devis ET du brouillon. */
+    @Body('articlesRetires') articlesRetires: unknown,
     @Body('attachments') attachments: any[],
     @Res() res: Response,
   ): Promise<void> {
@@ -301,7 +304,7 @@ export class AdminController {
     try {
       await this.envoyerFacture(
         req, quoteId, message, unitPrice, prixParFamille, prixParArticle,
-        taxesIncluses, totalAffiche, quantites, attachments, res,
+        taxesIncluses, totalAffiche, quantites, attachments, res, articlesRetires,
       );
     } finally {
       this.envoisEnCours.delete(quoteId);
@@ -330,6 +333,7 @@ export class AdminController {
     quantites: unknown,
     attachments: unknown,
     res: Response,
+    articlesRetires?: unknown,
   ): Promise<void> {
     const quote = await this.data.getQuote(quoteId);
     if (!quote) {
@@ -405,18 +409,38 @@ export class AdminController {
        juste avant le chiffrage, et annulée si l'envoi échoue ou est refusé —
        le devis et son brouillon Shopify doivent toujours dire la même chose. */
     let dataModifiee: Record<string, any> | null = null;
+    /* RETRAIT D'ARTICLES, avant les quantités : celles-ci (comme les prix)
+       arrivent alignées sur la liste d'ORIGINE, et sont filtrées ensuite aux
+       articles conservés. */
+    let retires: number[] = [];
+    if (articlesRetires !== undefined && articlesRetires !== null) {
+      if (!Array.isArray(articlesRetires) || !articlesRetires.every((n) => Number.isInteger(n))) {
+        res.status(400).json({ ok: false, error: 'Articles retirés illisibles.' });
+        return;
+      }
+      retires = [...new Set(articlesRetires as number[])];
+    }
+    const garde = <T,>(liste: T[]): T[] => liste.filter((_x, i) => !retires.includes(i));
+    const nomAdmin = async () => String(((await this.currentAdmin(req)) as any)?.email || 'admin');
+    let base: Record<string, any> = dataOriginal;
+    if (retires.length) {
+      try {
+        base = retirerArticles(dataOriginal, retires, await nomAdmin());
+        dataModifiee = base;
+      } catch (e) {
+        res.status(400).json({ ok: false, error: (e as Error).message });
+        return;
+      }
+    }
     if (quantites !== undefined && quantites !== null) {
       if (!Array.isArray(quantites)) {
         res.status(400).json({ ok: false, error: 'Quantités illisibles.' });
         return;
       }
       try {
-        const admin = await this.currentAdmin(req);
-        dataModifiee = appliquerQuantites(
-          dataOriginal,
-          quantites.map((q) => Number(q)),
-          String((admin as any)?.email || 'admin'),
-        );
+        const qs = retires.length ? garde(quantites) : quantites;
+        const avecQuantites = appliquerQuantites(base, qs.map((q) => Number(q)), await nomAdmin());
+        if (avecQuantites) dataModifiee = avecQuantites;
       } catch (e) {
         res.status(400).json({ ok: false, error: (e as Error).message });
         return;
@@ -431,7 +455,10 @@ export class AdminController {
        (devis modifié entre l'ouverture de la fenêtre et l'envoi) est refusé
        plutôt que de facturer un article au prix d'un autre. */
     let prixArticles: number[] | undefined;
-    const articles = articlesDuDevis(data);
+    /* Après un retrait, il peut ne rester qu'UN article : il garde son mode
+       « par article », pour que le brouillon soit reconstruit sans le retiré. */
+    const articles = retires.length ? articlesOuUnique(data) : articlesDuDevis(data);
+    if (Array.isArray(prixParArticle) && retires.length) prixParArticle = garde(prixParArticle);
     if (Array.isArray(prixParArticle)) {
       if (!articles || articles.length !== prixParArticle.length) {
         res.status(400).json({

@@ -2118,6 +2118,15 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .inv-fam-total{text-align:right;font-size:13.5px;font-weight:700;white-space:nowrap}
 .inv-fam-total.is-empty{color:var(--faint);font-weight:500}
 .inv-fam-ttc{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-top:2px}
+/* Retirer un article (le client s'est trompé). */
+.inv-retirer{display:inline-block;margin-top:5px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;
+  background:transparent;color:var(--muted);font:inherit;font-size:11px;font-weight:700;cursor:pointer}
+.inv-retirer:hover:not(:disabled){border-color:#d97706;color:#b45309}
+.inv-retirer:disabled{opacity:.45;cursor:not-allowed}
+.inv-fam.is-retire{opacity:.55;background:transparent}
+.inv-fam.is-retire .inv-fam-nom{text-decoration:line-through}
+.inv-fam.is-retire .inv-retirer{text-decoration:none;opacity:1;color:var(--accent);border-color:var(--accent)}
+.inv-retraits{margin:4px 0 0;padding:0 4px;text-align:right;font-size:12.5px;font-weight:700;color:#b45309}
 @media (max-width:620px){
   .inv-tete{display:none}
   .inv-fam{grid-template-columns:1fr 1fr;row-gap:6px}
@@ -5175,6 +5184,7 @@ export function dashboardPage(
           <strong id="inv-grand" class="mono">—</strong>
         </div>
         <p class="inv-tva" id="inv-tva" style="display:none"></p>
+        <p class="inv-retraits" id="inv-retraits" style="display:none"></p>
         <p class="inv-reste" id="inv-reste" style="display:none"></p>
         <div class="modal-actions">
           <button class="btn" onclick="closeInvoice()">Annuler</button>
@@ -8707,6 +8717,15 @@ export function dashboardPage(
         var palier = creer('small', 'inv-palier', texteDePalier(totauxParCle[f.cle] || f.qty, f.grille, catalogue || catalogueHt));
         palier.setAttribute('data-fam-palier', String(i));
         nom.appendChild(palier);
+        /* RETIRER l'article (le client s'est trompé) : il disparaîtra du devis
+           et de la facture à l'envoi. Réversible jusque-là. */
+        if (invParArticle) {
+          var retirer = creer('button', 'inv-retirer', '× Retirer');
+          retirer.type = 'button';
+          retirer.setAttribute('data-fam-retirer', String(i));
+          retirer.addEventListener('click', function(){ basculerRetrait(i); });
+          nom.appendChild(retirer);
+        }
 
         var champ = document.createElement('input');
         champ.type = 'number';
@@ -8781,6 +8800,7 @@ export function dashboardPage(
       section('À chiffrer', aChiffrer, 'is-a-chiffrer', 'inv-a-chiffrer-n');
       section('Prix catalogue', auCatalogue, 'is-catalogue', '');
       invFamilles.forEach(function(f, i){ majUniteLigne(i); });
+      majRetraits();
 
       /* ENTRÉE : passe au prix suivant à saisir (puis au bouton d'envoi). */
       if (liste.getAttribute('data-entree') !== '1') {
@@ -8790,7 +8810,7 @@ export function dashboardPage(
           var cible = ev.target;
           if (!cible || cible.tagName !== 'INPUT') return;
           ev.preventDefault();
-          var champs = Array.prototype.slice.call(liste.querySelectorAll('input[data-fam]'));
+          var champs = Array.prototype.slice.call(liste.querySelectorAll('input[data-fam]:not([disabled])'));
           var vide = function(c){ return !(parseFloat(c.value) > 0); };
           var apres = champs.slice(champs.indexOf(cible) + 1);
           var suivant = apres.filter(vide)[0] || champs.filter(vide)[0] || apres[0];
@@ -8816,6 +8836,44 @@ export function dashboardPage(
       return '';
     }
 
+    /* Retire (ou rétablit) un article. Ligne barrée, champs désactivés, hors
+       des totaux et des prix à saisir. Le DERNIER article restant ne peut pas
+       être retiré : une facture doit garder au moins une ligne. */
+    function basculerRetrait(i){
+      var f = invFamilles[i];
+      if (!f) return;
+      var restants = invFamilles.filter(function(x){ return !x.retire; }).length;
+      if (!f.retire && restants <= 1) return;
+      f.retire = !f.retire;
+      majRetraits();
+      updateInvoiceTotal();
+    }
+    function majRetraits(){
+      var restants = invFamilles.filter(function(x){ return !x.retire; }).length;
+      var nbRetires = invFamilles.length - restants;
+      invFamilles.forEach(function(f, i){
+        var ligne = document.querySelector('#inv-familles [data-fam-ligne="' + i + '"]');
+        if (!ligne) return;
+        ligne.classList.toggle('is-retire', !!f.retire);
+        var champs = ligne.querySelectorAll('input');
+        for (var k = 0; k < champs.length; k++) champs[k].disabled = !!f.retire;
+        var b = ligne.querySelector('[data-fam-retirer]');
+        if (b) {
+          b.textContent = f.retire ? '↺ Rétablir' : '× Retirer';
+          b.disabled = !f.retire && restants <= 1;
+          b.title = b.disabled ? 'Il doit rester au moins un article sur la facture' : '';
+        }
+      });
+      var el = document.getElementById('inv-retraits');
+      if (el) {
+        el.textContent = nbRetires
+          ? nbRetires + (nbRetires > 1 ? ' articles retirés : ils seront supprimés' : ' article retiré : il sera supprimé') +
+            ' du devis et de la facture'
+          : '';
+        el.style.display = nbRetires ? '' : 'none';
+      }
+    }
+
     /* Prix manquants : lignes surlignées, compteur « À chiffrer », et envoi
        bloqué tant qu'il en reste — avec le nombre, pour que l'admin sache
        pourquoi le bouton ne répond pas. */
@@ -8823,6 +8881,7 @@ export function dashboardPage(
       var lignes = document.querySelectorAll('#inv-familles .inv-fam');
       var reste = 0, aChiffrerReste = 0;
       for (var k = 0; k < lignes.length; k++) {
+        if (lignes[k].classList.contains('is-retire')) { lignes[k].classList.remove('is-vide'); continue; }
         var champ = lignes[k].querySelector('input[data-fam]');
         var vide = !(champ && parseFloat(champ.value) > 0);
         lignes[k].classList.toggle('is-vide', vide);
@@ -8875,6 +8934,13 @@ export function dashboardPage(
         var champ = document.querySelector('#inv-familles [data-fam="'+i+'"]');
         var v = champ ? parseFloat(champ.value) : NaN;
         var cellule = document.querySelector('#inv-familles [data-fam-total="'+i+'"]');
+        /* Article RETIRÉ : hors totaux, sans prix exigé ; le serveur le
+           supprime du devis et du brouillon. */
+        if (f.retire) {
+          parIndex[i] = null;
+          if (cellule) { cellule.textContent = 'retiré'; cellule.className = 'inv-fam-total is-empty'; }
+          return;
+        }
         if (isFinite(v) && v > 0) {
           var enTtc = !!(champ && champ.getAttribute('data-ttc') === '1');
           var envoye, sousTotal, ttcL;
@@ -9222,7 +9288,7 @@ export function dashboardPage(
         /* Le prix unique part quand même : il sert de repli serveur si une
            ligne du brouillon ne correspond à aucune famille (devis retouché
            dans Shopify). On envoie la moyenne, cohérente avec le total. */
-        var piecesTotal = invFamilles.reduce(function(s, f){ return s + (Number(f.qty) || 0); }, 0);
+        var piecesTotal = invFamilles.reduce(function(s, f){ return s + (f.retire ? 0 : (Number(f.qty) || 0)); }, 0);
         price = (envoiEnTtc() ? lu.ttc : lu.total) / Math.max(1, piecesTotal || invQty);
       }
 
@@ -9246,6 +9312,15 @@ export function dashboardPage(
             actuelles.some(function(q, i){ return q !== invQtyOuverture[i]; })) {
           quantites = actuelles;
         }
+      }
+      /* Articles RETIRÉS : positions dans la liste d'origine. Les prix (null
+         pour un retiré) et les quantités restent alignés sur cette liste ; le
+         serveur les filtre lui-même. */
+      var articlesRetires = invParArticle
+        ? invFamilles.map(function(f, i){ return f.retire ? i : -1; }).filter(function(i){ return i >= 0; })
+        : [];
+      if (articlesRetires.length && invParArticle && invQteModifiable) {
+        quantites = invFamilles.map(function(f){ return f.qty; });
       }
 
       if(!isFinite(price) || price<=0){
@@ -9281,6 +9356,7 @@ export function dashboardPage(
              la liste des articles et refuse un décalage. */
           prixParArticle: prixArticles || undefined,
           quantites: quantites,
+          articlesRetires: articlesRetires.length ? articlesRetires : undefined,
           /* Le réglage Shopify sur lequel la conversion HT → prix envoyé
              s'est fondée. Le serveur refuse l'envoi s'il a changé entre-temps :
              le client paierait alors un autre montant que celui affiché. */

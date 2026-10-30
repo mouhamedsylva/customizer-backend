@@ -244,3 +244,120 @@ export function appliquerQuantites(
   ];
   return copie;
 }
+
+/**
+ * RETIRE des articles d'un devis (le client s'est trompé), et renvoie le devis
+ * modifié — sans toucher à l'original.
+ *
+ * - `indices` : positions dans l'ordre de `articlesDuDevis` ;
+ * - supprime leurs lignes « N× » de `details` et des `familles` (les lignes
+ *   identiques étant d'abord regroupées, comme partout) ; une famille vidée
+ *   disparaît ;
+ * - met à jour `coin.qty`, le nom « (N articles) » et la pastille résumé ;
+ * - garde la quantité demandée à l'origine et trace le retrait dans
+ *   `historique`.
+ *
+ * Lève une Error pour un indice invalide, ou si tous les articles seraient
+ * retirés : une facture doit garder au moins un article.
+ */
+export function retirerArticles(
+  quoteData: any,
+  indices: number[],
+  admin: string,
+  maintenant: Date = new Date(),
+): any {
+  const articles = articlesDuDevis(quoteData);
+  if (!articles) throw new Error('Ce devis ne se découpe pas en articles : retirez la ligne dans Shopify.');
+  const retires = new Set<number>();
+  for (const i of indices) {
+    if (!Number.isInteger(i) || i < 0 || i >= articles.length) {
+      throw new Error('La liste des articles du devis a changé : rechargez la page.');
+    }
+    retires.add(i);
+  }
+  if (!retires.size) return JSON.parse(JSON.stringify(quoteData));
+  if (retires.size >= articles.length) throw new Error('Il doit rester au moins un article sur la facture.');
+
+  const copie = JSON.parse(JSON.stringify(quoteData));
+  const c = copie.coin;
+  if (Array.isArray(c.details)) c.details = regrouperLignes(c.details);
+  if (Array.isArray(c.familles)) {
+    for (const f of c.familles) if (Array.isArray(f?.lignes)) f.lignes = regrouperLignes(f.lignes);
+  }
+  const cle = (a: ArticleDevis) => `${a.qty}|${a.libelle}|${a.options}`;
+  const depuisDetails = lire(c.details).length === articles.length;
+
+  // `details` : par position si les articles en viennent, sinon par contenu.
+  if (Array.isArray(c.details)) {
+    let k = 0;
+    const aEnlever = depuisDetails ? null : [...retires].map((i) => cle(articles[i]));
+    c.details = c.details.filter((brut: unknown) => {
+      const s = String(brut ?? '');
+      if (!LIGNE.test(s)) return true; // résumé : gardé, mis à jour plus bas
+      if (depuisDetails) return !retires.has(k++);
+      const [a] = lire([s]);
+      const j = a ? aEnlever!.indexOf(cle(a)) : -1;
+      if (j < 0) return true;
+      aEnlever!.splice(j, 1);
+      return false;
+    });
+  }
+
+  // `familles` : chaque ligne rattachée à SON article (l'ordre diffère de details).
+  if (Array.isArray(c.familles)) {
+    const cible = depuisDetails ? rattacherFamilles(articles, c.familles) : null;
+    if (depuisDetails && !cible) {
+      throw new Error('Impossible de rattacher les lignes des familles aux articles du devis : retirez la ligne dans Shopify.');
+    }
+    let pos = 0;
+    for (const f of c.familles) {
+      if (!Array.isArray(f?.lignes)) continue;
+      f.lignes = f.lignes.filter((brut: unknown) => {
+        if (!LIGNE.test(String(brut ?? ''))) return true;
+        const idx = cible ? cible[pos] : pos;
+        pos++;
+        return !retires.has(idx);
+      });
+      f.qty = lire(f.lignes).reduce((s, a) => s + a.qty, 0);
+    }
+    c.familles = c.familles.filter((f: any) => !Array.isArray(f?.lignes) || lire(f.lignes).length > 0);
+  }
+
+  const gardes = articles.filter((_a, i) => !retires.has(i));
+  const total = gardes.reduce((s, a) => s + a.qty, 0);
+  const nbFamilles = Array.isArray(c.familles) ? c.familles.length : null;
+  if (Array.isArray(c.details)) {
+    c.details = c.details.map((d: unknown) => {
+      if (typeof d !== 'string' || LIGNE.test(d)) return d;
+      let s = d.replace(/\b\d+(\s*pièce\(s\))/, `${total}$1`).replace(/\b\d+(\s*ligne\(s\))/, `${gardes.length}$1`);
+      if (nbFamilles !== null) s = s.replace(/\b\d+(\s*famille\(s\))/, `${nbFamilles}$1`);
+      return s;
+    });
+  }
+  if (typeof c.name === 'string') c.name = c.name.replace(/\(\d+ articles?\)/, `(${gardes.length} articles)`);
+  if (c.qtyDemandee === undefined) c.qtyDemandee = Number(quoteData.coin.qty) || total;
+  c.qty = total;
+
+  copie.historique = [
+    ...(Array.isArray(copie.historique) ? copie.historique : []),
+    {
+      date: maintenant.toISOString(),
+      admin,
+      action: 'retrait',
+      retires: [...retires].sort((a, b) => a - b).map((i) => `${articles[i].qty}× ${articles[i].libelle}${articles[i].options ? ' — ' + articles[i].options : ''}`),
+    },
+  ];
+  return copie;
+}
+
+/**
+ * Articles d'un devis, y compris quand il n'en reste qu'UN (après un
+ * retrait) : `articlesDuDevis` exige au moins deux articles pour distinguer
+ * un devis multi-articles d'un devis à produit unique.
+ */
+export function articlesOuUnique(quoteData: any): ArticleDevis[] | null {
+  const a = articlesDuDevis(quoteData);
+  if (a) return a;
+  const seul = lire(regrouperLignes(quoteData?.coin?.details));
+  return seul.length === 1 && seul[0].qty === Number(quoteData?.coin?.qty) ? seul : null;
+}
