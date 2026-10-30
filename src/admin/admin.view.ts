@@ -5197,6 +5197,23 @@ export function dashboardPage(
     </div>
   </div>
 
+  <!-- Confirmation : retirer / rétablir un article du devis. Au-dessus de la
+       fenêtre de chiffrage (même habillage que la suppression d'une commande
+       manuelle). -->
+  <div class="modal mn-suppr-modal" id="inv-conf-modal" onclick="if(event.target===this)fermerConfRetrait()">
+    <div class="modal-box" style="max-width:440px" role="alertdialog" aria-modal="true" aria-labelledby="inv-conf-titre" aria-describedby="inv-conf-texte">
+      <div class="mn-suppr-ico inv-conf-ico" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+      </div>
+      <h3 id="inv-conf-titre">Retirer cet article ?</h3>
+      <p class="sub" id="inv-conf-texte"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="fermerConfRetrait()">Annuler</button>
+        <button type="button" class="btn primary" id="inv-conf-ok" onclick="validerConfRetrait()">Retirer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modale de confirmation (succès / erreur), réutilisable -->
   <div class="alert-modal" id="alert-modal" onclick="if(event.target===this)closeAlert()">
     <div class="alert-box">
@@ -8776,7 +8793,7 @@ export function dashboardPage(
           var retirer = creer('button', 'inv-retirer', '🗑 Retirer');
           retirer.type = 'button';
           retirer.setAttribute('data-fam-retirer', String(i));
-          retirer.addEventListener('click', function(){ basculerRetrait(i); });
+          retirer.addEventListener('click', function(){ demanderRetrait(i); });
           actions.appendChild(retirer);
         }
 
@@ -8840,6 +8857,47 @@ export function dashboardPage(
         }
       }
       return '';
+    }
+
+    /* CONFIRMATION avant de retirer — ou de rétablir — un article : un clic
+       malheureux ne doit pas faire disparaître un article de la facture. */
+    var invConfIndex = -1;
+    function demanderRetrait(i){
+      var f = invFamilles[i];
+      if (!f) return;
+      var restants = invFamilles.filter(function(x){ return !x.retire; }).length;
+      if (!f.retire && restants <= 1) return;
+      invConfIndex = i;
+      var libelle = '« ' + f.qty + '× ' + f.libelle + (f.options ? ' — ' + f.options : '') + ' »';
+      var titre = document.getElementById('inv-conf-titre');
+      var texte = document.getElementById('inv-conf-texte');
+      var ok = document.getElementById('inv-conf-ok');
+      if (f.retire) {
+        if (titre) titre.textContent = 'Rétablir cet article ?';
+        if (texte) texte.textContent = libelle + ' sera de nouveau facturé. Pensez à vérifier son prix avant l’envoi.';
+        if (ok) { ok.textContent = 'Rétablir'; ok.className = 'btn primary'; }
+      } else {
+        if (titre) titre.textContent = 'Retirer cet article ?';
+        if (texte) texte.textContent = libelle + ' sera supprimé du devis et de la facture à l’envoi. Vous pourrez le rétablir tant que la facture n’est pas envoyée.';
+        if (ok) { ok.textContent = 'Retirer'; ok.className = 'btn danger'; }
+      }
+      var m = document.getElementById('inv-conf-modal');
+      if (m) m.classList.add('open');
+      setTimeout(function(){ if (ok) ok.focus(); }, 40);
+    }
+    function fermerConfRetrait(){
+      var m = document.getElementById('inv-conf-modal');
+      if (m) m.classList.remove('open');
+      var i = invConfIndex;
+      invConfIndex = -1;
+      // Le focus revient sur le bouton de la ligne : on garde sa place.
+      var b = i >= 0 ? document.querySelector('#inv-familles [data-fam-retirer="' + i + '"]') : null;
+      if (b) b.focus();
+    }
+    function validerConfRetrait(){
+      var i = invConfIndex;
+      fermerConfRetrait();
+      if (i >= 0) basculerRetrait(i);
     }
 
     /* Retire (ou rétablit) un article. Ligne barrée, champs désactivés, hors
@@ -9416,6 +9474,10 @@ export function dashboardPage(
 
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'){
+        /* Confirmation de retrait ouverte : Échap ne ferme QU'ELLE, la
+           fenêtre de chiffrage (et ses prix saisis) reste en place. */
+        var conf = document.getElementById('inv-conf-modal');
+        if (conf && conf.classList.contains('open')) { fermerConfRetrait(); return; }
         document.getElementById('lb').classList.remove('open');
         closeInvoice();
       }

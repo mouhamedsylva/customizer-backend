@@ -110,6 +110,10 @@ describe('fenêtre de chiffrage : récapitulatif TVA séparé', () => {
     expect(html).toContain('id="inv-reste"');
     expect(html).toContain('function majResteASaisir()');
     expect(html).toContain('function texteDePalier(qty, grille, catalogue)');
+    // Retrait d'un article : colonne Actions et confirmation dans les deux sens.
+    expect(html).toContain('id="inv-conf-modal"');
+    expect(html).toContain('function demanderRetrait(i)');
+    expect(html).toContain('Rétablir cet article ?');
     // Les scripts de la page restent syntaxiquement valides.
     const re = /<script[^>]*>([\s\S]*?)<\/script>/g;
     let m: RegExpExecArray | null;
