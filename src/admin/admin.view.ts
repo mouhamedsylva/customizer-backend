@@ -1531,6 +1531,9 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .grp-ko{display:inline-block;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;margin:1px 0}
 .grp-list tr.grp-alerte td{background:#fffbeb}
 .badge-alerte{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:#fef3c7;border:1px solid #fcd34d;color:#92400e;font-size:10.5px;font-weight:800;letter-spacing:.02em;vertical-align:middle}
+/* Autorisation photos : discrète, verte si autorisée. */
+.badge-photos{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:var(--raise);border:1px solid var(--line);color:var(--muted);font-size:10.5px;font-weight:700;vertical-align:middle;font-family:inherit}
+.badge-photos.is-ok{background:color-mix(in srgb,#1f8a4c 12%,transparent);border-color:color-mix(in srgb,#1f8a4c 35%,transparent);color:#1f8a4c}
 :root[data-theme="dark"] .grp-ko,
 :root[data-theme="dark"] .badge-alerte{color:#fbbf24;background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.35)}
 :root[data-theme="dark"] .grp-list tr.grp-alerte td{background:rgba(251,191,36,.06)}
@@ -2977,7 +2980,23 @@ function clientBlock(o: Order): string {
       ${s.company ? kv('Société', esc(s.company)) : ''}
       ${addr ? `<div class="kv" style="grid-column:1/-1"><span class="k">Adresse de livraison</span>${addr}</div>` : ''}
       ${info.note ? `<div class="kv" style="grid-column:1/-1"><span class="k">Note du client</span>${esc(info.note)}</div>` : ''}
+      ${kv('Photos réseaux sociaux', esc(textePhotos(info.photos)))}
     </div>`;
+}
+
+/** Autorisation de publier les photos de la commande, en clair. */
+function textePhotos(v: unknown): string {
+  if (v === 'oui') return 'Oui, autorisé';
+  if (v === 'non') return 'Non, refusé';
+  return 'Non renseigné';
+}
+
+/** Pastille d'en-tête de carte ; rien sans réponse (anciennes commandes). */
+function pastillePhotos(o: Order): string {
+  const v = ((o.customerInfo || {}) as any).photos;
+  if (v === 'oui') return '<span class="badge-photos is-ok" title="Le client autorise la publication des photos de sa commande">📷 Photos : OK</span>';
+  if (v === 'non') return '<span class="badge-photos" title="Le client refuse la publication des photos de sa commande">📷 Pas de photos</span>';
+  return '';
 }
 
 /* Icônes des cartes de statistiques (contour, hérite de la couleur). */
@@ -3533,6 +3552,7 @@ function orderCard(o: Order, srcQuote?: Quote): string {
           ${o.seen ? '' : '<span class="badge-new">nouveau</span>'}
           ${manuelle ? '<span class="badge-manuelle" title="Commande saisie à la main dans le dashboard, absente de Shopify">Saisie manuelle</span>' : ''}
           ${isGroup ? '<span class="badge-group">Groupe</span>' : ''}
+          ${pastillePhotos(o)}
           ${alertesGrp.size ? `<span class="badge-alerte" title="Contrôles automatiques de la commande de groupe">⚠ ${alertesGrp.size} à vérifier</span>` : ''}
           <svg class="caret" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></div>
         <div class="sub">${esc(o.customerName || 'Client')} · ${esc(summary)} · ${nbItems} art.</div>
@@ -4316,6 +4336,7 @@ export function productionSheetPage(o: Order, nonce = '', srcQuote?: Quote | nul
         <div><b>Email</b>${esc(o.customerEmail || '—')}</div>
         <div><b>Téléphone</b>${esc(o.customerPhone || info.phone || '—')}</div>
         ${addr ? `<div class="wide"><b>Adresse</b>${addr}</div>` : ''}
+        <div class="wide"><b>Photos réseaux sociaux</b>${esc(textePhotos(info.photos))}</div>
       </div>
     </div>
 

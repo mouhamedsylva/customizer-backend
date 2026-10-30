@@ -18,6 +18,7 @@ import {
   ShippingState,
 } from '../shared/shipping-status';
 import { evaluerLignes } from '../shared/reconnaissance-configurateur';
+import { autorisationPhotos } from '../shared/autorisation-photos';
 import { commandeManuelleDeLignes } from '../admin/commandes-manuelles';
 
 @Injectable()
@@ -267,6 +268,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       email: payload.email || customer.email || null,
       phone: customerPhone,
       note: payload.note || null,
+      // Autorisation de publier les photos (attribut de panier du récapitulatif).
+      photos: autorisationPhotos(payload.note_attributes),
       shipping: fmtAddr(payload.shipping_address),
       billing: fmtAddr(payload.billing_address),
     };
@@ -354,9 +357,12 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
         // info (adresse OU e-mail OU téléphone), sinon on garde l'ancien.
         const ni = customerInfo;
         const hasNew =
-          ni.email || ni.phone || ni.shipping || ni.billing || ni.note;
+          ni.email || ni.phone || ni.shipping || ni.billing || ni.note || ni.photos;
         if (!hasNew) {
           delete (entity as Partial<Order>).customerInfo;
+        } else if (ni.photos == null && (existing.customerInfo as any)?.photos) {
+          // Réponse photos déjà reçue : une re-synchro allégée ne l'efface pas.
+          ni.photos = (existing.customerInfo as any).photos;
         }
       }
 
