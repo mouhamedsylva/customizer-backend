@@ -6,7 +6,7 @@
     "tshirt": 60327514669390,
     "tshirt_polyester": 60327519224142,
     "drapeaux": 60352869663054,
-    "coins": 60327529939278
+    "patches": 60327529939278
   },
   "CONF_SLEEVE_VARIANT": 60386849685838,
   "CONF_COLOR_VARIANTS": {
@@ -158,12 +158,12 @@
       "handle": "drapeau-personnalise",
       "statut": "ACTIVE"
     },
-    "coins": {
+    "patches": {
       "id": "15982850801998",
       "handle": "patch-personnalise",
       "statut": "ACTIVE"
     },
-    "patches": {
+    "coins": {
       "id": "15982850998606",
       "handle": "coin-metal-personnalise",
       "statut": "ACTIVE"

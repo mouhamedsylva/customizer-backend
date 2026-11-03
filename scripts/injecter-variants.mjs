@@ -20,7 +20,7 @@
  *
  * Invariant préservé
  * ------------------
- * `CONF_VARIANTS` n'a **PAS** de clé `patches`. C'est ce qui déclenche la bascule
+ * `CONF_VARIANTS` n'a **PAS** de clé `coins`. C'est ce qui déclenche la bascule
  * devis pour les coins (voir le commentaire de recapitulatif.liquid:305). Le
  * script vérifie cette absence après écriture et échoue si elle disparaît.
  */
@@ -52,14 +52,15 @@ for (const [f, quoi] of [[SRC, 'export des variants'], [RECAP, 'récapitulatif']
 const V = JSON.parse(fs.readFileSync(SRC, 'utf8'));
 
 /* Garde-fou sur la source : mieux vaut refuser que d'écrire des IDs partiels. */
-const attendus = ['sweatshirt', 'tshirt', 'tshirt_polyester', 'drapeaux', 'coins'];
+const attendus = ['sweatshirt', 'tshirt', 'tshirt_polyester', 'drapeaux', 'patches'];
 const manquants = attendus.filter((k) => !V.CONF_VARIANTS[k]);
 if (manquants.length) {
   console.error(`❌ variants.json incomplet : ${manquants.join(', ')} absent(s)`);
   process.exit(1);
 }
-if ('patches' in V.CONF_VARIANTS) {
-  console.error('❌ variants.json contient une clé `patches` : les coins deviendraient');
+if ('coins' in V.CONF_VARIANTS) {
+  console.error('❌ variants.json contient une clé `coins` : les coins deviendraient');
+  console.error('   (export antérieur au 03/11/2026 ? relancez exporter-variants.mjs)');
   console.error('   payables en ligne alors qu\'ils sont sur devis. Refus.');
   process.exit(1);
 }
@@ -106,10 +107,10 @@ const blocVariants = (ind) => {
   const large = Math.max(...attendus.map((k) => k.length)) + 1;
   attendus.forEach((k, n) => {
     const virgule = n < attendus.length - 1 ? ',' : '';
-    const note = k === 'coins' ? '   // « Patch personnalisé » (patchs codés)' : '';
+    const note = k === 'patches' ? '   // « Patch personnalisé » (écran « Patchs »)' : '';
     l.push(`${ind}  ${(k + ':').padEnd(large + 1)}${V.CONF_VARIANTS[k]}${virgule}${note}`);
   });
-  l.push(`${ind}  // patches (= COINS réels) : pas de variant, sur devis uniquement.`);
+  l.push(`${ind}  // coins (= COINS métal) : pas de variant, sur devis uniquement.`);
   l.push(`${ind}  // C'est cette ABSENCE qui déclenche la bascule devis — ne pas ajouter`);
   l.push(`${ind}  // de clé ici sans retirer d'abord la bascule.`);
   l.push(`${ind}};`);
@@ -210,12 +211,12 @@ for (const [nom, contenu, motif] of [
   ['recapitulatif.liquid', recap, /^\s*var CONF_VARIANTS\s*=\s*\{/],
   ['conf-main-inline.js', main, /^\s*window\.CONF_VARIANTS\s*=\s*\{/],
 ]) {
-  /* L'invariant qui compte : pas de clé `patches` dans CONF_VARIANTS. On ne
+  /* L'invariant qui compte : pas de clé `coins` dans CONF_VARIANTS. On ne
      regarde que le bloc, pas le fichier — les commentaires en parlent. */
   const brut = extraireBloc(contenu, motif);
   if (!brut) { erreurs.push(`${nom} : bloc CONF_VARIANTS illisible après écriture`); continue; }
   const bloc = brut.replace(/\/\/.*$/gm, '');
-  if (/\bpatches\s*:/.test(bloc)) erreurs.push(`${nom} : clé \`patches\` réapparue`);
+  if (/\bcoins\s*:/.test(bloc)) erreurs.push(`${nom} : clé \`coins\` réapparue`);
   const cles = [...bloc.matchAll(/^\s*([a-z_]+):\s*\d+/gm)].map((x) => x[1]);
   if (cles.length !== 5) erreurs.push(`${nom} : ${cles.length} clés au lieu de 5 (${cles.join(', ')})`);
 }
@@ -231,7 +232,7 @@ if (erreurs.length) {
   erreurs.forEach((e) => console.error('   - ' + e));
   process.exit(1);
 }
-console.log('\n  vérifications : 5 clés, pas de `patches`, ' + nbCouleurs + ' IDs couleur — ok');
+console.log('\n  vérifications : 5 clés, pas de `coins`, ' + nbCouleurs + ' IDs couleur — ok');
 
 if (!APPLY) {
   console.log('\nAperçu seulement. Relancez avec --apply pour écrire.');

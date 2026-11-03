@@ -15,15 +15,15 @@
  *
  * Deux points de vigilance dans la sortie
  * ---------------------------------------
- * 1. `CONF_VARIANTS` n'a **PAS** de clé `patches`. C'est délibéré : les coins se
+ * 1. `CONF_VARIANTS` n'a **PAS** de clé `coins`. C'est délibéré : les coins se
  *    vendent uniquement sur devis, et c'est l'absence de variant qui déclenche la
  *    bascule devis (voir sections/recapitulatif.liquid:314). Le produit
  *    « Coin métal personnalisé » existe quand même, à 0,00 €, comme référence
  *    pour le dashboard admin.
  *
- * 2. Le nommage interne est INVERSÉ, et c'est voulu :
- *      productType 'coins'   → produit « Patch personnalisé »
- *      productType 'patches' → produit « Coin métal personnalisé »
+ * 2. Correspondance productType → produit (vérifiée le 03/11/2026) :
+ *      productType 'patches' (écran « Patchs ») → « Patch personnalisé »
+ *      productType 'coins'   (écran « Coins »)  → « Coin métal personnalisé »
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -81,15 +81,15 @@ console.log('═'.repeat(70));
 console.log('\n// sections/recapitulatif.liquid  (~ligne 314)');
 console.log('// assets/conf-main-inline.js       (~ligne 599)');
 console.log('\n  var CONF_VARIANTS = {');
-const ordre = ['sweatshirt', 'tshirt', 'tshirt_polyester', 'drapeaux', 'coins'];
+const ordre = ['sweatshirt', 'tshirt', 'tshirt_polyester', 'drapeaux', 'patches'];
 for (const cle of ordre) {
   const r = resultats[cle];
   if (!r) { console.log(`    // ${cle} : produit absent`); continue; }
   const v = r.produit.variants.nodes[0];
-  const commentaire = cle === 'coins' ? '   // « Patch personnalisé » (patchs codés)' : '';
+  const commentaire = cle === 'patches' ? '   // « Patch personnalisé » (écran « Patchs »)' : '';
   console.log(`    ${(cle + ':').padEnd(19)}${num(v.id)},${commentaire}`);
 }
-console.log('    // patches (= COINS réels) : PAS de variant, sur devis uniquement.');
+console.log('    // coins (= COINS métal) : PAS de variant, sur devis uniquement.');
 console.log('  };');
 
 /* ── CONF_SLEEVE_VARIANT ─────────────────────────────────────────────── */

@@ -104,14 +104,18 @@ export const TEXTILES = {
  *
  * `coin-metal-personnalise` est à 0,00 € : c'est VOULU. Les coins se vendent
  * uniquement sur devis (prix variable selon finition, gravure, quantité), et
- * `CONF_VARIANTS` de recapitulatif.liquid omet délibérément la clé `patches`
+ * `CONF_VARIANTS` de recapitulatif.liquid omet délibérément la clé `coins`
  * pour que `variantForItem()` renvoie `undefined` et déclenche la bascule devis.
+ *
+ * Les clés sont les productType du thème : 'patches' = écran « Patchs »,
+ * 'coins' = écran « Coins » (coin métal). Avant le 03/11/2026 elles étaient
+ * inversées ici, ce qui envoyait le variant du patch sur les coins.
  * Le produit existe quand même : il sert de référence au dashboard admin.
  */
 export const SIMPLES = {
   drapeaux: { handle: 'drapeau-personnalise',      titre: 'Drapeau personnalisé',    prix: '19.90' },
-  coins:    { handle: 'patch-personnalise',        titre: 'Patch personnalisé',      prix: '20.00' },
-  patches:  { handle: 'coin-metal-personnalise',   titre: 'Coin métal personnalisé', prix: '0.00'  },
+  patches:  { handle: 'patch-personnalise',        titre: 'Patch personnalisé',      prix: '20.00' },
+  coins:    { handle: 'coin-metal-personnalise',   titre: 'Coin métal personnalisé', prix: '0.00'  },
 };
 
 /**
