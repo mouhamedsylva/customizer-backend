@@ -49,11 +49,13 @@ uri = "https://vps-c1a07d74.vps.ovh.net/api/webhooks/orders-updated"
 #   customers         fiches client rattachees aux devis
 #   publications      activer/desactiver les 7 produits du configurateur
 #   inventory         stock des variants
+#   discounts         remises automatiques des prix degressifs (synchronisees
+#                     a chaque enregistrement du panneau Prix, cf. discount-sync.service.ts)
 #
 # `scopes = ""` (valeur generee par defaut) delivre un jeton SANS permission :
 # l'echange client_credentials renvoie bien 200, mais le premier appel reel
 # echoue en 403. Mesure du 10/08/2026.
-scopes = "read_products,write_products,read_draft_orders,write_draft_orders,read_orders,read_customers,write_customers,read_publications,write_publications,read_inventory,write_inventory"
+scopes = "read_products,write_products,read_draft_orders,write_draft_orders,read_orders,read_customers,write_customers,read_publications,write_publications,read_inventory,write_inventory,read_discounts,write_discounts"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 

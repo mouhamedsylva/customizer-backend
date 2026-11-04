@@ -30,6 +30,7 @@ import {
   QUOTE_ONLY_KEYS,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
+import { DiscountSyncService } from './discount-sync.service';
 import { CloudinaryService } from '../shared/cloudinary.service';
 import { TYPES_DOCUMENTS_DEVIS, contenuConforme, filtreTypes, nomFichierUtf8 } from '../uploads/type-fichier';
 import {
@@ -102,6 +103,7 @@ export class AdminController {
     private readonly shopify: ShopifyService,
     private readonly config: ConfigService,
     private readonly cloudinary: CloudinaryService,
+    private readonly remises: DiscountSyncService,
   ) {}
 
   /**
@@ -2019,6 +2021,18 @@ export class AdminController {
         `Valeur refusée, prix inchangé : ${rejected.join(', ')}. ` +
           `Un prix doit être un nombre positif.`,
       );
+    }
+
+    /* 3) Remises dégressives Shopify : APRÈS les prix des variants, car le
+          montant de chaque remise = prix du variant − prix du palier. Sans
+          elles, le paiement facturait le prix plein quelle que soit la
+          quantité (voir DiscountSyncService). Un échec n'annule rien : il
+          rejoint les avertissements affichés par le dashboard. */
+    try {
+      const synchro = await this.remises.synchroniser();
+      warnings.push(...synchro.avertissements);
+    } catch (e) {
+      warnings.push(`Remises dégressives non synchronisées : ${(e as Error).message}`);
     }
 
     // Les grilles sont renvoyées normalisées (triées, doublons fusionnés) :

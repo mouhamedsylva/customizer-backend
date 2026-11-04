@@ -52,6 +52,30 @@ export interface CreateDraftOrderPayload {
   shipping_address?: DraftOrderAddress;
 }
 
+/** Remise automatique telle que lue dans Shopify (voir listAutomaticDiscounts). */
+export interface AutomaticDiscount {
+  id: string;
+  /** __typename GraphQL, ex. `DiscountAutomaticBasic`. */
+  type: string;
+  title: string;
+  /** ACTIVE, SCHEDULED ou EXPIRED. */
+  status: string;
+  minQuantity: number | null;
+  amount: number | null;
+  appliesOnEachItem: boolean | null;
+  productIds: string[];
+}
+
+/** Remise de palier dégressif à créer / maintenir dans Shopify. */
+export interface TierDiscountSpec {
+  title: string;
+  productId: string;
+  /** Quantité minimale du produit pour déclencher la remise. */
+  min: number;
+  /** Montant retiré par article, en euros. */
+  amount: number;
+}
+
 /**
  * Service d'integration avec l'API Admin Shopify.
  * Adapte depuis l'ancien customizer-api/src/services/shopify.service.js.
@@ -1395,6 +1419,201 @@ export class ShopifyService {
     const updated =
       res.data?.productVariantsBulkUpdate?.productVariants?.length || 0;
     return { ok: true, updated };
+  }
+
+  /**
+   * Prix UNIQUE des variants d'un produit (ex. 32 pour tous les t-shirts).
+   *
+   * Sert de base au calcul des remises dégressives : remise = ce prix − prix
+   * du palier. Si les variants n'ont pas tous le même prix, une remise « montant
+   * fixe par article » donnerait des prix finaux différents selon la couleur :
+   * on refuse plutôt que de se tromper en silence.
+   */
+  async getProductPrice(
+    productId: string | number,
+  ): Promise<{ ok: boolean; price?: number; error?: string }> {
+    const gid = `gid://shopify/Product/${this.gidToId(productId)}`;
+    const res = await this.graphql(
+      `query ProductPrice($id: ID!) {
+         product(id: $id) {
+           title
+           variants(first: 250) { edges { node { price } } }
+         }
+       }`,
+      { id: gid },
+    );
+    if (res.error) return { ok: false, error: res.error };
+    const product = res.data?.product;
+    if (!product) return { ok: false, error: `Produit ${productId} introuvable.` };
+
+    const prix = new Set<number>(
+      (product.variants?.edges || []).map((e: any) => Number(e.node.price)),
+    );
+    if (prix.size !== 1) {
+      return {
+        ok: false,
+        error: `« ${product.title} » : ${prix.size === 0 ? 'aucun variant' : 'variants à des prix différents (' + [...prix].join(', ') + ')'}.`,
+      };
+    }
+    const price = [...prix][0];
+    if (!Number.isFinite(price) || price <= 0) {
+      return { ok: false, error: `« ${product.title} » : prix invalide.` };
+    }
+    return { ok: true, price };
+  }
+
+  // ─────────────────────── Remises automatiques ───────────────────────
+  // Prix dégressifs facturés au paiement (voir DiscountSyncService).
+  // Scopes requis : read_discounts, write_discounts.
+
+  /**
+   * Toutes les remises automatiques de la boutique (actives ou non), avec
+   * le détail utile aux remises « montant par article » que l'on gère.
+   */
+  async listAutomaticDiscounts(): Promise<{
+    ok: boolean;
+    discounts?: AutomaticDiscount[];
+    error?: string;
+  }> {
+    const out: AutomaticDiscount[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < 10; page++) {
+      const res = await this.graphql(
+        `query AutoDiscounts($after: String) {
+           discountNodes(first: 100, after: $after, query: "method:automatic") {
+             pageInfo { hasNextPage endCursor }
+             edges { node {
+               id
+               discount {
+                 __typename
+                 ... on DiscountAutomaticBasic {
+                   title
+                   status
+                   minimumRequirement {
+                     ... on DiscountMinimumQuantity { greaterThanOrEqualToQuantity }
+                   }
+                   customerGets {
+                     value {
+                       ... on DiscountAmount { amount { amount } appliesOnEachItem }
+                     }
+                     items {
+                       ... on DiscountProducts { products(first: 5) { edges { node { id } } } }
+                     }
+                   }
+                 }
+                 ... on DiscountAutomaticApp { title status }
+                 ... on DiscountAutomaticBxgy { title status }
+                 ... on DiscountAutomaticFreeShipping { title status }
+               }
+             } }
+           }
+         }`,
+        { after },
+      );
+      if (res.error) return { ok: false, error: res.error };
+      const conn = res.data?.discountNodes;
+      for (const edge of conn?.edges || []) {
+        const d = edge.node.discount || {};
+        const min = d.minimumRequirement?.greaterThanOrEqualToQuantity;
+        const amount = d.customerGets?.value?.amount?.amount;
+        out.push({
+          id: edge.node.id,
+          type: d.__typename || '',
+          title: d.title || '',
+          status: d.status || '',
+          minQuantity: min != null ? Number(min) : null,
+          amount: amount != null ? Number(amount) : null,
+          appliesOnEachItem: d.customerGets?.value?.appliesOnEachItem ?? null,
+          productIds: (d.customerGets?.items?.products?.edges || []).map((e: any) =>
+            this.gidToId(e.node.id),
+          ),
+        });
+      }
+      if (!conn?.pageInfo?.hasNextPage) break;
+      after = conn.pageInfo.endCursor;
+    }
+    return { ok: true, discounts: out };
+  }
+
+  /** Corps commun création / mise à jour d'une remise par palier. */
+  private tierDiscountInput(r: TierDiscountSpec, avecProduit: boolean) {
+    return {
+      title: r.title,
+      /* Combinable avec les codes de COMMANDE et de LIVRAISON, pas avec une
+         autre remise PRODUIT : sur un même article, Shopify retient alors la
+         remise produit la plus avantageuse — donc le palier le plus haut atteint. */
+      combinesWith: { productDiscounts: false, orderDiscounts: true, shippingDiscounts: true },
+      minimumRequirement: { quantity: { greaterThanOrEqualToQuantity: String(r.min) } },
+      customerGets: {
+        value: { discountAmount: { amount: r.amount.toFixed(2), appliesOnEachItem: true } },
+        ...(avecProduit
+          ? { items: { products: { productsToAdd: [`gid://shopify/Product/${this.gidToId(r.productId)}`] } } }
+          : {}),
+      },
+    };
+  }
+
+  private userErrors(payload: any): string | null {
+    const errs = payload?.userErrors || [];
+    if (!errs.length) return null;
+    return errs
+      .map((e: any) => `${(e.field || []).join('.')} ${e.message}`.trim())
+      .join(' | ');
+  }
+
+  /** Crée une remise automatique « montant fixe par article » sur un produit. */
+  async createTierDiscount(r: TierDiscountSpec): Promise<{ ok: boolean; error?: string }> {
+    const res = await this.graphql(
+      `mutation CreateTier($d: DiscountAutomaticBasicInput!) {
+         discountAutomaticBasicCreate(automaticBasicDiscount: $d) {
+           automaticDiscountNode { id }
+           userErrors { field message }
+         }
+       }`,
+      { d: { ...this.tierDiscountInput(r, true), startsAt: new Date().toISOString() } },
+    );
+    if (res.error) return { ok: false, error: res.error };
+    const err = this.userErrors(res.data?.discountAutomaticBasicCreate);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  /**
+   * Met à jour montant / quantité d'une remise existante. Le produit n'est
+   * pas renvoyé : il fait partie du titre, donc ne change jamais pour une
+   * remise donnée. `endsAt: null` réactive une remise qui aurait été arrêtée.
+   */
+  async updateTierDiscount(
+    id: string,
+    r: TierDiscountSpec,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const res = await this.graphql(
+      `mutation UpdateTier($id: ID!, $d: DiscountAutomaticBasicInput!) {
+         discountAutomaticBasicUpdate(id: $id, automaticBasicDiscount: $d) {
+           automaticDiscountNode { id }
+           userErrors { field message }
+         }
+       }`,
+      { id, d: { ...this.tierDiscountInput(r, false), endsAt: null } },
+    );
+    if (res.error) return { ok: false, error: res.error };
+    const err = this.userErrors(res.data?.discountAutomaticBasicUpdate);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  /** Supprime une remise automatique. */
+  async deleteAutomaticDiscount(id: string): Promise<{ ok: boolean; error?: string }> {
+    const res = await this.graphql(
+      `mutation DeleteAuto($id: ID!) {
+         discountAutomaticDelete(id: $id) {
+           deletedAutomaticDiscountId
+           userErrors { field message }
+         }
+       }`,
+      { id },
+    );
+    if (res.error) return { ok: false, error: res.error };
+    const err = this.userErrors(res.data?.discountAutomaticDelete);
+    return err ? { ok: false, error: err } : { ok: true };
   }
 
   /**

@@ -7,26 +7,18 @@ import { Setting } from '../database/entities/setting.entity';
  * Clés des produits du configurateur. Elles correspondent aux types utilisés
  * côté frontend (window.CONF_VARIANTS) et servent de clé de réglage.
  */
-/* ⚠ NOMMAGE INVERSÉ — vérifié le 2026-08-08, ne pas « corriger ».
- *
- * Les clés `coins` et `patches` ne désignent PAS ce que leur nom suggère. La
- * même inversion existe côté frontend (conf-main-inline.js, commentaire de
- * CONF_VARIANTS) : les deux sont cohérents entre eux.
+/* Correspondance clé → produit (vérifiée dans le thème le 03/11/2026 :
+ * categoryMap de conf-dynamic-layout.js, capturePatchDesign, CONF_VARIANTS) :
  *
  *   clé `patches`  → vos PATCHS brodés      → produit « Patch personnalisé »
- *                    écran visible « Coins » du configurateur
+ *                    écran « Patchs » du configurateur
  *                    grille : 20 € à 10 pièces … 3,50 € à 100
  *
  *   clé `coins`    → vos COINS métal        → produit « Coin métal personnalisé »
- *                    écran visible « Patchs » du configurateur
- *                    vendus SUR DEVIS : pas de synchronisation Shopify
+ *                    écran « Coins » du configurateur
+ *                    vendus SUR DEVIS : pas de prix, pas de remise Shopify
  *
- * Preuve : la grille `patches` reprend les 5 paliers HT de la grille
- * « patchs » du commerçant (20 / 12,50 / 9 / 5 / 3,50 €), et
- * `prices.patches` son premier palier.
- *
- * Renommer ces clés casserait la correspondance avec le frontend ET les
- * réglages déjà enregistrés en base (préfixe `KEY_PREFIX + key`).
+ * Ces clés sont aussi celles des réglages en base (préfixe `KEY_PREFIX + key`).
  */
 export const PRODUCT_KEYS = [
   'sweatshirt',
@@ -161,13 +153,12 @@ const DEFAULT_TIERS: Tiers = {
   /* EXCEPTION : montants HORS TAXE. Les patchs sont affichés HT dans le
      configurateur, sans TVA ajoutée (choix du commerçant, septembre 2026) ;
      la fenêtre de chiffrage les traite donc comme HT (PRIX_HT_KEYS).
-     Le 2e palier commence à 11 pièces, pas à 20 : de 11 à 19 pièces, le
-     client payait le palier de 10 (20 € au lieu de 12,50 €). */
+     Le 2e palier commence à 20 pièces (décision du commerçant, 04/11/2026). */
   patches: [
     { min: 100, price: 3.5 },
     { min: 50, price: 5.0 },
     { min: 30, price: 9.0 },
-    { min: 11, price: 12.5 },
+    { min: 20, price: 12.5 },
     { min: 10, price: 20.0 },
   ],
 };
@@ -203,24 +194,38 @@ const TIERS_PREFIX = 'tiers_';
  * développement `customizer-fh5lguwi` et renvoyaient toutes 404 sur `38cca3`,
  * si bien qu'aucun changement de prix du dashboard n'atteignait Shopify.
  *
- * Le `handle` est indiqué en commentaire plutôt qu'un libellé déduit : c'est lui
- * qui tranche l'inversion `coins`/`patches` (voir l'avertissement sur
- * PRODUCT_KEYS). L'ancien commentaire annonçait « Patch personnalisé » en face de
- * `patches`, alors que cette clé désigne le produit `coin-metal-personnalise`.
+ * Le `handle` est indiqué en commentaire : c'est lui qui identifie le produit
+ * sans ambiguïté.
+ *
+ * CORRIGÉ LE 04/11/2026 : le patch était rattaché à la clé `coins`. Or `coins`
+ * est dans QUOTE_ONLY_KEYS : `save()` ignorait donc ce prix et le prix des
+ * patchs saisi dans le dashboard n'atteignait JAMAIS Shopify.
  */
 export const PRODUCT_SHOPIFY_IDS: Partial<Record<ProductKey, string>> = {
   sweatshirt: '15982847033678', //       textile-sweatshirt         (40 variants)
   tshirt: '15982848246094', //           textile-t-shirt-coton      (40 variants)
   tshirt_polyester: '15982849130830', // textile-t-shirt-polyester  (40 variants)
-  drapeaux: '15982850572622', //         drapeau-personnalise        (1 variant)
-  coins: '15982850801998', //            patch-personnalise          (1 variant)
-  manche: '15982845854030', //           personnalisation-manche     (1 variant)
-  /* `patches` (= produit `coin-metal-personnalise`, vos COINS MÉTAL) est
+  drapeaux: '15982850572622', //         drapeau-personnalise        (4 variants)
+  patches: '15982850801998', //          patch-personnalise          (1 variant)
+  manche: '15982845854030', //           personnalisation-manche
+  /* `coins` (= produit `coin-metal-personnalise`, vos COINS MÉTAL) est
      volontairement ABSENT : ces coins se vendent sur devis, leur prix est
-     chiffré à la main sur chaque demande. `save()` refuse d'ailleurs
-     d'enregistrer un prix pour cette clé. Son id figure dans
+     chiffré à la main sur chaque demande. Son id figure dans
      CONFIGURATOR_PRODUCT_IDS ci-dessous. */
 };
+
+/**
+ * Produits DÉGRESSIFS dont les paliers deviennent des remises automatiques
+ * Shopify (voir DiscountSyncService). Ce sont les produits vendus au panier
+ * natif ; la manche (supplément) et les coins (devis) n'en font pas partie.
+ */
+export const TIER_PRODUCT_KEYS: ProductKey[] = [
+  'sweatshirt',
+  'tshirt',
+  'tshirt_polyester',
+  'patches',
+  'drapeaux',
+];
 
 /**
  * TOUS les produits Shopify du configurateur — les 7, contrairement à
@@ -243,8 +248,8 @@ export const CONFIGURATOR_PRODUCT_IDS: readonly string[] = [
   '15982848246094', // textile-t-shirt-coton
   '15982849130830', // textile-t-shirt-polyester
   '15982850572622', // drapeau-personnalise
-  '15982850801998', // patch-personnalise      (clé `coins`)
-  '15982850998606', // coin-metal-personnalise (clé `patches`, sur devis)
+  '15982850801998', // patch-personnalise      (clé `patches`)
+  '15982850998606', // coin-metal-personnalise (clé `coins`, sur devis)
   '15982845854030', // personnalisation-manche
 ];
 
@@ -297,17 +302,9 @@ export const MULTI_VARIANT_KEYS: ProductKey[] = [
  * (cf. `quoteOnly` dans GET /api/admin/pricing) : l'interface ne propose donc
  * plus une saisie que le serveur rejette en silence.
  */
-/* `patches` et non `coins` : à cause de l'inversion des noms côté frontend
-   (voir l'avertissement sur PRODUCT_KEYS), la clé `patches` désigne vos COINS
-   MÉTAL — produit `coin-metal-personnalise`, vérifié sur la boutique.
-
-   Ce sont eux qui se vendent sur devis. La clé `coins`, elle, porte vos PATCHS
-   (`patch-personnalise`) : ils partent au panier natif avec le variant
-   60327529939278, leur prix DOIT donc rester enregistrable.
-
-   La valeur précédente (`['coins']`) bloquait l'inverse : le dashboard refusait
-   le prix des patchs vendus au panier, et acceptait celui des coins qu'aucune
-   commande en ligne n'honore.
+/* `coins` = vos COINS MÉTAL (`coin-metal-personnalise`), vendus sur devis.
+   Les PATCHS (clé `patches`) partent au panier natif avec le variant
+   60327529939278 : leur prix reste enregistrable.
 
    À savoir sur le parcours : les coins PEUVENT être ajoutés au panier du
    configurateur, mais `variantForItem()` ne leur associe aucun variant — ils
