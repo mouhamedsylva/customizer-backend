@@ -52,6 +52,21 @@ export interface CreateDraftOrderPayload {
   shipping_address?: DraftOrderAddress;
 }
 
+/** Variant d'un produit, options indexées par nom (voir getProductStructure). */
+export interface VariantStructure {
+  id: string;
+  price: number;
+  options: Record<string, string>;
+  mediaId: string | null;
+}
+
+export interface StructureProduit {
+  id: string;
+  title: string;
+  optionNames: string[];
+  variants: VariantStructure[];
+}
+
 /** Remise automatique telle que lue dans Shopify (voir listAutomaticDiscounts). */
 export interface AutomaticDiscount {
   id: string;
@@ -64,16 +79,6 @@ export interface AutomaticDiscount {
   amount: number | null;
   appliesOnEachItem: boolean | null;
   productIds: string[];
-}
-
-/** Remise de palier dégressif à créer / maintenir dans Shopify. */
-export interface TierDiscountSpec {
-  title: string;
-  productId: string;
-  /** Quantité minimale du produit pour déclencher la remise. */
-  min: number;
-  /** Montant retiré par article, en euros. */
-  amount: number;
 }
 
 /**
@@ -1189,9 +1194,16 @@ export class ShopifyService {
   //
   // Scopes requis sur l'app privée : read_customers, write_customers.
 
-  /** Endpoint GraphQL Admin (même version que l'API REST configurée). */
+  /** Endpoint GraphQL Admin.
+
+      Version PROPRE au GraphQL, distincte de SHOPIFY_API_VERSION (REST) :
+      productOptionsCreate, les variants au-delà de 100 par produit et
+      discountNodes exigent une API récente, alors que l'env fixe encore
+      2024-01 pour le REST. Surchargeable par SHOPIFY_GRAPHQL_API_VERSION. */
   private getGraphqlUrl(): string {
-    return `${this.getBaseUrl()}/graphql.json`;
+    const store = this.config.get<string>('SHOPIFY_STORE_URL');
+    const version = this.config.get<string>('SHOPIFY_GRAPHQL_API_VERSION') || '2025-10';
+    return `https://${store}/admin/api/${version}/graphql.json`;
   }
 
   /**
@@ -1463,7 +1475,7 @@ export class ShopifyService {
   }
 
   // ─────────────────────── Remises automatiques ───────────────────────
-  // Prix dégressifs facturés au paiement (voir DiscountSyncService).
+  // Lecture / purge des anciennes remises dégressives (TierVariantSyncService).
   // Scopes requis : read_discounts, write_discounts.
 
   /**
@@ -1535,22 +1547,157 @@ export class ShopifyService {
     return { ok: true, discounts: out };
   }
 
-  /** Corps commun création / mise à jour d'une remise par palier. */
-  private tierDiscountInput(r: TierDiscountSpec, avecProduit: boolean) {
-    return {
-      title: r.title,
-      /* Combinable avec les codes de COMMANDE et de LIVRAISON, pas avec une
-         autre remise PRODUIT : sur un même article, Shopify retient alors la
-         remise produit la plus avantageuse — donc le palier le plus haut atteint. */
-      combinesWith: { productDiscounts: false, orderDiscounts: true, shippingDiscounts: true },
-      minimumRequirement: { quantity: { greaterThanOrEqualToQuantity: String(r.min) } },
-      customerGets: {
-        value: { discountAmount: { amount: r.amount.toFixed(2), appliesOnEachItem: true } },
-        ...(avecProduit
-          ? { items: { products: { productsToAdd: [`gid://shopify/Product/${this.gidToId(r.productId)}`] } } }
-          : {}),
-      },
-    };
+  // ─────────────────────── Variants « Palier » ───────────────────────
+  // Prix dégressifs facturés par variant (voir TierVariantSyncService).
+  // Scopes requis : read_products, write_products.
+
+  /**
+   * Options et variants d'un produit, sous une forme simple :
+   * `options` = valeurs de chaque variant indexées par nom d'option.
+   */
+  async getProductStructure(
+    productId: string | number,
+  ): Promise<{ ok: boolean; product?: StructureProduit; error?: string }> {
+    const gid = `gid://shopify/Product/${this.gidToId(productId)}`;
+    const variants: VariantStructure[] = [];
+    let titre = '';
+    let optionNames: string[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < 20; page++) {
+      const res = await this.graphql(
+        `query Structure($id: ID!, $after: String) {
+           product(id: $id) {
+             title
+             options { name }
+             variants(first: 250, after: $after) {
+               pageInfo { hasNextPage endCursor }
+               nodes {
+                 id
+                 price
+                 selectedOptions { name value }
+                 media(first: 1) { nodes { id } }
+               }
+             }
+           }
+         }`,
+        { id: gid, after },
+      );
+      if (res.error) return { ok: false, error: res.error };
+      const p = res.data?.product;
+      if (!p) return { ok: false, error: `Produit ${productId} introuvable.` };
+      titre = p.title;
+      optionNames = (p.options || []).map((o: any) => o.name);
+      for (const v of p.variants?.nodes || []) {
+        const options: Record<string, string> = {};
+        for (const so of v.selectedOptions || []) options[so.name] = so.value;
+        variants.push({
+          id: v.id,
+          price: Number(v.price),
+          options,
+          mediaId: v.media?.nodes?.[0]?.id || null,
+        });
+      }
+      if (!p.variants?.pageInfo?.hasNextPage) break;
+      after = p.variants.pageInfo.endCursor;
+    }
+    return { ok: true, product: { id: gid, title: titre, optionNames, variants } };
+  }
+
+  /**
+   * Ajoute une option (ex. « Palier ») avec UNE valeur. LEAVE_AS_IS : les
+   * variants existants reçoivent cette valeur et gardent leurs IDs, leurs
+   * images et leurs prix — rien ne casse pour un panier en cours.
+   */
+  async createProductOption(
+    productId: string,
+    name: string,
+    valeur: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const res = await this.graphql(
+      `mutation AddOption($productId: ID!, $options: [OptionCreateInput!]!) {
+         productOptionsCreate(productId: $productId, options: $options, variantStrategy: LEAVE_AS_IS) {
+           userErrors { field message }
+         }
+       }`,
+      { productId, options: [{ name, values: [{ name: valeur }] }] },
+    );
+    if (res.error) return { ok: false, error: res.error };
+    const err = this.userErrors(res.data?.productOptionsCreate);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  /** Crée des variants (par lots de 100). Stock non suivi, comme les existants. */
+  async bulkCreateVariants(
+    productId: string,
+    variants: Array<{ options: Record<string, string>; price: number; mediaId?: string | null }>,
+  ): Promise<{ ok: boolean; created: number; error?: string }> {
+    let created = 0;
+    for (let i = 0; i < variants.length; i += 100) {
+      const lot = variants.slice(i, i + 100).map((v) => ({
+        optionValues: Object.entries(v.options).map(([optionName, name]) => ({ optionName, name })),
+        price: v.price.toFixed(2),
+        inventoryPolicy: 'CONTINUE',
+        inventoryItem: { tracked: false },
+        ...(v.mediaId ? { mediaId: v.mediaId } : {}),
+      }));
+      const res = await this.graphql(
+        `mutation CreateVariants($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+           productVariantsBulkCreate(productId: $productId, variants: $variants) {
+             productVariants { id }
+             userErrors { field message }
+           }
+         }`,
+        { productId, variants: lot },
+      );
+      if (res.error) return { ok: false, created, error: res.error };
+      const err = this.userErrors(res.data?.productVariantsBulkCreate);
+      if (err) return { ok: false, created, error: err };
+      created += res.data?.productVariantsBulkCreate?.productVariants?.length || 0;
+    }
+    return { ok: true, created };
+  }
+
+  /** Met à jour le prix de variants précis (par lots de 100). */
+  async bulkUpdateVariantPrices(
+    productId: string,
+    prix: Array<{ id: string; price: number }>,
+  ): Promise<{ ok: boolean; error?: string }> {
+    for (let i = 0; i < prix.length; i += 100) {
+      const res = await this.graphql(
+        `mutation SetTierPrices($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+           productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+             userErrors { field message }
+           }
+         }`,
+        {
+          productId,
+          variants: prix.slice(i, i + 100).map((p) => ({ id: p.id, price: p.price.toFixed(2) })),
+        },
+      );
+      if (res.error) return { ok: false, error: res.error };
+      const err = this.userErrors(res.data?.productVariantsBulkUpdate);
+      if (err) return { ok: false, error: err };
+    }
+    return { ok: true };
+  }
+
+  /** Supprime des variants. */
+  async bulkDeleteVariants(
+    productId: string,
+    ids: string[],
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!ids.length) return { ok: true };
+    const res = await this.graphql(
+      `mutation DeleteVariants($productId: ID!, $variantsIds: [ID!]!) {
+         productVariantsBulkDelete(productId: $productId, variantsIds: $variantsIds) {
+           userErrors { field message }
+         }
+       }`,
+      { productId, variantsIds: ids },
+    );
+    if (res.error) return { ok: false, error: res.error };
+    const err = this.userErrors(res.data?.productVariantsBulkDelete);
+    return err ? { ok: false, error: err } : { ok: true };
   }
 
   private userErrors(payload: any): string | null {
@@ -1561,44 +1708,6 @@ export class ShopifyService {
       .join(' | ');
   }
 
-  /** Crée une remise automatique « montant fixe par article » sur un produit. */
-  async createTierDiscount(r: TierDiscountSpec): Promise<{ ok: boolean; error?: string }> {
-    const res = await this.graphql(
-      `mutation CreateTier($d: DiscountAutomaticBasicInput!) {
-         discountAutomaticBasicCreate(automaticBasicDiscount: $d) {
-           automaticDiscountNode { id }
-           userErrors { field message }
-         }
-       }`,
-      { d: { ...this.tierDiscountInput(r, true), startsAt: new Date().toISOString() } },
-    );
-    if (res.error) return { ok: false, error: res.error };
-    const err = this.userErrors(res.data?.discountAutomaticBasicCreate);
-    return err ? { ok: false, error: err } : { ok: true };
-  }
-
-  /**
-   * Met à jour montant / quantité d'une remise existante. Le produit n'est
-   * pas renvoyé : il fait partie du titre, donc ne change jamais pour une
-   * remise donnée. `endsAt: null` réactive une remise qui aurait été arrêtée.
-   */
-  async updateTierDiscount(
-    id: string,
-    r: TierDiscountSpec,
-  ): Promise<{ ok: boolean; error?: string }> {
-    const res = await this.graphql(
-      `mutation UpdateTier($id: ID!, $d: DiscountAutomaticBasicInput!) {
-         discountAutomaticBasicUpdate(id: $id, automaticBasicDiscount: $d) {
-           automaticDiscountNode { id }
-           userErrors { field message }
-         }
-       }`,
-      { id, d: { ...this.tierDiscountInput(r, false), endsAt: null } },
-    );
-    if (res.error) return { ok: false, error: res.error };
-    const err = this.userErrors(res.data?.discountAutomaticBasicUpdate);
-    return err ? { ok: false, error: err } : { ok: true };
-  }
 
   /** Supprime une remise automatique. */
   async deleteAutomaticDiscount(id: string): Promise<{ ok: boolean; error?: string }> {

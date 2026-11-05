@@ -5,7 +5,7 @@ import { AdminService } from './admin.service';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminSessionGuard } from './admin-session.guard';
 import { MessageTemplateService } from './message-template.service';
-import { DiscountSyncService } from './discount-sync.service';
+import { TierVariantSyncService } from './tier-variant-sync.service';
 import { SettingsModule } from './settings.module';
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
@@ -27,7 +27,7 @@ import { MessageTemplate } from '../database/entities/message-template.entity';
     AdminAuthService,
     AdminSessionGuard,
     MessageTemplateService,
-    DiscountSyncService,
+    TierVariantSyncService,
   ],
   /* Exportés pour que les autres modules (quotes, orders, uploads) puissent
      protéger leurs routes sensibles avec AdminSessionGuard. */

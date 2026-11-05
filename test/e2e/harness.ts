@@ -203,6 +203,52 @@ export class FakeShopify {
     return { ok: true };
   }
 
+  /* Paliers dégressifs (TierVariantSyncService) : produit déjà migré, un
+     seul variant au palier « Dès 1 pièce » — la synchro n'a rien à écrire
+     sauf ce que la grille demande. */
+  async getProductStructure(productId: unknown) {
+    this.record('getProductStructure', [productId]);
+    return {
+      ok: true,
+      product: {
+        id: `gid://shopify/Product/${productId}`,
+        title: 'Produit test',
+        optionNames: ['Couleur', 'Palier'],
+        variants: [{ id: 'v1', price: 10, options: { Couleur: 'Noir', Palier: 'Dès 1 pièce' }, mediaId: null }],
+      },
+    };
+  }
+
+  async createProductOption(...args: unknown[]) {
+    this.record('createProductOption', args);
+    return { ok: true };
+  }
+
+  async bulkCreateVariants(productId: unknown, variants: unknown[]) {
+    this.record('bulkCreateVariants', [productId, variants]);
+    return { ok: true, created: variants.length };
+  }
+
+  async bulkUpdateVariantPrices(...args: unknown[]) {
+    this.record('bulkUpdateVariantPrices', args);
+    return { ok: true };
+  }
+
+  async bulkDeleteVariants(...args: unknown[]) {
+    this.record('bulkDeleteVariants', args);
+    return { ok: true };
+  }
+
+  async listAutomaticDiscounts() {
+    this.record('listAutomaticDiscounts', []);
+    return { ok: true, discounts: [] };
+  }
+
+  async deleteAutomaticDiscount(id: unknown) {
+    this.record('deleteAutomaticDiscount', [id]);
+    return { ok: true };
+  }
+
   async getProductVariants(productId: unknown) {
     this.record('getProductVariants', [productId]);
     return { title: 'Produit test', variants: [{ id: 1, price: '10.00' }] };

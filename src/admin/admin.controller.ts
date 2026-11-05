@@ -28,9 +28,11 @@ import {
   PRODUCT_SHOPIFY_IDS,
   MULTI_VARIANT_KEYS,
   QUOTE_ONLY_KEYS,
+  TIER_PRODUCT_KEYS,
+  type ProductKey,
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
-import { DiscountSyncService } from './discount-sync.service';
+import { TierVariantSyncService } from './tier-variant-sync.service';
 import { CloudinaryService } from '../shared/cloudinary.service';
 import { TYPES_DOCUMENTS_DEVIS, contenuConforme, filtreTypes, nomFichierUtf8 } from '../uploads/type-fichier';
 import {
@@ -103,7 +105,7 @@ export class AdminController {
     private readonly shopify: ShopifyService,
     private readonly config: ConfigService,
     private readonly cloudinary: CloudinaryService,
-    private readonly remises: DiscountSyncService,
+    private readonly paliers: TierVariantSyncService,
   ) {}
 
   /**
@@ -1994,6 +1996,13 @@ export class AdminController {
     //    que l'admin n'avait jamais saisie.
     const warnings: string[] = [];
     const rejected: string[] = [];
+    /* Produits DÉGRESSIFS (grille non vide) : leurs prix sont portés par les
+       variants « Palier », un par palier — voir TierVariantSyncService plus
+       bas. updateProductPrice() mettrait TOUS les variants au même prix et
+       écraserait la grille : on ne l'appelle donc pas pour eux. */
+    const grilles = await this.pricing.getTiers();
+    const aPaliers = (k: ProductKey) =>
+      TIER_PRODUCT_KEYS.includes(k) && (grilles[k] || []).length > 0;
     for (const key of PRODUCT_KEYS) {
       if (!(key in body)) continue; // non modifié
       const productId = PRODUCT_SHOPIFY_IDS[key];
@@ -2006,6 +2015,7 @@ export class AdminController {
         rejected.push(PRODUCT_LABELS[key]);
         continue;
       }
+      if (aPaliers(key)) continue; // prix posés par les variants « Palier »
 
       try {
         const r = await this.shopify.updateProductPrice(productId, prices[key]);
@@ -2023,16 +2033,15 @@ export class AdminController {
       );
     }
 
-    /* 3) Remises dégressives Shopify : APRÈS les prix des variants, car le
-          montant de chaque remise = prix du variant − prix du palier. Sans
-          elles, le paiement facturait le prix plein quelle que soit la
-          quantité (voir DiscountSyncService). Un échec n'annule rien : il
-          rejoint les avertissements affichés par le dashboard. */
+    /* 3) Paliers dégressifs : un variant « Palier » par palier et par couleur,
+          à son propre prix (voir TierVariantSyncService). Sans eux, le
+          paiement facturait le prix plein quelle que soit la quantité. Un
+          échec n'annule rien : il rejoint les avertissements du dashboard. */
     try {
-      const synchro = await this.remises.synchroniser();
+      const synchro = await this.paliers.synchroniser();
       warnings.push(...synchro.avertissements);
     } catch (e) {
-      warnings.push(`Remises dégressives non synchronisées : ${(e as Error).message}`);
+      warnings.push(`Paliers dégressifs non synchronisés : ${(e as Error).message}`);
     }
 
     // Les grilles sont renvoyées normalisées (triées, doublons fusionnés) :

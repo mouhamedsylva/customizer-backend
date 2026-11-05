@@ -215,8 +215,8 @@ export const PRODUCT_SHOPIFY_IDS: Partial<Record<ProductKey, string>> = {
 };
 
 /**
- * Produits DÉGRESSIFS dont les paliers deviennent des remises automatiques
- * Shopify (voir DiscountSyncService). Ce sont les produits vendus au panier
+ * Produits DÉGRESSIFS dont les paliers deviennent des variants « Palier »
+ * (voir TierVariantSyncService). Ce sont les produits vendus au panier
  * natif ; la manche (supplément) et les coins (devis) n'en font pas partie.
  */
 export const TIER_PRODUCT_KEYS: ProductKey[] = [

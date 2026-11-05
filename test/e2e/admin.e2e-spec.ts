@@ -300,14 +300,27 @@ describe('Dashboard admin', () => {
     });
 
     it('enregistre un prix et le pousse vers Shopify', async () => {
+      // `manche` : prix unique, poussé tel quel sur tous ses variants.
+      const r = await request(srv())
+        .post('/api/admin/pricing')
+        .set('X-Forwarded-For', freshIp())
+        .set('Cookie', cookie)
+        .send({ manche: 2.5 });
+      expect([200, 201]).toContain(r.status);
+      expect(r.body.prices.manche).toBe(2.5);
+      expect(h.shopify.callsTo('updateProductPrice')).toHaveLength(1);
+    });
+
+    it('produit dégressif : prix portés par les variants « Palier », pas en bloc', async () => {
+      // Pousser le prix de base sur TOUS les variants écraserait la grille.
       const r = await request(srv())
         .post('/api/admin/pricing')
         .set('X-Forwarded-For', freshIp())
         .set('Cookie', cookie)
         .send({ tshirt: 27.5 });
       expect([200, 201]).toContain(r.status);
-      expect(r.body.prices.tshirt).toBe(27.5);
-      expect(h.shopify.callsTo('updateProductPrice')).toHaveLength(1);
+      expect(h.shopify.callsTo('updateProductPrice')).toHaveLength(0);
+      expect(h.shopify.callsTo('getProductStructure').length).toBeGreaterThan(0);
     });
 
     it('NE POUSSE PAS un prix rejeté vers Shopify', async () => {
