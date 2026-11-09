@@ -3,7 +3,11 @@
  * rattaché à sa commande, puis le rattache.
  *
  *   node dist/scripts/retrouver-logos-commande.js --commande 20091
- *       liste les logos ET textes (PNG, SVG) envoyés autour de la commande
+ *       liste les logos ET textes (PNG, SVG) envoyés autour de la commande,
+ *       avec l'heure de Paris et l'écart à la commande (« -3 min »)
+ *       [--avant 20] [--apres 5]   fenêtre en minutes (défaut : 90 et 10)
+ *       [--seulement logo|texte]   un seul type de fichier
+ *       [--nouveaux]               masque ceux déjà dans la commande
  *
  *   … --commande 20091 --ajouter <url> --libelle "Logo cœur" [--ligne 1]
  *       rattache un LOGO à la ligne indiquée (1 par défaut)
@@ -61,6 +65,18 @@ const arg = (nom: string): string | null => {
   const i = process.argv.indexOf(nom);
   return i > 0 ? String(process.argv[i + 1] ?? '') : null;
 };
+
+/** Date en heure de Paris : « 09/11/2026 11:12:05 » (ou l'heure seule). */
+function heureParis(d: Date, heureSeule = false): string {
+  const opts: Intl.DateTimeFormatOptions = {
+    timeZone: 'Europe/Paris',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    ...(heureSeule ? {} : { day: '2-digit', month: '2-digit', year: 'numeric' }),
+  };
+  return new Intl.DateTimeFormat('fr-FR', opts).format(d);
+}
 
 async function telecharger(url: string): Promise<string | null> {
   try {
@@ -195,14 +211,27 @@ async function main(): Promise<void> {
   lignes.forEach((li) =>
     (Array.isArray(li?.properties) ? li.properties : []).forEach((p: any) => dejaLa.add(String(p?.value))),
   );
+  /* Fenêtre de recherche réglable : une commande très chargée (ou un client
+     qui a configuré longtemps avant de payer) remplit vite la liste.
+       --avant 20 --apres 5   minutes autour de la commande
+       --seulement logo       ou « texte » : ne liste qu'un type
+       --nouveaux             masque les fichiers déjà dans la commande */
+  const minutes = (nom: string, defaut: number): number => {
+    const v = parseInt(arg(nom) || '', 10);
+    return Number.isFinite(v) && v >= 0 ? v * 60 * 1000 : defaut;
+  };
+  const seulement = (arg('--seulement') || '').toLowerCase();
+  const nouveaux = process.argv.includes('--nouveaux');
+
   const quand = new Date(o.shopifyCreatedAt || o.receivedAt);
-  const debut = new Date(quand.getTime() - AVANT_MS);
-  const fin = new Date(quand.getTime() + APRES_MS);
-  console.log(`Commande ${o.orderNumber} passée le ${quand.toISOString()}`);
-  console.log(`Fichiers envoyés entre ${debut.toISOString()} et ${fin.toISOString()} :\n`);
+  const debut = new Date(quand.getTime() - minutes('--avant', AVANT_MS));
+  const fin = new Date(quand.getTime() + minutes('--apres', APRES_MS));
+  console.log(`Commande ${o.orderNumber} passée le ${heureParis(quand)} (heure de Paris)`);
+  console.log(`Fichiers envoyés entre ${heureParis(debut)} et ${heureParis(fin)} :\n`);
 
   const trouves: Array<{ url: string; date: Date; nature: string; detail: string }> = [];
   for (const [prefixe, typeRessource, nature] of SOURCES) {
+    if (seulement && !nature.startsWith(seulement)) continue;
     let curseur: string | undefined;
     for (let page = 0; page < 20; page++) {
       const r: any = await cloudinary.api.resources({
@@ -229,13 +258,20 @@ async function main(): Promise<void> {
   }
 
   trouves.sort((a, b) => a.date.getTime() - b.date.getTime());
-  if (!trouves.length) console.log('  (aucun fichier dans cette fenêtre)');
-  for (const f of trouves) {
+  const affiches = nouveaux ? trouves.filter((f) => !dejaLa.has(f.url)) : trouves;
+  if (!affiches.length) console.log('  (aucun fichier dans cette fenêtre)');
+  for (const f of affiches) {
     const marque = dejaLa.has(f.url) ? '  [déjà dans la commande]' : '';
-    console.log(`  ${f.date.toISOString()}  ${f.nature.padEnd(10)} ${f.detail.padEnd(11)} ${f.url}${marque}`);
+    // Écart à la commande : « -3 min » = envoyé 3 minutes avant le paiement.
+    const ecart = Math.round((f.date.getTime() - quand.getTime()) / 60000);
+    const decal = `${ecart > 0 ? '+' : ''}${ecart} min`;
+    console.log(
+      `  ${heureParis(f.date, true)}  (${decal.padStart(8)})  ${f.nature.padEnd(10)} ${f.detail.padEnd(11)} ${f.url}${marque}`,
+    );
   }
   console.log(
-    '\nOuvrez les URL pour identifier les bons fichiers, puis :\n' +
+    `\n${affiches.length} fichier(s). Pour resserrer : --avant 15 --apres 5, --seulement logo, --nouveaux` +
+      '\n\nOuvrez les URL pour identifier les bons fichiers, puis :\n' +
       `  logo  : … --commande ${numero} --ajouter "<url>" --libelle "Logo cœur"\n` +
       `  texte : … --commande ${numero} --texte "<url PNG>" --svg "<url SVG>"`,
   );
