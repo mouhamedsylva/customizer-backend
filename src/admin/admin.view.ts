@@ -4909,6 +4909,12 @@ export function dashboardPage(
             </svg>
             <span><b>Prix</b><small>Tarifs du configurateur</small></span>
           </button>
+          <button class="cog-item" role="menuitem" onclick="fromCog(openDelais)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+            </svg>
+            <span><b>Délais de production</b><small>Délais affichés aux clients</small></span>
+          </button>
           <button class="cog-item" role="menuitem" onclick="fromCog(openSettings)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"/>
@@ -5372,6 +5378,30 @@ export function dashboardPage(
         <button class="btn primary" id="price-save" onclick="savePricing()">Enregistrer</button>
       </div>
       <p class="hint" id="price-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <!-- Modale : délais de production (affichés par le configurateur) -->
+  <div class="modal" id="delais-modal" onclick="if(event.target===this)closeDelais()">
+    <div class="modal-box" style="max-width:720px">
+      <h3>Délais de production</h3>
+      <p class="sub">Délais annoncés aux clients dans le configurateur, le panier et le récapitulatif.</p>
+      <div class="set-block">
+        <div id="delais-list"><p class="hint">Chargement…</p></div>
+        <p class="hint" style="margin-top:12px">
+          <strong>Grande quantité</strong> (facultatif) : au-delà du nombre de pièces indiqué,
+          c'est le second délai qui s'affiche. Laissez les deux champs vides pour un délai unique.
+        </p>
+        <p class="hint" style="margin-top:6px">
+          Pour une commande de plusieurs articles, le client voit le délai le plus long.
+          Les changements sont visibles sur le site sans redéploiement.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeDelais()">Annuler</button>
+        <button class="btn primary" id="delais-save" onclick="saveDelais()">Enregistrer</button>
+      </div>
+      <p class="hint" id="delais-status" style="margin-top:12px"></p>
     </div>
   </div>
 
@@ -7456,6 +7486,81 @@ export function dashboardPage(
     var PRICE_KEYS=[];   // ordre des produits, fourni par le serveur
     var PRICE_TIERS={};  // grilles dégressives chargées, par produit
     var PRICE_QUOTE_ONLY=[]; // produits sur devis : ni champ, ni grille
+
+    /* ═══════════════════ Délais de production ═══════════════════ */
+    var delaisProduits = [];
+    function openDelais(){
+      document.getElementById('delais-modal').classList.add('open');
+      loadDelais();
+    }
+    function closeDelais(){
+      document.getElementById('delais-modal').classList.remove('open');
+    }
+    function delaisEsc(v){
+      return String(v == null ? '' : v).split('&').join('&amp;').split('<').join('&lt;')
+        .split('>').join('&gt;').split('"').join('&quot;');
+    }
+    async function loadDelais(){
+      var box = document.getElementById('delais-list');
+      document.getElementById('delais-status').textContent = '';
+      try{
+        var r = await fetch('/api/admin/delais', { credentials: 'same-origin' });
+        var d = await r.json();
+        if(!d.ok){ box.innerHTML = '<p class="hint">Impossible de charger les délais.</p>'; return; }
+        delaisProduits = d.produits || [];
+        var h = '<table style="width:100%;border-collapse:collapse;font-size:14px">' +
+          '<thead><tr style="text-align:left">' +
+          '<th style="padding:6px 4px">Produit</th><th style="padding:6px 4px">Délai</th>' +
+          '<th style="padding:6px 4px">Au-delà de (pièces)</th><th style="padding:6px 4px">Délai grande quantité</th>' +
+          '</tr></thead><tbody>';
+        delaisProduits.forEach(function(p){
+          var x = d.delais[p] || {};
+          h += '<tr>' +
+            '<td style="padding:6px 4px;font-weight:600">' + delaisEsc(d.libelles[p] || p) + '</td>' +
+            '<td style="padding:6px 4px"><input class="price-input" id="dl-delai-' + p + '" maxlength="40" value="' + delaisEsc(x.delai) + '" style="width:100%"></td>' +
+            '<td style="padding:6px 4px"><input class="price-input mono" id="dl-seuil-' + p + '" type="number" min="1" step="1" value="' + delaisEsc(x.seuil == null ? '' : x.seuil) + '" style="width:90px" placeholder="—"></td>' +
+            '<td style="padding:6px 4px"><input class="price-input" id="dl-grand-' + p + '" maxlength="40" value="' + delaisEsc(x.grand == null ? '' : x.grand) + '" style="width:100%" placeholder="—"></td>' +
+            '</tr>';
+        });
+        box.innerHTML = h + '</tbody></table>';
+      }catch(e){
+        box.innerHTML = '<p class="hint">Impossible de charger les délais.</p>';
+      }
+    }
+    async function saveDelais(){
+      var btn = document.getElementById('delais-save');
+      var st = document.getElementById('delais-status');
+      var body = {};
+      delaisProduits.forEach(function(p){
+        var seuil = document.getElementById('dl-seuil-' + p).value.trim();
+        var grand = document.getElementById('dl-grand-' + p).value.trim();
+        body[p] = {
+          delai: document.getElementById('dl-delai-' + p).value.trim(),
+          seuil: seuil === '' ? null : Number(seuil),
+          grand: grand === '' ? null : grand
+        };
+      });
+      btn.disabled = true; st.className = 'hint'; st.textContent = 'Enregistrement…';
+      try{
+        var r = await fetch('/api/admin/delais', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body)
+        });
+        var d = await r.json();
+        btn.disabled = false; st.textContent = '';
+        if(!d.ok){
+          showAlert('Délais non enregistrés', d.error || "Les délais n'ont pas pu être enregistrés.", 'error');
+          return;
+        }
+        closeDelais();
+        showAlert('Délais mis à jour', 'Les nouveaux délais sont affichés dans le configurateur.');
+      }catch(e){
+        btn.disabled = false; st.textContent = '';
+        showAlert('Erreur', "Le serveur n'a pas répondu. Réessayez.", 'error');
+      }
+    }
 
     function openPricing(){
       document.getElementById('price-modal').classList.add('open');

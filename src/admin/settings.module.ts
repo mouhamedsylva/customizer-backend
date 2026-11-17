@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SettingsService } from './settings.service';
 import { PricingService } from './pricing.service';
+import { DelaisService } from './delais.service';
 import { Setting } from '../database/entities/setting.entity';
 
 /**
@@ -11,7 +12,7 @@ import { Setting } from '../database/entities/setting.entity';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([Setting])],
-  providers: [SettingsService, PricingService],
-  exports: [SettingsService, PricingService],
+  providers: [SettingsService, PricingService, DelaisService],
+  exports: [SettingsService, PricingService, DelaisService],
 })
 export class SettingsModule {}

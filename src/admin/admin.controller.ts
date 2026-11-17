@@ -33,6 +33,7 @@ import {
 } from './pricing.service';
 import { ShopifyService } from '../shared/shopify.service';
 import { TierVariantSyncService } from './tier-variant-sync.service';
+import { DelaisService, LIBELLES_DELAIS, PRODUITS_DELAIS } from './delais.service';
 import { CloudinaryService } from '../shared/cloudinary.service';
 import { TYPES_DOCUMENTS_DEVIS, contenuConforme, filtreTypes, nomFichierUtf8 } from '../uploads/type-fichier';
 import {
@@ -106,6 +107,7 @@ export class AdminController {
     private readonly config: ConfigService,
     private readonly cloudinary: CloudinaryService,
     private readonly paliers: TierVariantSyncService,
+    private readonly delais: DelaisService,
   ) {}
 
   /**
@@ -1935,6 +1937,42 @@ export class AdminController {
   // au checkout (le panier natif facture le prix du variant).
 
   /** GET /api/admin/pricing — prix actuels + libellés. */
+  // ─────────────────────── Délais de production ───────────────────────
+  // Affichés au client par le configurateur (récap, tiroir, page Récap).
+  // Servis publiquement avec les prix (GET /api/pricing → `delais`).
+
+  /** GET /api/admin/delais — délais actuels + libellés, dans l'ordre. */
+  @Get('delais')
+  async getDelais(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    res.json({ ok: true, delais: await this.delais.get(), produits: PRODUITS_DELAIS, libelles: LIBELLES_DELAIS });
+  }
+
+  /**
+   * POST /api/admin/delais — body : { sweatshirt: { delai, seuil, grand }, … }
+   * (partiel accepté). Tout ou rien : une règle invalide fait tout refuser.
+   */
+  @Post('delais')
+  async saveDelais(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    try {
+      const delais = await this.delais.save(body || {});
+      res.json({ ok: true, delais });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  }
+
   @Get('pricing')
   async getPricing(@Req() req: Request, @Res() res: Response): Promise<void> {
     if (!(await this.isAuthed(req))) {

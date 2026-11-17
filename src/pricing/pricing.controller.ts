@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { PricingService, type PricingPayload } from '../admin/pricing.service';
+import { DelaisService, type Delais } from '../admin/delais.service';
 
 /**
  * Prix du configurateur, en LECTURE SEULE et PUBLIC.
@@ -10,7 +11,10 @@ import { PricingService, type PricingPayload } from '../admin/pricing.service';
  */
 @Controller('pricing')
 export class PricingController {
-  constructor(private readonly pricing: PricingService) {}
+  constructor(
+    private readonly pricing: PricingService,
+    private readonly delaisService: DelaisService,
+  ) {}
 
   /**
    * GET /api/pricing — prix unitaires TTC par produit + grilles dégressives.
@@ -20,8 +24,13 @@ export class PricingController {
    * backend est injoignable.
    */
   @Get()
-  async get(): Promise<{ ok: boolean } & PricingPayload> {
-    const { prices, tiers } = await this.pricing.getPayload();
-    return { ok: true, prices, tiers };
+  async get(): Promise<{ ok: boolean; delais: Delais } & PricingPayload> {
+    /* `delais` : délais de production réglés dans le dashboard (repli : le
+       barème de conf-delais.js côté thème). */
+    const [{ prices, tiers }, delais] = await Promise.all([
+      this.pricing.getPayload(),
+      this.delaisService.get(),
+    ]);
+    return { ok: true, prices, tiers, delais };
   }
 }
