@@ -18,6 +18,7 @@ import {
   prixFamille,
 } from '../quotes/prix-catalogue';
 import type { PricingPayload } from './pricing.service';
+import { CONFIGURATOR_PRODUCT_IDS, CONFIGURATOR_PRODUCT_TITLES } from './pricing.service';
 import { FAMILLES_ARTICLES, famillesDeCommande } from './familles-articles';
 import { documentsDuDevis } from '../quotes/pieces-jointes';
 import { FichierJoint, estImageJointe, fichiersJointsValides } from './fichiers-joints';
@@ -2883,6 +2884,36 @@ function specsTypo(props: Array<{ name: string; value: string }>): string {
   return `<div class="specs">${pastilles.join('')}</div>`;
 }
 
+/**
+ * Lignes d'un produit du CONFIGURATEUR arrivées sans AUCUNE propriété : achetées
+ * depuis la page produit, hors configurateur (ex. #21695). Le configurateur
+ * pose toujours au moins « Détails », « Taille » ou « _Aperçu » — et
+ * « Article » / « Manches » sur un supplément manche. Une telle ligne n'a donc
+ * aucun design à produire : il faut contacter le client.
+ *
+ * Commandes manuelles et devis payés exclus : ils suivent leur propre chemin.
+ */
+export function lignesSansDesign(o: { shopifyOrderId?: string | null; quoteId?: string | null; lineItems?: unknown }): any[] {
+  if (o.quoteId || estCommandeManuelle(String(o.shopifyOrderId || ''))) return [];
+  const items: any[] = Array.isArray(o.lineItems) ? o.lineItems : [];
+  return items.filter((li) => {
+    const duConfigurateur =
+      (li?.productId != null && CONFIGURATOR_PRODUCT_IDS.includes(String(li.productId))) ||
+      CONFIGURATOR_PRODUCT_TITLES.includes(String(li?.title || ''));
+    const props = Array.isArray(li?.properties) ? li.properties : [];
+    return duConfigurateur && props.length === 0 && !(li?.__typoRetrouvee && Object.keys(li.__typoRetrouvee).length);
+  });
+}
+
+function bandeauSansDesign(o: Order): string {
+  const lignes = lignesSansDesign(o);
+  if (!lignes.length) return '';
+  return `<div class="spec" style="display:block;margin:6px 0 12px;padding:10px 12px;border-radius:8px;background:#fdecee;color:var(--danger);border:1px solid var(--danger)">
+    ⚠ <b>Commande passée hors configurateur</b> : aucun design transmis pour ${lignes.length > 1 ? lignes.length + ' articles' : 'cet article'}
+    (${esc(lignes.map((l) => l.title).join(', '))}). Contacter le client pour obtenir son design.
+  </div>`;
+}
+
 function itemRow(li: any): string {
   const props: Array<{ name: string; value: string }> = Array.isArray(li.properties) ? li.properties : [];
   /* + fichiers rattachés après coup (scripts/retrouver-logos-commande). */
@@ -3587,6 +3618,7 @@ function orderCard(o: Order, srcQuote?: Quote): string {
       })()}
 
       <div class="section-lbl lbl">Articles à produire</div>
+      ${bandeauSansDesign(o)}
       ${(() => {
         /* Commande groupée par tailles : Shopify crée une ligne par taille,
            toutes portant le MÊME design. Les afficher toutes répétait quatre
