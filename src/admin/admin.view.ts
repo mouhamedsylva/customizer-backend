@@ -1846,21 +1846,34 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .dl-main{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .dl-name{font-size:14px;font-weight:700;color:var(--ink)}
 .dl-field{display:flex;align-items:center;gap:8px;flex:none}
-.dl-field .price-input{width:190px;font-size:14px}
+
 .dl-toggle{display:inline-flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;
   color:var(--muted);cursor:pointer;user-select:none}
 .dl-toggle input{width:15px;height:15px;accent-color:var(--accent);margin:0 4px 0 0;cursor:pointer;flex:none}
-.dl-big{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:10px 12px;
+.dl-big{display:none;align-items:center;gap:8px;flex-wrap:nowrap;white-space:nowrap;margin-top:8px;padding:10px 12px;
   background:var(--paper);border:1px solid var(--line-soft);border-radius:10px;font-size:13px;color:var(--muted)}
 .dl-big.on{display:flex}
 .dl-big .price-input{font-size:13.5px}
-.dl-big .dl-seuil{width:72px;text-align:center}
-.dl-big .dl-grand{width:170px}
+/* Durée : un seul bloc visuel — le nombre à gauche, l'unité (liste grisée) à
+   droite. L'unité ne peut plus être effacée par mégarde en tapant. */
+.dl-dur{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:10px;
+  background:#fff;overflow:hidden;transition:border-color .15s,box-shadow .15s}
+.dl-dur:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(194,65,12,.12)}
+.dl-dur input{border:none;outline:none;background:transparent;min-width:0;flex:1;
+  padding:9px 12px;font:inherit;font-size:14px;font-weight:600;color:var(--ink)}
+.dl-dur select{border:none;border-left:1px solid var(--line);outline:none;cursor:pointer;
+  background:var(--paper);color:var(--muted);font:inherit;font-size:13px;font-weight:600;
+  padding:0 10px}
+.dl-field .dl-dur{width:230px}
+.dl-big .dl-dur{width:190px;margin-left:auto}
+.dl-big .dl-seuil{width:64px;text-align:center;padding-left:6px;padding-right:6px}
 .dl-err{border-color:var(--danger)!important;box-shadow:0 0 0 3px rgba(220,38,38,.12)}
 .dl-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 @media (max-width:560px){
+  .dl-big{flex-wrap:wrap;white-space:normal}
+  .dl-big .dl-dur{width:100%;margin-left:0}
   .dl-main{flex-direction:column;align-items:stretch;gap:6px}
-  .dl-field .price-input{width:100%}
+  .dl-field .dl-dur{width:100%}
 }
 .price-field{display:flex;align-items:center;gap:8px;flex:none}
 .price-field .price-input{width:110px;text-align:right;font-size:14px}
@@ -1972,6 +1985,8 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .adm-cred-line b{word-break:break-all;user-select:all}
 
 @media (max-width:560px){
+  .dl-big{flex-wrap:wrap;white-space:normal}
+  .dl-big .dl-dur{width:100%;margin-left:0}
   .adm-row{flex-wrap:wrap}
   .adm-side{width:100%;align-items:flex-start;flex-direction:row;justify-content:space-between}
 }
@@ -2045,6 +2060,8 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   background:rgba(255,255,255,.22);font-size:18px;line-height:1;
 }
 @media (max-width:560px){
+  .dl-big{flex-wrap:wrap;white-space:normal}
+  .dl-big .dl-dur{width:100%;margin-left:0}
   .fab-commande{right:16px;bottom:16px;padding:12px 16px 12px 12px;font-size:13px}
 }
 @media (prefers-reduced-motion: reduce){ .fab-commande{transition:none} }
@@ -7532,6 +7549,35 @@ export function dashboardPage(
       { titre: 'Textiles', note: 'Délai selon la quantité commandée', produits: ['sweatshirt', 'tshirt', 'tshirt_polyester'] },
       { titre: 'Atelier', note: 'Patchs, coins et drapeaux', produits: ['patches', 'coins', 'drapeaux'] }
     ];
+    /* « 2-3 semaines » -> { n: '2-3', u: 'semaines' } ; unité par défaut : semaines. */
+    var DELAIS_UNITES = ['jours', 'semaines', 'mois'];
+    function delaisDecouper(txt){
+      var t = String(txt || '').trim();
+      var m = t.match(/^(.*?)[ ]*(jours?|semaines?|mois)$/i);
+      if(!m) return { n: t, u: 'semaines' };
+      var u = m[2].toLowerCase();
+      if(u === 'jour') u = 'jours';
+      if(u === 'semaine') u = 'semaines';
+      return { n: m[1].trim(), u: u };
+    }
+    function delaisChamp(id, txt, exemple){
+      var d = delaisDecouper(txt);
+      return '<div class="dl-dur" id="' + id + '">' +
+          '<input id="' + id + '-n" maxlength="20" inputmode="text" placeholder="' + exemple + '" value="' + delaisEsc(d.n) + '">' +
+          '<select id="' + id + '-u" aria-label="Unité">' +
+            DELAIS_UNITES.map(function(u){ return '<option value="' + u + '"' + (u === d.u ? ' selected' : '') + '>' + u + '</option>'; }).join('') +
+          '</select>' +
+        '</div>';
+    }
+    /* Relit un champ durée. '' si le nombre est vide ou sans chiffre.
+       Une seule unité -> singulier (« 1 semaine »). */
+    function delaisLire(id){
+      var n = document.getElementById(id + '-n').value.trim();
+      var u = document.getElementById(id + '-u').value;
+      if(!n || !/[0-9]/.test(n)) return '';
+      if(n === '1' && u !== 'mois') u = u.slice(0, -1);
+      return n + ' ' + u;
+    }
     function delaisBascule(p, on){
       document.getElementById('dl-big-' + p).classList.toggle('on', on);
     }
@@ -7541,7 +7587,7 @@ export function dashboardPage(
           '<div class="dl-main">' +
             '<label class="dl-name" for="dl-delai-' + p + '">' + delaisEsc(nom) + '</label>' +
             '<div class="dl-field">' +
-              '<input class="price-input" id="dl-delai-' + p + '" maxlength="40" placeholder="ex. 2-3 semaines" value="' + delaisEsc(x.delai) + '">' +
+              delaisChamp('dl-delai-' + p, x.delai, 'ex. 2-3') +
             '</div>' +
           '</div>' +
           '<label class="dl-toggle">' +
@@ -7553,7 +7599,7 @@ export function dashboardPage(
             'Au-delà de' +
             '<input class="price-input mono dl-seuil" id="dl-seuil-' + p + '" type="number" min="1" step="1" value="' + delaisEsc(x.seuil == null ? 10 : x.seuil) + '">' +
             'pièces :' +
-            '<input class="price-input dl-grand" id="dl-grand-' + p + '" maxlength="40" placeholder="ex. 3-4 semaines" value="' + delaisEsc(x.grand || '') + '">' +
+            delaisChamp('dl-grand-' + p, x.grand || '', 'ex. 3-4') +
           '</div>' +
         '</div>';
     }
@@ -7584,17 +7630,17 @@ export function dashboardPage(
       var body = {}, manque = 0;
       document.querySelectorAll('#delais-list .dl-err').forEach(function(el){ el.classList.remove('dl-err'); });
       delaisProduits.forEach(function(p){
-        var delai = document.getElementById('dl-delai-' + p);
+        var delai = delaisLire('dl-delai-' + p);
         var on = document.getElementById('dl-on-' + p).checked;
         var seuil = document.getElementById('dl-seuil-' + p);
-        var grand = document.getElementById('dl-grand-' + p);
-        if(!delai.value.trim()){ delai.classList.add('dl-err'); manque++; }
-        if(on && !grand.value.trim()){ grand.classList.add('dl-err'); manque++; }
+        var grand = on ? delaisLire('dl-grand-' + p) : '';
+        if(!delai){ document.getElementById('dl-delai-' + p).classList.add('dl-err'); manque++; }
+        if(on && !grand){ document.getElementById('dl-grand-' + p).classList.add('dl-err'); manque++; }
         if(on && !(Number(seuil.value) >= 1)){ seuil.classList.add('dl-err'); manque++; }
         body[p] = {
-          delai: delai.value.trim(),
+          delai: delai,
           seuil: on ? Number(seuil.value) : null,
-          grand: on ? grand.value.trim() : null
+          grand: on ? grand : null
         };
       });
       if(manque){
