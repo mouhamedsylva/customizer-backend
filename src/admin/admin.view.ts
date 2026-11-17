@@ -4984,6 +4984,7 @@ export function dashboardPage(
           </button>`
               : ''
           }
+          <div class="cog-sep"></div>
           <button class="cog-item" role="menuitem" onclick="fromCog(openSettings)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"/>
@@ -4991,7 +4992,6 @@ export function dashboardPage(
             </svg>
             <span><b>Mode maintenance</b><small>Ouvrir ou fermer le configurateur</small></span>
           </button>
-          <div class="cog-sep"></div>
           <button class="cog-item" role="menuitem" onclick="fromCog(openAccount)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             <span><b>Mon compte</b><small>${esc(me?.email || 'Changer mon mot de passe')}</small></span>
