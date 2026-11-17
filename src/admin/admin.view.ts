@@ -1830,6 +1830,38 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
   border-top:1px solid var(--line);border-right:1px solid var(--line);
   border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted);
   border-radius:0 4px 4px 0}
+/* ── Délais de production ───────────────────────────────────────────
+   Une carte par produit, regroupées par famille. Le délai standard est
+   toujours visible ; le délai « grande quantité » se déplie sur demande. */
+#delais-modal .modal-box{max-width:600px;max-height:92vh;display:flex;flex-direction:column}
+#delais-modal .dl-scroll{overflow-y:auto;margin:0 -4px;padding:0 4px}
+.dl-group{margin-top:18px}
+.dl-group:first-child{margin-top:4px}
+.dl-group-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.dl-group-title{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.dl-group-note{font-size:11.5px;color:var(--faint)}
+.dl-card{padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.dl-card:last-child{border-bottom:none}
+.dl-main{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.dl-name{font-size:14px;font-weight:700;color:var(--ink)}
+.dl-field{display:flex;align-items:center;gap:8px;flex:none}
+.dl-field .price-input{width:190px;font-size:14px}
+.dl-toggle{display:inline-flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;
+  color:var(--muted);cursor:pointer;user-select:none}
+.dl-toggle input{width:15px;height:15px;accent-color:var(--accent);margin:0 4px 0 0;cursor:pointer;flex:none}
+.dl-big{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:10px 12px;
+  background:var(--paper);border:1px solid var(--line-soft);border-radius:10px;font-size:13px;color:var(--muted)}
+.dl-big.on{display:flex}
+.dl-big .price-input{font-size:13.5px}
+.dl-big .dl-seuil{width:72px;text-align:center}
+.dl-big .dl-grand{width:170px}
+.dl-err{border-color:var(--danger)!important;box-shadow:0 0 0 3px rgba(220,38,38,.12)}
+.dl-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+@media (max-width:560px){
+  .dl-main{flex-direction:column;align-items:stretch;gap:6px}
+  .dl-field .price-input{width:100%}
+}
 .price-field{display:flex;align-items:center;gap:8px;flex:none}
 .price-field .price-input{width:110px;text-align:right;font-size:14px}
 .price-cur{font-size:11.5px;color:var(--faint);font-weight:700;min-width:34px}
@@ -5383,25 +5415,21 @@ export function dashboardPage(
 
   <!-- Modale : délais de production (affichés par le configurateur) -->
   <div class="modal" id="delais-modal" onclick="if(event.target===this)closeDelais()">
-    <div class="modal-box" style="max-width:720px">
+    <div class="modal-box">
       <h3>Délais de production</h3>
-      <p class="sub">Délais annoncés aux clients dans le configurateur, le panier et le récapitulatif.</p>
-      <div class="set-block">
+      <p class="sub">Délais annoncés aux clients dans le configurateur, le panier et le récapitulatif.
+        Les changements s'appliquent sur le site dès l'enregistrement.</p>
+      <div class="dl-scroll">
         <div id="delais-list"><p class="hint">Chargement…</p></div>
-        <p class="hint" style="margin-top:12px">
-          <strong>Grande quantité</strong> (facultatif) : au-delà du nombre de pièces indiqué,
-          c'est le second délai qui s'affiche. Laissez les deux champs vides pour un délai unique.
-        </p>
-        <p class="hint" style="margin-top:6px">
+        <p class="hint" style="margin-top:14px">
           Pour une commande de plusieurs articles, le client voit le délai le plus long.
-          Les changements sont visibles sur le site sans redéploiement.
         </p>
       </div>
-      <div class="modal-actions">
+      <p class="hint" id="delais-status" style="margin:10px 0 0"></p>
+      <div class="dl-actions">
         <button class="btn" onclick="closeDelais()">Annuler</button>
         <button class="btn primary" id="delais-save" onclick="saveDelais()">Enregistrer</button>
       </div>
-      <p class="hint" id="delais-status" style="margin-top:12px"></p>
     </div>
   </div>
 
@@ -7500,29 +7528,52 @@ export function dashboardPage(
       return String(v == null ? '' : v).split('&').join('&amp;').split('<').join('&lt;')
         .split('>').join('&gt;').split('"').join('&quot;');
     }
+    var DELAIS_GROUPES = [
+      { titre: 'Textiles', note: 'Délai selon la quantité commandée', produits: ['sweatshirt', 'tshirt', 'tshirt_polyester'] },
+      { titre: 'Atelier', note: 'Patchs, coins et drapeaux', produits: ['patches', 'coins', 'drapeaux'] }
+    ];
+    function delaisBascule(p, on){
+      document.getElementById('dl-big-' + p).classList.toggle('on', on);
+    }
+    function delaisCarte(p, nom, x){
+      var avecGrand = x.seuil != null && x.grand;
+      return '<div class="dl-card">' +
+          '<div class="dl-main">' +
+            '<label class="dl-name" for="dl-delai-' + p + '">' + delaisEsc(nom) + '</label>' +
+            '<div class="dl-field">' +
+              '<input class="price-input" id="dl-delai-' + p + '" maxlength="40" placeholder="ex. 2-3 semaines" value="' + delaisEsc(x.delai) + '">' +
+            '</div>' +
+          '</div>' +
+          '<label class="dl-toggle">' +
+            '<input type="checkbox" id="dl-on-' + p + '" data-p="' + p + '"' + (avecGrand ? ' checked' : '') +
+              ' onchange="delaisBascule(this.dataset.p, this.checked)">' +
+            'Délai différent pour les grandes commandes' +
+          '</label>' +
+          '<div class="dl-big' + (avecGrand ? ' on' : '') + '" id="dl-big-' + p + '">' +
+            'Au-delà de' +
+            '<input class="price-input mono dl-seuil" id="dl-seuil-' + p + '" type="number" min="1" step="1" value="' + delaisEsc(x.seuil == null ? 10 : x.seuil) + '">' +
+            'pièces :' +
+            '<input class="price-input dl-grand" id="dl-grand-' + p + '" maxlength="40" placeholder="ex. 3-4 semaines" value="' + delaisEsc(x.grand || '') + '">' +
+          '</div>' +
+        '</div>';
+    }
     async function loadDelais(){
       var box = document.getElementById('delais-list');
       document.getElementById('delais-status').textContent = '';
+      box.innerHTML = '<p class="hint">Chargement…</p>';
       try{
         var r = await fetch('/api/admin/delais', { credentials: 'same-origin' });
         var d = await r.json();
         if(!d.ok){ box.innerHTML = '<p class="hint">Impossible de charger les délais.</p>'; return; }
         delaisProduits = d.produits || [];
-        var h = '<table style="width:100%;border-collapse:collapse;font-size:14px">' +
-          '<thead><tr style="text-align:left">' +
-          '<th style="padding:6px 4px">Produit</th><th style="padding:6px 4px">Délai</th>' +
-          '<th style="padding:6px 4px">Au-delà de (pièces)</th><th style="padding:6px 4px">Délai grande quantité</th>' +
-          '</tr></thead><tbody>';
-        delaisProduits.forEach(function(p){
-          var x = d.delais[p] || {};
-          h += '<tr>' +
-            '<td style="padding:6px 4px;font-weight:600">' + delaisEsc(d.libelles[p] || p) + '</td>' +
-            '<td style="padding:6px 4px"><input class="price-input" id="dl-delai-' + p + '" maxlength="40" value="' + delaisEsc(x.delai) + '" style="width:100%"></td>' +
-            '<td style="padding:6px 4px"><input class="price-input mono" id="dl-seuil-' + p + '" type="number" min="1" step="1" value="' + delaisEsc(x.seuil == null ? '' : x.seuil) + '" style="width:90px" placeholder="—"></td>' +
-            '<td style="padding:6px 4px"><input class="price-input" id="dl-grand-' + p + '" maxlength="40" value="' + delaisEsc(x.grand == null ? '' : x.grand) + '" style="width:100%" placeholder="—"></td>' +
-            '</tr>';
-        });
-        box.innerHTML = h + '</tbody></table>';
+        box.innerHTML = DELAIS_GROUPES.map(function(g){
+          var cartes = g.produits.filter(function(p){ return delaisProduits.indexOf(p) !== -1; })
+            .map(function(p){ return delaisCarte(p, d.libelles[p] || p, d.delais[p] || {}); }).join('');
+          return '<div class="dl-group"><div class="dl-group-head">' +
+              '<span class="dl-group-title">' + delaisEsc(g.titre) + '</span>' +
+              '<span class="dl-group-note">' + delaisEsc(g.note) + '</span>' +
+            '</div>' + cartes + '</div>';
+        }).join('');
       }catch(e){
         box.innerHTML = '<p class="hint">Impossible de charger les délais.</p>';
       }
@@ -7530,17 +7581,28 @@ export function dashboardPage(
     async function saveDelais(){
       var btn = document.getElementById('delais-save');
       var st = document.getElementById('delais-status');
-      var body = {};
+      var body = {}, manque = 0;
+      document.querySelectorAll('#delais-list .dl-err').forEach(function(el){ el.classList.remove('dl-err'); });
       delaisProduits.forEach(function(p){
-        var seuil = document.getElementById('dl-seuil-' + p).value.trim();
-        var grand = document.getElementById('dl-grand-' + p).value.trim();
+        var delai = document.getElementById('dl-delai-' + p);
+        var on = document.getElementById('dl-on-' + p).checked;
+        var seuil = document.getElementById('dl-seuil-' + p);
+        var grand = document.getElementById('dl-grand-' + p);
+        if(!delai.value.trim()){ delai.classList.add('dl-err'); manque++; }
+        if(on && !grand.value.trim()){ grand.classList.add('dl-err'); manque++; }
+        if(on && !(Number(seuil.value) >= 1)){ seuil.classList.add('dl-err'); manque++; }
         body[p] = {
-          delai: document.getElementById('dl-delai-' + p).value.trim(),
-          seuil: seuil === '' ? null : Number(seuil),
-          grand: grand === '' ? null : grand
+          delai: delai.value.trim(),
+          seuil: on ? Number(seuil.value) : null,
+          grand: on ? grand.value.trim() : null
         };
       });
-      btn.disabled = true; st.className = 'hint'; st.textContent = 'Enregistrement…';
+      if(manque){
+        st.className = 'hint'; st.style.color = 'var(--danger)';
+        st.textContent = 'Complétez les champs en rouge avant d’enregistrer.';
+        return;
+      }
+      st.style.color = ''; btn.disabled = true; st.className = 'hint'; st.textContent = 'Enregistrement…';
       try{
         var r = await fetch('/api/admin/delais', {
           method: 'POST',
