@@ -3866,6 +3866,7 @@ const COLOR_HEX: Record<string, string> = {
   'Mauve orchidée': '#c57bb0',
   Noir: '#020204',
   Noyer: '#6c614d', // t-shirt coton, ex-« Vert olive »
+  'Plomb foncé': '#464d41', // t-shirt polyester, ex-« Vert militaire »
   'Orange vif': '#f08927',
   Prune: '#875560',
   'Rose fuchsia': '#d93280',
