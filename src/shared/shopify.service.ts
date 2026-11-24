@@ -1013,7 +1013,10 @@ export class ShopifyService {
    */
   async setDraftOrderArticles(
     draftOrderId: string | number,
-    articles: Array<{ libelle: string; options: string; qty: number }>,
+    /* `fichier` : design d'un article AJOUTÉ par l'admin (ajout-articles.ts),
+       posé en propriété « Design » — la commande payée l'emporte jusqu'à la
+       fiche de production. */
+    articles: Array<{ libelle: string; options: string; qty: number; fichier?: { url: string; name?: string } }>,
     prix: number[],
   ): Promise<Record<string, any>> {
     if (!articles.length || articles.length !== prix.length) {
@@ -1033,7 +1036,7 @@ export class ShopifyService {
        sur chaque ligne) ni les « Article n » / « Options » propres à une
        ancienne ligne de famille. */
     const communes = (Array.isArray(items[0].properties) ? items[0].properties : []).filter(
-      (p: any) => p?.name !== 'Référence devis' && !/^(Article \d+|Article|Options)$/.test(String(p?.name)),
+      (p: any) => p?.name !== 'Référence devis' && !/^(Article \d+|Article|Options|Design)$/.test(String(p?.name)),
     );
     const modele = items[0];
 
@@ -1046,6 +1049,7 @@ export class ShopifyService {
         ...reference,
         { name: 'Article', value: `${i + 1} / ${articles.length}` },
         ...(a.options ? [{ name: 'Options', value: a.options }] : []),
+        ...(a.fichier?.url ? [{ name: 'Design', value: a.fichier.url }] : []),
         ...(i === 0 ? communes : []),
       ],
       ...(modele.taxable !== undefined ? { taxable: modele.taxable } : {}),

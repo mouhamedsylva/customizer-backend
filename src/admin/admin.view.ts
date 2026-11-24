@@ -2182,6 +2182,20 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .inv-fam.is-retire .inv-fam-nom{text-decoration:line-through}
 .inv-fam.is-retire .inv-retirer{text-decoration:none;opacity:1;color:var(--accent);border-color:var(--accent)}
 .inv-retraits{margin:4px 0 0;padding:0 4px;text-align:right;font-size:12.5px;font-weight:700;color:#b45309}
+/* Ajouter un article au devis (libellé libre, design optionnel). */
+.inv-ajout{margin-top:12px}
+.inv-ajout-btn{width:100%;justify-content:center;border-style:dashed}
+.inv-ajout-form{margin-top:10px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--raise)}
+.inv-ajout-form h4{margin:0 0 10px;font-size:13.5px}
+.inv-aj-grille{display:grid;grid-template-columns:1.4fr 1.4fr .6fr .8fr;gap:10px;align-items:end}
+.inv-aj-grille label,.inv-aj-fichier{display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:700;color:var(--muted)}
+.inv-aj-grille input{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13.5px;background:var(--panel,#fff);color:var(--ink)}
+.inv-aj-fichier{margin-top:10px}
+.inv-aj-fichier input{font-size:12.5px;font-weight:500}
+.inv-aj-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.inv-aj-design{display:inline-block;margin-top:3px;font-size:11.5px;font-weight:600;color:var(--accent)}
+.inv-badge-ajout{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:6px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;letter-spacing:.03em;vertical-align:1px}
+@media (max-width:620px){.inv-aj-grille{grid-template-columns:1fr 1fr}}
 @media (max-width:620px){
   .inv-tete{display:none}
   .inv-fam{grid-template-columns:1fr 1fr;row-gap:6px}
@@ -3977,6 +3991,22 @@ function groupAggregate(rows: any[]): {
  * Les données enregistrées ne changent pas. Même règle que la fenêtre de
  * chiffrage et le brouillon Shopify : `regrouperLignes` (articles-devis.ts).
  */
+/** Designs des articles AJOUTÉS par l'admin (fenêtre de chiffrage), sous le détail du devis. */
+export function designsArticlesAjoutes(quoteData: any): string {
+  const liste: any[] = Array.isArray(quoteData?.articlesAjoutes) ? quoteData.articlesAjoutes : [];
+  const avec = liste.filter((a) => a?.fichier?.url && isUrl(a.fichier.url));
+  if (!avec.length) return '';
+  return `<div class="specs" style="margin-top:6px">${avec
+    .map((a) => {
+      const url = String(a.fichier.url);
+      const titre = `${a.libelle}${a.options ? ' — ' + a.options : ''}`;
+      return isImg(url)
+        ? `<span class="spec">Design « ${esc(titre)} » <img class="thumb js-zoom" src="${esc(url)}" data-zoom="${esc(url)}" alt="design" style="max-width:48px;max-height:48px;vertical-align:middle;cursor:zoom-in"></span>`
+        : `<span class="spec">Design « ${esc(titre)} » <a href="${esc(url)}" target="_blank" rel="noopener">📎 ${esc(a.fichier.name || 'fichier')}</a></span>`;
+    })
+    .join('')}</div>`;
+}
+
 export function detailsRegroupes(details: unknown[]): string[] {
   return regrouperLignes(details);
 }
@@ -4107,6 +4137,7 @@ function quoteCard(
         ${thumbs}
         <div class="item-body">
           <div class="specs">${details.map((x) => `<span class="spec">${esc(x)}</span>`).join('') || '<span class="empty">—</span>'}</div>
+          ${designsArticlesAjoutes(q.quoteData)}
         </div>
       </div>
       ${
@@ -5254,6 +5285,30 @@ export function dashboardPage(
           ⚠️ Shopify facture un <strong>prix unitaire × quantité</strong>. Le total ci-dessus
           (base + flocages) est réparti en un prix unitaire moyen — vous pouvez l'ajuster.
         </p>
+      </div>
+
+      <!-- AJOUTER UN ARTICLE au devis : libellé libre, prix HT, design
+           optionnel (fichier permanent, transmis à la production). Hors
+           commande de groupe et hors ancien chiffrage par famille. -->
+      <div class="inv-ajout" id="inv-ajout-block" style="display:none">
+        <button type="button" class="btn inv-ajout-btn" id="inv-ajout-ouvrir" onclick="ouvrirAjoutArticle()">+ Ajouter un article</button>
+        <div class="inv-ajout-form" id="inv-ajout-form" style="display:none">
+          <h4>Nouvel article</h4>
+          <div class="inv-aj-grille">
+            <label>Article<input id="inv-aj-libelle" maxlength="120" placeholder="ex. Patch brodé 8 cm"></label>
+            <label>Options <span style="font-weight:500">(facultatif)</span><input id="inv-aj-options" maxlength="300" placeholder="ex. Couleur : noir · Taille : M"></label>
+            <label>Quantité<input id="inv-aj-qty" type="number" min="1" max="100000" step="1" value="1"></label>
+            <label>Prix unitaire HT (€)<input id="inv-aj-prix" type="number" min="0.01" step="0.01" placeholder="0,00"></label>
+          </div>
+          <label class="inv-aj-fichier">Design pour la production <span style="font-weight:500">(facultatif — image ou PDF, 10 MB max)</span>
+            <input type="file" id="inv-aj-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" onchange="televerserDesignAjout(this)">
+          </label>
+          <p class="hint" id="inv-aj-statut" style="margin:6px 0 0"></p>
+          <div class="inv-aj-actions">
+            <button type="button" class="btn" onclick="fermerAjoutArticle()">Annuler</button>
+            <button type="button" class="btn primary" id="inv-aj-ok" onclick="validerAjoutArticle()">Ajouter à la facture</button>
+          </div>
+        </div>
       </div>
 
       <!-- Message pré-rédigé, REPLIÉ : la fenêtre se concentre sur les prix. -->
@@ -8677,8 +8732,168 @@ export function dashboardPage(
       return isFinite(n) && n > 0 ? arrondi(n) : null;
     }
 
+    /* ── AJOUT D'ARTICLES (libellé libre, design optionnel) ──
+       Un article ajouté rejoint invFamilles avec ajout: true, APRÈS les
+       articles d'origine : leurs positions (retraits, quantités) ne bougent
+       pas. Un devis à produit unique passe d'abord en mode « par article »,
+       son produit devenant l'article 1 (base: true) — même découpage que le
+       serveur (src/quotes/ajout-articles.ts). */
+    var invProduit = '', invPrixHtCatalogue = null;
+    var invAjoutFichier = null, invAjoutEnvoi = false;
+
+    function ajoutPossible(){
+      return invQteModifiable && (invParArticle || !invFamilles.length);
+    }
+    function majBlocAjout(){
+      var bloc = document.getElementById('inv-ajout-block');
+      if (bloc) bloc.style.display = ajoutPossible() ? '' : 'none';
+      var btn = document.getElementById('inv-ajout-ouvrir');
+      var n = invFamilles.filter(function(f){ return f.ajout; }).length;
+      if (btn) {
+        btn.disabled = n >= 10;
+        btn.title = btn.disabled ? '10 articles ajoutés au plus' : '';
+      }
+    }
+    function ouvrirAjoutArticle(){
+      var form = document.getElementById('inv-ajout-form');
+      var btn = document.getElementById('inv-ajout-ouvrir');
+      if (!form) return;
+      form.style.display = '';
+      if (btn) btn.style.display = 'none';
+      var lib = document.getElementById('inv-aj-libelle');
+      if (lib) lib.focus();
+    }
+    function fermerAjoutArticle(){
+      var form = document.getElementById('inv-ajout-form');
+      var btn = document.getElementById('inv-ajout-ouvrir');
+      if (form) form.style.display = 'none';
+      if (btn) btn.style.display = '';
+      ['inv-aj-libelle', 'inv-aj-options', 'inv-aj-prix', 'inv-aj-file'].forEach(function(id){
+        var el = document.getElementById(id); if (el) el.value = '';
+      });
+      var q = document.getElementById('inv-aj-qty'); if (q) q.value = '1';
+      var st = document.getElementById('inv-aj-statut'); if (st) { st.textContent = ''; st.className = 'hint'; }
+      invAjoutFichier = null; invAjoutEnvoi = false;
+      var ok = document.getElementById('inv-aj-ok'); if (ok) ok.disabled = false;
+    }
+
+    /* Design téléversé DÈS le choix du fichier, dans un dossier permanent. */
+    function televerserDesignAjout(input){
+      var st = document.getElementById('inv-aj-statut');
+      var ok = document.getElementById('inv-aj-ok');
+      invAjoutFichier = null;
+      var file = input && input.files && input.files[0];
+      if (!file) { if (st) st.textContent = ''; return; }
+      if (file.size > 10 * 1024 * 1024) {
+        if (st) { st.className = 'hint err'; st.textContent = 'Fichier trop volumineux (10 MB max).'; }
+        input.value = '';
+        return;
+      }
+      var fd = new FormData();
+      fd.append('file', file);
+      fd.append('quoteId', invQuoteId || '');
+      invAjoutEnvoi = true;
+      if (ok) ok.disabled = true;
+      if (st) { st.className = 'hint'; st.textContent = 'Téléversement de « ' + file.name + ' »…'; }
+      fetch('/api/uploads/design-article', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
+        .then(function(res){
+          invAjoutEnvoi = false;
+          if (ok) ok.disabled = false;
+          if (!res.ok || !res.body || !res.body.url) {
+            if (st) { st.className = 'hint err'; st.textContent = (res.body && res.body.message) || 'Le design n’a pas pu être téléversé.'; }
+            input.value = '';
+            return;
+          }
+          invAjoutFichier = { name: res.body.name || file.name, url: res.body.url, type: res.body.type || file.type };
+          if (st) { st.className = 'hint ok'; st.textContent = '✓ Design prêt : ' + invAjoutFichier.name; }
+        })
+        .catch(function(e){
+          invAjoutEnvoi = false;
+          if (ok) ok.disabled = false;
+          if (st) { st.className = 'hint err'; st.textContent = 'Erreur réseau : ' + e.message; }
+          input.value = '';
+        });
+    }
+
+    /* Les prix saisis vivent dans le DOM : on les garde avant de reconstruire
+       la liste, sans quoi ajouter ou supprimer une ligne les effacerait. */
+    function memoriserSaisies(){
+      invFamilles.forEach(function(f, i){
+        var champ = document.querySelector('#inv-familles [data-fam="' + i + '"]');
+        if (champ) f.valeur = champ.value;
+      });
+    }
+
+    /* Devis à produit unique : son produit devient l'article 1. */
+    function convertirEnArticles(){
+      if (invFamilles.length) return;
+      var champ = document.getElementById('inv-price');
+      invFamilles = [{
+        libelle: 'Article 1 — ' + (invProduit || 'Article'),
+        options: '',
+        qty: invQty,
+        qtyInitiale: invQtyOuverture ? invQtyOuverture[0] : invQty,
+        prixTtc: invPrixTtc,
+        prixHt: invPrixTtc === null ? invPrixHtCatalogue : null,
+        cle: null,
+        grille: null,
+        prixManuel: true,
+        valeur: champ ? champ.value : '',
+        base: true
+      }];
+      invParArticle = true;
+    }
+
+    function validerAjoutArticle(){
+      var st = document.getElementById('inv-aj-statut');
+      var lib = (document.getElementById('inv-aj-libelle').value || '').trim();
+      var opt = (document.getElementById('inv-aj-options').value || '').trim();
+      var q = parseInt(document.getElementById('inv-aj-qty').value, 10);
+      var p = parseFloat(document.getElementById('inv-aj-prix').value);
+      var erreur = '';
+      if (invAjoutEnvoi) erreur = 'Patientez : le design est en cours de téléversement.';
+      else if (!lib) erreur = 'Indiquez le nom de l’article.';
+      else if (!(q >= 1 && q <= 100000)) erreur = 'Indiquez une quantité entière entre 1 et 100 000.';
+      else if (!(isFinite(p) && p > 0)) erreur = 'Indiquez un prix unitaire HT supérieur à 0.';
+      if (erreur) { if (st) { st.className = 'hint err'; st.textContent = erreur; } return; }
+      memoriserSaisies();
+      convertirEnArticles();
+      invFamilles.push({
+        libelle: lib,
+        nom: lib,
+        options: opt,
+        qty: q,
+        qtyInitiale: q,
+        prixTtc: null,
+        prixHt: null,
+        cle: null,
+        grille: null,
+        prixManuel: true,
+        valeur: p.toFixed(2),
+        ajout: true,
+        fichier: invAjoutFichier
+      });
+      fermerAjoutArticle();
+      construireLignesFamilles();
+      updateInvoiceTotal();
+      majBlocAjout();
+    }
+
+    function supprimerAjout(i){
+      var f = invFamilles[i];
+      if (!f || !f.ajout) return;
+      if (!window.confirm('Supprimer « ' + f.nom + ' » de la facture ?')) return;
+      memoriserSaisies();
+      invFamilles.splice(i, 1);
+      construireLignesFamilles();
+      updateInvoiceTotal();
+      majBlocAjout();
+    }
+
     function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson,articlesJson,prixTtc,qte){
       invQuoteId=id;
+      invProduit = String(produit || '');
       invQty=Math.max(1,parseInt(qty,10)||1);
       invFlockCount=Math.max(0,parseInt(flockCount,10)||0);
       invPrixTtc = prixCatalogue(prixTtc);
@@ -8740,6 +8955,7 @@ export function dashboardPage(
          Exception, les PATCHS : leur prix catalogue est HT (affiché HT dans
          le configurateur) — pré-rempli dans le champ HT, TVA ajoutée. */
       var prixHtSimple = invPrixTtc === null ? prixCatalogue(qte.prixHt) : null;
+      invPrixHtCatalogue = prixHtSimple;
       document.getElementById('inv-price').value = invPrixTtc !== null
         ? invPrixTtc.toFixed(2)
         : (prixHtSimple !== null ? prixHtSimple.toFixed(2) : '');
@@ -8822,6 +9038,8 @@ export function dashboardPage(
       if (invFamilles.length) majResteASaisir();
       var msgBloc = document.querySelector('#inv-modal .inv-msg-bloc');
       if (msgBloc) msgBloc.open = false;
+      fermerAjoutArticle();
+      majBlocAjout();
       document.getElementById('inv-modal').classList.add('open');
       setTimeout(function(){
         /* Le premier champ à remplir, selon le mode : en multi-familles le
@@ -8993,7 +9211,13 @@ export function dashboardPage(
         /* textContent et non innerHTML : le libellé vient des données du
            devis, donc du client. */
         var nom = creer('div', 'inv-fam-nom', f.libelle);
+        if (f.ajout) nom.insertBefore(creer('span', 'inv-badge-ajout', 'AJOUT'), nom.firstChild);
         if (f.options) nom.appendChild(creer('small', '', f.options));
+        if (f.ajout && f.fichier && f.fichier.url) {
+          var lien = creer('a', 'inv-aj-design', '📎 ' + (f.fichier.name || 'Design'));
+          lien.href = f.fichier.url; lien.target = '_blank'; lien.rel = 'noopener';
+          nom.appendChild(lien);
+        }
         var catalogue = f.prixTtc !== null && f.prixTtc !== undefined;
         var catalogueHt = !catalogue && f.prixHt !== null && f.prixHt !== undefined;
         var pieces = creer('small', '', f.qty + ' pièce(s)' +
@@ -9017,6 +9241,8 @@ export function dashboardPage(
           // Patchs : prix catalogue HT, saisie HT — la TVA s'ajoute.
           champ.value = f.prixHt.toFixed(2);
         }
+        /* Saisie mémorisée (liste reconstruite après un ajout) : prioritaire. */
+        if (f.valeur !== undefined && f.valeur !== '') champ.value = f.valeur;
         champ.setAttribute('aria-label',
           (catalogue ? 'Prix unitaire TTC catalogue — ' : 'Prix unitaire HT — ') + f.libelle);
         champ.addEventListener('input', function(){
@@ -9056,7 +9282,13 @@ export function dashboardPage(
            disparaîtra du devis et de la facture à l'envoi ; réversible
            jusque-là. */
         var actions = creer('div', 'inv-actions');
-        if (invParArticle) {
+        if (f.ajout) {
+          /* Article ajouté : simplement supprimé de la liste (rien d'enregistré). */
+          var suppr = creer('button', 'inv-retirer', '✕ Supprimer');
+          suppr.type = 'button';
+          suppr.addEventListener('click', function(){ supprimerAjout(i); });
+          actions.appendChild(suppr);
+        } else if (invParArticle && !f.base) {
           var retirer = creer('button', 'inv-retirer', '🗑 Retirer');
           retirer.type = 'button';
           retirer.setAttribute('data-fam-retirer', String(i));
@@ -9132,7 +9364,7 @@ export function dashboardPage(
     function demanderRetrait(i){
       var f = invFamilles[i];
       if (!f) return;
-      var restants = invFamilles.filter(function(x){ return !x.retire; }).length;
+      var restants = invFamilles.filter(function(x){ return !x.retire && !x.ajout; }).length;
       if (!f.retire && restants <= 1) return;
       invConfIndex = i;
       var libelle = '« ' + f.qty + '× ' + f.libelle + (f.options ? ' — ' + f.options : '') + ' »';
@@ -9173,15 +9405,15 @@ export function dashboardPage(
     function basculerRetrait(i){
       var f = invFamilles[i];
       if (!f) return;
-      var restants = invFamilles.filter(function(x){ return !x.retire; }).length;
+      var restants = invFamilles.filter(function(x){ return !x.retire && !x.ajout; }).length;
       if (!f.retire && restants <= 1) return;
       f.retire = !f.retire;
       majRetraits();
       updateInvoiceTotal();
     }
     function majRetraits(){
-      var restants = invFamilles.filter(function(x){ return !x.retire; }).length;
-      var nbRetires = invFamilles.length - restants;
+      var restants = invFamilles.filter(function(x){ return !x.retire && !x.ajout; }).length;
+      var nbRetires = invFamilles.filter(function(x){ return x.retire; }).length;
       invFamilles.forEach(function(f, i){
         var ligne = document.querySelector('#inv-familles [data-fam-ligne="' + i + '"]');
         if (!ligne) return;
@@ -9398,6 +9630,7 @@ export function dashboardPage(
       window.invoiceAttachments = [];
       updateAttachmentsList();
       invQuoteId=null;
+      fermerAjoutArticle();
     }
 
     /* ── Gestion des pièces jointes ── */
@@ -9636,8 +9869,10 @@ export function dashboardPage(
             return;
           }
         }
+        /* Articles D'ORIGINE seulement : les ajoutés partent avec leur
+           quantité dans articlesAjoutes. */
         var actuelles = invParArticle
-          ? invFamilles.map(function(f){ return f.qty; })
+          ? invFamilles.filter(function(f){ return !f.ajout; }).map(function(f){ return f.qty; })
           : (invFamilles.length ? null : [invQty]);
         if (actuelles && invQtyOuverture &&
             actuelles.some(function(q, i){ return q !== invQtyOuverture[i]; })) {
@@ -9651,8 +9886,12 @@ export function dashboardPage(
         ? invFamilles.map(function(f, i){ return f.retire ? i : -1; }).filter(function(i){ return i >= 0; })
         : [];
       if (articlesRetires.length && invParArticle && invQteModifiable) {
-        quantites = invFamilles.map(function(f){ return f.qty; });
+        quantites = invFamilles.filter(function(f){ return !f.ajout; }).map(function(f){ return f.qty; });
       }
+      /* ARTICLES AJOUTÉS : en fin de liste, leurs prix en fin de prixParArticle. */
+      var articlesAjoutes = invFamilles.filter(function(f){ return f.ajout; }).map(function(f){
+        return { libelle: f.nom, options: f.options || '', qty: f.qty, fichier: f.fichier || undefined };
+      });
 
       if(!isFinite(price) || price<=0){
         st.className='hint err';
@@ -9688,6 +9927,7 @@ export function dashboardPage(
           prixParArticle: prixArticles || undefined,
           quantites: quantites,
           articlesRetires: articlesRetires.length ? articlesRetires : undefined,
+          articlesAjoutes: articlesAjoutes.length ? articlesAjoutes : undefined,
           /* Le réglage Shopify sur lequel la conversion HT → prix envoyé
              s'est fondée. Le serveur refuse l'envoi s'il a changé entre-temps :
              le client paierait alors un autre montant que celui affiché. */

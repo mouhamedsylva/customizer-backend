@@ -298,6 +298,40 @@ export class UploadsController {
   }
 
   /**
+   * POST /api/uploads/design-article
+   * Design d'un article AJOUTÉ au devis depuis la fenêtre de chiffrage.
+   * Dossier PERMANENT (customizer/commandes/devis-<id>) : contrairement aux
+   * pièces jointes de facture, nettoyées à 60 jours, ce fichier sert à la
+   * production une fois la commande payée.
+   */
+  @Post('design-article')
+  @UseGuards(AdminSessionGuard)
+  @UseInterceptors(FileInterceptor('file', { fileFilter: filtreTypes(TYPES_DOCUMENTS_DEVIS) }))
+  async uploadDesignArticle(
+    @UploadedFile() file: UploadedMulterFile,
+    @Body('quoteId') quoteId: string,
+  ): Promise<{ url: string; name: string; type: string; size: number }> {
+    this.assertFile(file);
+    const type = String(file.mimetype || '').toLowerCase();
+    if (!TYPES_DOCUMENTS_DEVIS.includes(type) || !contenuConforme(file.buffer, type)) {
+      throw new HttpException(
+        `Type de fichier non accepté (${type || 'inconnu'}). Formats acceptés : JPG, PNG, WEBP, GIF, PDF, DOC, DOCX, XLS, XLSX, TXT.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      throw new HttpException('Fichier trop volumineux (max 10 MB).', HttpStatus.BAD_REQUEST);
+    }
+    const nom = nomFichierUtf8(file.originalname);
+    try {
+      const r = await this.cloudinary.uploadFichierCommande(file.buffer, nom, type, `devis-${String(quoteId || '')}`);
+      return { url: r.url, name: nom, type: file.mimetype, size: file.size };
+    } catch (error) {
+      throw new HttpException(`Echec upload du design: ${(error as Error).message}`, HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  /**
    * POST /api/uploads/quote-attachment
    * Upload temporaire de pièce jointe pour devis/facture.
    * Fichiers conservés 60 jours puis nettoyés (CleanupService).

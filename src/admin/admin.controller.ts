@@ -44,6 +44,7 @@ import {
 } from './fichiers-joints';
 import { RE_DESIGN, RE_LOGO, estCommandeManuelle, lireSaisieManuelle, ressourceCommande } from './commandes-manuelles';
 import { appliquerQuantites, articlesDuDevis, articlesOuUnique, retirerArticles } from '../quotes/articles-devis';
+import { ajouterArticles, fichierDeArticle, validerArticlesAjoutes } from '../quotes/ajout-articles';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
@@ -288,6 +289,9 @@ export class AdminController {
     /* ARTICLES RETIRÉS par l'admin (le client s'est trompé) : positions dans
        l'ordre de articlesDuDevis. Retirés du devis ET du brouillon. */
     @Body('articlesRetires') articlesRetires: unknown,
+    /* ARTICLES AJOUTÉS par l'admin (libellé libre, design optionnel) : placés
+       APRÈS les articles d'origine, leurs prix en fin de prixParArticle. */
+    @Body('articlesAjoutes') articlesAjoutes: unknown,
     @Body('attachments') attachments: any[],
     @Res() res: Response,
   ): Promise<void> {
@@ -311,6 +315,7 @@ export class AdminController {
       await this.envoyerFacture(
         req, quoteId, message, unitPrice, prixParFamille, prixParArticle,
         taxesIncluses, totalAffiche, quantites, attachments, res, articlesRetires,
+        articlesAjoutes,
       );
     } finally {
       this.envoisEnCours.delete(quoteId);
@@ -340,6 +345,7 @@ export class AdminController {
     attachments: unknown,
     res: Response,
     articlesRetires?: unknown,
+    articlesAjoutes?: unknown,
   ): Promise<void> {
     const quote = await this.data.getQuote(quoteId);
     if (!quote) {
@@ -452,6 +458,21 @@ export class AdminController {
         return;
       }
     }
+    /* ARTICLES AJOUTÉS, en dernier : retraits et quantités portent sur la
+       liste d'origine, les ajouts viennent à sa suite (ajout-articles.ts). */
+    const ajouts = validerArticlesAjoutes(articlesAjoutes);
+    if ('erreur' in ajouts) {
+      res.status(400).json({ ok: false, error: ajouts.erreur });
+      return;
+    }
+    if (ajouts.articles.length) {
+      try {
+        dataModifiee = ajouterArticles(dataModifiee ?? dataOriginal, ajouts.articles, await nomAdmin());
+      } catch (e) {
+        res.status(400).json({ ok: false, error: (e as Error).message });
+        return;
+      }
+    }
     const data = dataModifiee ?? dataOriginal;
     const customer = data.customer || {};
     const productName = data.coin?.name || 'votre commande personnalisée';
@@ -463,7 +484,12 @@ export class AdminController {
     let prixArticles: number[] | undefined;
     /* Après un retrait, il peut ne rester qu'UN article : il garde son mode
        « par article », pour que le brouillon soit reconstruit sans le retiré. */
-    const articles = retires.length ? articlesOuUnique(data) : articlesDuDevis(data);
+    const articles = (retires.length || ajouts.articles.length ? articlesOuUnique(data) : articlesDuDevis(data))
+      // Design des articles ajoutés : posé sur leur ligne Shopify.
+      ?.map((a) => {
+        const fichier = fichierDeArticle(data, a);
+        return fichier ? { ...a, fichier } : a;
+      }) ?? null;
     if (Array.isArray(prixParArticle) && retires.length) prixParArticle = garde(prixParArticle);
     if (Array.isArray(prixParArticle)) {
       if (!articles || articles.length !== prixParArticle.length) {
