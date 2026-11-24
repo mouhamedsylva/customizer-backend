@@ -91,4 +91,49 @@ describe('POST /api/admin/quotes/:id/invoice — articles ajoutés', () => {
     expect(prix).toEqual([12]);
     expect(((await repo().findOneByOrFail({ id: ID })).quoteData as any).coin.qty).toBe(30);
   });
+
+  describe('chiffrage en cours (enregistré sans envoyer)', () => {
+    const sauver = (chiffrage: unknown) =>
+      request(h.app.getHttpServer())
+        .post(`/api/admin/quotes/${ID}/chiffrage`)
+        .set('Cookie', cookie)
+        .send({ chiffrage });
+    const enCours = { lignes: [{ qty: 50, valeur: '12', retire: false }], ajouts: [{ ...ajout, valeur: '3.5' }] };
+
+    it('est enregistré dans le devis, sans toucher aux articles ni à Shopify', async () => {
+      const r = await sauver(enCours);
+      expect(r.body.ok).toBe(true);
+      const data = (await repo().findOneByOrFail({ id: ID })).quoteData as any;
+      expect(data.chiffrageEnCours).toMatchObject({
+        lignes: [{ qty: 50, valeur: '12', retire: false }],
+        ajouts: [{ libelle: 'Patch brodé', qty: 20, valeur: '3.5', fichier: DESIGN }],
+        admin: 'patron@test.fr',
+      });
+      expect(data.coin.qty).toBe(50);
+      expect(h.shopify.calls).toHaveLength(0);
+    });
+
+    it('s’efface avec null, et refuse un contenu illisible', async () => {
+      await sauver(enCours);
+      expect((await sauver(null)).body.ok).toBe(true);
+      expect(((await repo().findOneByOrFail({ id: ID })).quoteData as any).chiffrageEnCours).toBeUndefined();
+      expect((await sauver({ lignes: [{ qty: 0, valeur: '1' }] })).status).toBe(400);
+    });
+
+    it('est effacé une fois la facture envoyée', async () => {
+      await sauver(enCours);
+      const r = await envoyer({ prixParArticle: [12, 3.5], articlesAjoutes: [ajout] });
+      expect(r.body.ok).toBe(true);
+      const data = (await repo().findOneByOrFail({ id: ID })).quoteData as any;
+      expect(data.chiffrageEnCours).toBeUndefined();
+      expect(data.coin.qty).toBe(70);
+    });
+
+    it('est conservé si l’envoi est bloqué', async () => {
+      await sauver(enCours);
+      const r = await envoyer({ prixParArticle: [12, 3.5], articlesAjoutes: [ajout], totalAffiche: 1 });
+      expect(r.status).toBe(409);
+      expect(((await repo().findOneByOrFail({ id: ID })).quoteData as any).chiffrageEnCours).toBeDefined();
+    });
+  });
 });

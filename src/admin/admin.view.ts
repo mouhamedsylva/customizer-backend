@@ -2182,6 +2182,10 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 .inv-fam.is-retire .inv-fam-nom{text-decoration:line-through}
 .inv-fam.is-retire .inv-retirer{text-decoration:none;opacity:1;color:var(--accent);border-color:var(--accent)}
 .inv-retraits{margin:4px 0 0;padding:0 4px;text-align:right;font-size:12.5px;font-weight:700;color:#b45309}
+/* Chiffrage en cours (enregistré automatiquement, pas encore envoyé). */
+.inv-encours{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:var(--raise);border:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.inv-encours b{color:var(--ink)}
+.inv-encours button{border:none;background:none;padding:0;margin-left:6px;font:inherit;font-weight:700;color:var(--accent);text-decoration:underline;cursor:pointer}
 /* Ajouter un article au devis (libellé libre, design optionnel). */
 .inv-ajout{margin-top:12px}
 .inv-ajout-btn{width:100%;justify-content:center;border-style:dashed}
@@ -3991,6 +3995,15 @@ function groupAggregate(rows: any[]): {
  * Les données enregistrées ne changent pas. Même règle que la fenêtre de
  * chiffrage et le brouillon Shopify : `regrouperLignes` (articles-devis.ts).
  */
+/** « Chiffrage en cours » sous le bouton de chiffrage : saisi, pas encore envoyé. */
+export function texteChiffrageEnCours(c: any): string {
+  if (!c || typeof c !== 'object') return '';
+  const n = Array.isArray(c.ajouts) ? c.ajouts.length : 0;
+  const quand = c.date ? new Date(c.date).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  return ` <b style="color:var(--accent)">· Chiffrage en cours${n ? ` (${n} article${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''})` : ''}</b>` +
+    `${c.admin || quand ? ` — ${esc(String(c.admin || ''))}${quand ? ' le ' + esc(quand) : ''}` : ''}, non envoyé.`;
+}
+
 /** Designs des articles AJOUTÉS par l'admin (fenêtre de chiffrage), sous le détail du devis. */
 export function designsArticlesAjoutes(quoteData: any): string {
   const liste: any[] = Array.isArray(quoteData?.articlesAjoutes) ? quoteData.articlesAjoutes : [];
@@ -4183,6 +4196,12 @@ function quoteCard(
                      data-qty="${group ? Number(group.pieces) || groupRows.reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : Number(coin.qty) || 1}"
                      data-flock="${group ? groupRows.filter((r: any) => r.flock).reduce((s: number, r: any) => s + (Number(r.qty) || 0), 0) : 0}"
                      ${
+                       /* Chiffrage en cours (non envoyé) : pré-remplit la fenêtre. */
+                       q.quoteData?.chiffrageEnCours
+                         ? `data-chiffrage="${esc(JSON.stringify(q.quoteData.chiffrageEnCours))}"`
+                         : ''
+                     }
+                     ${
                        Array.isArray(coin.familles) && coin.familles.length
                          ? `data-familles="${esc(
                              JSON.stringify(
@@ -4257,7 +4276,7 @@ function quoteCard(
                          ? ` ${q.remindersSent} relance(s) automatique(s) envoyée(s).`
                          : '')
                      : 'Vous fixez le prix et envoyez la facture au client, sans quitter cette page.'
-                 }</span>`
+                 }${texteChiffrageEnCours(q.quoteData?.chiffrageEnCours)}</span>`
         }
       </div>
     </div>
@@ -5234,6 +5253,8 @@ export function dashboardPage(
     <div class="modal-box">
       <h3>Chiffrer et envoyer la facture</h3>
       <p class="sub" id="inv-sub"></p>
+      <!-- Chiffrage en cours : repris / enregistré automatiquement, non envoyé. -->
+      <p class="inv-encours" id="inv-encours" style="display:none"></p>
 
       <!-- MULTI-PRODUITS : une ligne de prix par famille.
            Un panier mêlant patchs, coins et textiles partait sur un prix unique
@@ -8529,7 +8550,8 @@ export function dashboardPage(
             modifiable: inv.getAttribute('data-qte-modifiable') === '1',
             demandee: parseInt(inv.getAttribute('data-qty-demandee') || '', 10) || null,
             prixHt: inv.getAttribute('data-prix-ht') || '',
-            grille: inv.getAttribute('data-grille') || ''
+            grille: inv.getAttribute('data-grille') || '',
+            chiffrage: inv.getAttribute('data-chiffrage') || ''
           }
         );
       }
@@ -8880,6 +8902,131 @@ export function dashboardPage(
       majBlocAjout();
     }
 
+    /* ── CHIFFRAGE EN COURS, enregistré dans le devis (non envoyé) ──
+       Chaque modification est enregistrée 0,9 s après la dernière frappe
+       (POST /quotes/:id/chiffrage). Rouvrir la fenêtre, recharger la page ou
+       changer d'admin la retrouve telle quelle. L'envoi de la facture la rend
+       définitive et l'efface côté serveur. */
+    var invChiffrageEtat = null, invChiffrageTimer = null, invChiffrageActif = false;
+
+    function etatChiffrage(){
+      if (!invParArticle || !invFamilles.length) return null;
+      memoriserSaisies();
+      return JSON.stringify({
+        lignes: invFamilles.filter(function(f){ return !f.ajout; }).map(function(f){
+          return { qty: f.qty, valeur: f.valeur || '', retire: !!f.retire };
+        }),
+        ajouts: invFamilles.filter(function(f){ return f.ajout; }).map(function(f){
+          return { libelle: f.nom, options: f.options || '', qty: f.qty, valeur: f.valeur || '', fichier: f.fichier || undefined };
+        })
+      });
+    }
+    function bandeauChiffrage(texte){
+      var el = document.getElementById('inv-encours');
+      if (!el) return;
+      el.style.display = texte ? '' : 'none';
+      el.innerHTML = '';
+      if (!texte) return;
+      var b = document.createElement('b'); b.textContent = texte;
+      el.appendChild(b);
+      el.appendChild(document.createTextNode(' Rien n’est envoyé au client avant « Envoyer la facture ».'));
+      var lien = document.createElement('button');
+      lien.type = 'button'; lien.textContent = 'Repartir du devis d’origine';
+      lien.addEventListener('click', repartirDevisOrigine);
+      el.appendChild(lien);
+    }
+    function boutonDevis(id){
+      var tous = document.querySelectorAll('.js-invoice');
+      for (var k = 0; k < tous.length; k++) if (tous[k].getAttribute('data-qid') === id) return tous[k];
+      return null;
+    }
+    function planifierSauvegarde(){
+      if (!invChiffrageActif || !invQuoteId) return;
+      if (invChiffrageTimer) clearTimeout(invChiffrageTimer);
+      invChiffrageTimer = setTimeout(sauverChiffrage, 900);
+    }
+    function sauverChiffrage(){
+      invChiffrageTimer = null;
+      var id = invQuoteId;
+      var etat = etatChiffrage();
+      if (!id || etat === null || etat === invChiffrageEtat) return;
+      fetch('/api/admin/quotes/' + encodeURIComponent(id) + '/chiffrage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ chiffrage: JSON.parse(etat) })
+      })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (!d || !d.ok) {
+            if (invQuoteId === id) bandeauChiffrage('Chiffrage NON enregistré' + (d && d.error ? ' : ' + d.error : '') + '.');
+            return;
+          }
+          if (invQuoteId === id) invChiffrageEtat = etat;
+          var btn = boutonDevis(id);
+          if (btn) {
+            if (d.chiffrage) btn.setAttribute('data-chiffrage', JSON.stringify(d.chiffrage));
+            else btn.removeAttribute('data-chiffrage');
+          }
+          if (invQuoteId === id) bandeauChiffrage(d.chiffrage ? 'Chiffrage en cours enregistré ✓' : '');
+        })
+        .catch(function(){
+          if (invQuoteId === id) bandeauChiffrage('Chiffrage NON enregistré (réseau).');
+        });
+    }
+    /* Reprend le chiffrage enregistré : prix, quantités, retraits, ajouts.
+       Lignes ignorées si les articles d'origine ont changé depuis. */
+    function restaurerChiffrage(json){
+      if (!json) return;
+      var c;
+      try { c = JSON.parse(json); } catch (e) { return; }
+      if (!c || (invFamilles.length && !invParArticle)) return;
+      var lignes = Array.isArray(c.lignes) ? c.lignes : [];
+      if (lignes.length && lignes.length === invFamilles.length) {
+        lignes.forEach(function(l, i){
+          var f = invFamilles[i];
+          if (Number(l.qty) >= 1) f.qty = Number(l.qty);
+          if (l.valeur !== '' && l.valeur !== undefined) { f.valeur = String(l.valeur); f.prixManuel = true; }
+          f.retire = l.retire === true;
+        });
+      }
+      var ajouts = Array.isArray(c.ajouts) ? c.ajouts : [];
+      if (ajouts.length && ajoutPossible()) {
+        convertirEnArticles();
+        ajouts.forEach(function(a){
+          invFamilles.push({
+            libelle: String(a.libelle || 'Article'), nom: String(a.libelle || 'Article'),
+            options: String(a.options || ''), qty: Number(a.qty) || 1, qtyInitiale: Number(a.qty) || 1,
+            prixTtc: null, prixHt: null, cle: null, grille: null, prixManuel: true,
+            valeur: a.valeur ? String(a.valeur) : '', ajout: true, fichier: a.fichier || null
+          });
+        });
+      }
+      var quand = '';
+      try { quand = c.date ? new Date(c.date).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''; } catch (e) {}
+      bandeauChiffrage('Chiffrage en cours repris' + (c.admin ? ' (' + c.admin + (quand ? ', ' + quand : '') + ')' : '') + '.');
+    }
+    function repartirDevisOrigine(){
+      var id = invQuoteId;
+      if (!id) return;
+      if (!window.confirm('Effacer le chiffrage en cours (prix saisis, quantités, articles ajoutés) et repartir du devis d’origine ?')) return;
+      if (invChiffrageTimer) { clearTimeout(invChiffrageTimer); invChiffrageTimer = null; }
+      invChiffrageActif = false;
+      fetch('/api/admin/quotes/' + encodeURIComponent(id) + '/chiffrage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ chiffrage: null })
+      })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (!d || !d.ok) { showAlert('Erreur', (d && d.error) || 'Le chiffrage n’a pas pu être effacé.', 'error'); invChiffrageActif = true; return; }
+          var btn = boutonDevis(id);
+          if (btn) { btn.removeAttribute('data-chiffrage'); btn.click(); }
+        })
+        .catch(function(){ showAlert('Erreur', 'Le serveur n’a pas répondu.', 'error'); invChiffrageActif = true; });
+    }
+
     function supprimerAjout(i){
       var f = invFamilles[i];
       if (!f || !f.ajout) return;
@@ -8985,6 +9132,11 @@ export function dashboardPage(
       chargerTaxes(invQuoteId);
       afficherTva(0);
 
+      invChiffrageActif = false;
+      if (invChiffrageTimer) { clearTimeout(invChiffrageTimer); invChiffrageTimer = null; }
+      bandeauChiffrage('');
+      restaurerChiffrage(qte.chiffrage);
+
       construireLignesFamilles();
 
       // Bloc « chiffrage assisté » : visible seulement si des pièces sont floquées.
@@ -9040,6 +9192,10 @@ export function dashboardPage(
       if (msgBloc) msgBloc.open = false;
       fermerAjoutArticle();
       majBlocAjout();
+      /* État de référence : seules les modifications APRÈS l'ouverture
+         déclenchent un enregistrement du chiffrage en cours. */
+      invChiffrageEtat = etatChiffrage();
+      invChiffrageActif = true;
       document.getElementById('inv-modal').classList.add('open');
       setTimeout(function(){
         /* Le premier champ à remplir, selon le mode : en multi-familles le
@@ -9566,6 +9722,7 @@ export function dashboardPage(
         afficherTvaFamilles(lu);
         majResteASaisir();
         invTtcAffiche = lu.total > 0 ? lu.ttc : null;
+        planifierSauvegarde();
         return;
       }
 
@@ -9625,6 +9782,8 @@ export function dashboardPage(
     }
 
     function closeInvoice(){
+      if (invChiffrageTimer) { clearTimeout(invChiffrageTimer); sauverChiffrage(); }
+      invChiffrageActif = false;
       document.getElementById('inv-modal').classList.remove('open');
       // Nettoie les pièces jointes temporaires
       window.invoiceAttachments = [];
@@ -9827,6 +9986,7 @@ export function dashboardPage(
 
     function sendInvoice(){
       if(!invQuoteId) return;
+      if (invChiffrageTimer) { clearTimeout(invChiffrageTimer); invChiffrageTimer = null; }
       var btn=document.getElementById('inv-send');
       var st=document.getElementById('inv-status');
       var price=parseFloat(document.getElementById('inv-price').value);

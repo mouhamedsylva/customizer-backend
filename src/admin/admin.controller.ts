@@ -45,6 +45,7 @@ import {
 import { RE_DESIGN, RE_LOGO, estCommandeManuelle, lireSaisieManuelle, ressourceCommande } from './commandes-manuelles';
 import { appliquerQuantites, articlesDuDevis, articlesOuUnique, articlesPourChiffrage, retirerArticles } from '../quotes/articles-devis';
 import { ajouterArticles, fichierDeArticle, validerArticlesAjoutes } from '../quotes/ajout-articles';
+import { lireChiffrageEnCours } from '../quotes/chiffrage-en-cours';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
@@ -317,6 +318,54 @@ export class AdminController {
         taxesIncluses, totalAffiche, quantites, attachments, res, articlesRetires,
         articlesAjoutes,
       );
+    } finally {
+      this.envoisEnCours.delete(quoteId);
+    }
+  }
+
+  /**
+   * CHIFFRAGE EN COURS (chiffrage-en-cours.ts) : enregistré automatiquement
+   * par la fenêtre de chiffrage, à part des vrais articles. `chiffrage: null`
+   * l'efface (« Repartir du devis d'origine »).
+   */
+  @Post('quotes/:id/chiffrage')
+  async saveChiffrageEnCours(
+    @Req() req: Request,
+    @Param('id') quoteId: string,
+    @Body('chiffrage') chiffrage: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    /* Même verrou que l'envoi : écrire pendant un envoi écraserait les
+       articles et quantités que celui-ci vient d'enregistrer. */
+    if (!this.verrouillerDevis(quoteId)) {
+      res.status(409).json({ ok: false, error: 'Un envoi est en cours pour ce devis.' });
+      return;
+    }
+    try {
+      const quote = await this.data.getQuote(quoteId);
+      if (!quote) {
+        res.status(404).json({ ok: false, error: 'Devis introuvable.' });
+        return;
+      }
+      if (quote.draftStatus === 'completed') {
+        res.status(409).json({ ok: false, error: 'Ce devis est déjà réglé.' });
+        return;
+      }
+      const admin = String(((await this.currentAdmin(req)) as any)?.email || 'admin');
+      const lu = lireChiffrageEnCours(chiffrage, admin);
+      if ('erreur' in lu) {
+        res.status(400).json({ ok: false, error: lu.erreur });
+        return;
+      }
+      const data = { ...((quote.quoteData || {}) as Record<string, any>) };
+      if (lu.chiffrage) data.chiffrageEnCours = lu.chiffrage;
+      else delete data.chiffrageEnCours;
+      await this.data.updateQuoteData(quoteId, data);
+      res.json({ ok: true, chiffrage: lu.chiffrage });
     } finally {
       this.envoisEnCours.delete(quoteId);
     }
@@ -675,6 +724,17 @@ export class AdminController {
         custom_message: avecPiecesJointes(finalMessage, piecesJointes),
       });
       factureEnvoyee = true; // plus rien à défaire : le client a son devis
+
+      /* Le chiffrage est devenu définitif : son brouillon (chiffrage-en-cours.ts)
+         est effacé. Un échec ici ne remet pas l'envoi en cause. */
+      if (data.chiffrageEnCours) {
+        try {
+          const { chiffrageEnCours: _efface, ...sans } = data;
+          await this.data.updateQuoteData(quoteId, sans);
+        } catch (e) {
+          this.logger.warn(`Devis ${quoteId} : chiffrage en cours non effacé (${(e as Error).message}).`);
+        }
+      }
 
       await enregistrerEnvoi(draft, taxes.totalTax);
     } catch (err) {
