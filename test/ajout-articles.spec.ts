@@ -104,3 +104,32 @@ describe('ajouterArticles', () => {
     ).toThrow(/découpe/);
   });
 });
+
+describe('articlesPourChiffrage — un seul affichage pour tous les devis', () => {
+  const { articlesPourChiffrage } = jest.requireActual('../src/quotes/articles-devis');
+
+  it('produit unique sans ligne « N× » : article reconstitué depuis le nom', () => {
+    expect(articlesPourChiffrage({ coin: { name: 'Patch personnalisé (PVC)', qty: 27, details: ['Face : Une seule face'] } }))
+      .toEqual([{ libelle: 'Patch personnalisé (PVC)', options: '', qty: 27 }]);
+  });
+
+  it('devis du panier à une seule famille et un seul article', () => {
+    const d = { coin: { name: 'Commande sur devis', qty: 100, details: ['Commande sur devis : 1 famille(s)'],
+      familles: [{ libelle: 'Coins métal personnalisés', qty: 100, lignes: ['100× Coin métal — Recto verso'] }] } };
+    expect(articlesPourChiffrage(d)).toEqual([{ libelle: 'Coin métal', options: 'Recto verso', qty: 100 }]);
+  });
+
+  it('plusieurs articles : ceux de articlesDuDevis ; groupe ou incohérent : null', () => {
+    expect(articlesPourChiffrage({ coin: { qty: 30, details: ['10× A', '20× B'] } })).toHaveLength(2);
+    expect(articlesPourChiffrage({ coin: { qty: 3 }, group: { rows: [{}] } })).toBeNull();
+    expect(articlesPourChiffrage({ coin: { name: 'X', qty: 10, details: ['3× A'] } })).toBeNull();
+  });
+
+  it('un article s’ajoute aussi à un devis à une seule famille', () => {
+    const d = { coin: { name: 'Commande sur devis', qty: 100, details: [],
+      familles: [{ libelle: 'Coins', qty: 100, lignes: ['100× Coin métal — Recto verso'] }] } };
+    const r = ajouterArticles(d, [{ libelle: 'Patch', options: '', qty: 10 }], 'a');
+    expect(articlesDuDevis(r)!.map((a) => a.libelle)).toEqual(['Coin métal', 'Patch']);
+    expect(retirerArticles(r, [1], 'a').coin.qty).toBe(100);
+  });
+});

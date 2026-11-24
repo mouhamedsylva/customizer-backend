@@ -82,4 +82,13 @@ describe('POST /api/admin/quotes/:id/invoice — articles ajoutés', () => {
     expect(data.articlesAjoutes).toBeUndefined();
     expect(h.shopify.callsTo('sendDraftOrderInvoice')).toHaveLength(0);
   });
+
+  it('devis à produit unique chiffré « par article » : quantité corrigée, une ligne', async () => {
+    const r = await envoyer({ prixParArticle: [12], quantites: [30] });
+    expect(r.body.ok).toBe(true);
+    const [, articles, prix] = h.shopify.callsTo('setDraftOrderArticles')[0].args as [unknown, any[], number[]];
+    expect(articles.map((a) => [a.libelle, a.qty])).toEqual([['Coin métal personnalisé', 30]]);
+    expect(prix).toEqual([12]);
+    expect(((await repo().findOneByOrFail({ id: ID })).quoteData as any).coin.qty).toBe(30);
+  });
 });

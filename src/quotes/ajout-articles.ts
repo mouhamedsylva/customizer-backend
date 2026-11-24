@@ -18,6 +18,7 @@ import {
   ArticleDevis,
   articlesDuDevis,
   articlesOuUnique,
+  articlesPourChiffrage,
   lire,
   quantiteValide,
   regrouperLignes,
@@ -111,15 +112,15 @@ export function ajouterArticles(
 
   let existants: ArticleDevis[] | null = articlesOuUnique(copie);
   if (!existants) {
-    const familles = Array.isArray(c.familles) && c.familles.length > 0;
-    const qty = Number(c.qty);
-    if (lire(c.details).length || familles || !quantiteValide(qty)) {
+    /* Article unique hors de `details` (produit unique, ou seule ligne d'une
+       famille) : il y est écrit, pour devenir l'article 1 — même découpage
+       que la fenêtre de chiffrage (articlesPourChiffrage). */
+    const seul = articlesPourChiffrage(copie);
+    if (!seul || seul.length !== 1) {
       throw new Error("Ce devis ne se découpe pas en articles : ajoutez l'article dans Shopify.");
     }
-    // Produit unique : il devient l'article 1, sans options.
-    const premier = { qty, libelle: texte(c.name, 120) || 'Article', options: '' };
-    c.details.push(ligneDe(premier));
-    existants = [premier];
+    c.details.push(ligneDe(seul[0]));
+    existants = seul;
   }
 
   const vus = new Set(existants.map(contenu));

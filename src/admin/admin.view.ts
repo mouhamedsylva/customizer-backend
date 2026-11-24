@@ -5,7 +5,7 @@
 import { Order } from '../database/entities/order.entity';
 import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
-import { articlesDuDevis, regrouperLignes } from '../quotes/articles-devis';
+import { articlesPourChiffrage, regrouperLignes } from '../quotes/articles-devis';
 import {
   cleCatalogue,
   cleDevisSimple,
@@ -4204,7 +4204,7 @@ function quoteCard(
                        /* Un prix PAR ARTICLE : prioritaire sur les familles, et
                           disponible aussi pour les devis d'avant les familles. */
                        (() => {
-                         const articles = group ? null : articlesDuDevis(q.quoteData);
+                         const articles = group ? null : articlesPourChiffrage(q.quoteData);
                          if (!articles) return '';
                          const prixes = pricing ? prixArticles(articles, pricing) : articles;
                          /* + clé et grille du produit : la fenêtre recalcule le
@@ -8908,13 +8908,13 @@ export function dashboardPage(
       if (articlesJson) {
         try {
           var articles = JSON.parse(articlesJson);
-          if (Array.isArray(articles) && articles.length > 1) {
+          if (Array.isArray(articles) && articles.length >= 1) {
             invFamilles = articles.map(function(a, i){
               return {
                 libelle: 'Article ' + (i + 1) + ' — ' + String(a.libelle || 'Article'),
                 options: String(a.options || ''),
                 qty: Number(a.qty) || 0,
-                qtyInitiale: Number(a.qty) || 0,
+                qtyInitiale: (articles.length === 1 && qte && qte.demandee) ? qte.demandee : (Number(a.qty) || 0),
                 prixTtc: prixCatalogue(a.prixTtc),
                 prixHt: prixCatalogue(a.prixHt),   // patchs : catalogue HT
                 // Palier : clé et grille du produit (plusieurs lignes d'un même

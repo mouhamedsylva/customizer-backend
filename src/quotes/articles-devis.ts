@@ -361,3 +361,45 @@ export function articlesOuUnique(quoteData: any): ArticleDevis[] | null {
   const seul = lire(regrouperLignes(quoteData?.coin?.details));
   return seul.length === 1 && seul[0].qty === Number(quoteData?.coin?.qty) ? seul : null;
 }
+
+/**
+ * Articles à chiffrer pour N'IMPORTE QUEL devis hors commande de groupe :
+ * la fenêtre de chiffrage a ainsi UN SEUL affichage (« par article »), quelle
+ * que soit la façon dont le devis a été créé.
+ *
+ * - 2 articles ou plus : `articlesDuDevis` ;
+ * - un seul article « N× … » (devis du panier à un produit, avec ses
+ *   familles) : `articlesOuUnique`, ou la ligne unique des familles ;
+ * - produit unique sans ligne « N× » (devis depuis la page d'un produit) :
+ *   l'article est reconstitué depuis `coin.name` et `coin.qty` — même libellé
+ *   que `ajouterArticles` (ajout-articles.ts) lui donne.
+ *
+ * null pour une commande de groupe, ou des données incohérentes.
+ */
+export function articlesPourChiffrage(quoteData: any): ArticleDevis[] | null {
+  const coin = quoteData?.coin;
+  if (!coin || quoteData?.group?.rows?.length) return null;
+  const a = articlesOuUnique(quoteData);
+  if (a) return a;
+  const qty = Number(coin.qty);
+  if (!quantiteValide(qty)) return null;
+  const familles: any[] = Array.isArray(coin.familles) ? coin.familles : [];
+  const deFamilles = lire(familles.flatMap((f: any) => regrouperLignes(f?.lignes ?? [])));
+  if (deFamilles.length === 1 && deFamilles[0].qty === qty) return deFamilles;
+  if (lire(regrouperLignes(coin.details)).length || familles.length) return null;
+  return [{ libelle: libelleProduitUnique(coin.name), options: '', qty }];
+}
+
+/** Libellé de l'article reconstitué d'un devis à produit unique. */
+export function libelleProduitUnique(nom: unknown): string {
+  return (
+    String(nom ?? '')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/[<>]/g, '')
+      .replace(/\s+—\s+/g, ' - ')
+      .replace(/×/g, 'x')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .slice(0, 120) || 'Article'
+  );
+}

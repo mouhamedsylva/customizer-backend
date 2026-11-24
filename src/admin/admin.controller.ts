@@ -43,7 +43,7 @@ import {
   nouveauFichierJoint,
 } from './fichiers-joints';
 import { RE_DESIGN, RE_LOGO, estCommandeManuelle, lireSaisieManuelle, ressourceCommande } from './commandes-manuelles';
-import { appliquerQuantites, articlesDuDevis, articlesOuUnique, retirerArticles } from '../quotes/articles-devis';
+import { appliquerQuantites, articlesDuDevis, articlesOuUnique, articlesPourChiffrage, retirerArticles } from '../quotes/articles-devis';
 import { ajouterArticles, fichierDeArticle, validerArticlesAjoutes } from '../quotes/ajout-articles';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
@@ -484,7 +484,12 @@ export class AdminController {
     let prixArticles: number[] | undefined;
     /* Après un retrait, il peut ne rester qu'UN article : il garde son mode
        « par article », pour que le brouillon soit reconstruit sans le retiré. */
-    const articles = (retires.length || ajouts.articles.length ? articlesOuUnique(data) : articlesDuDevis(data))
+    /* Prix PAR ARTICLE : même liste que la fenêtre (articlesPourChiffrage),
+       y compris pour un devis à un seul article. Sans eux (page chargée avant
+       cette version), l'ancien découpage. */
+    const articles = (Array.isArray(prixParArticle)
+      ? articlesPourChiffrage(data)
+      : retires.length || ajouts.articles.length ? articlesOuUnique(data) : articlesDuDevis(data))
       // Design des articles ajoutés : posé sur leur ligne Shopify.
       ?.map((a) => {
         const fichier = fichierDeArticle(data, a);
