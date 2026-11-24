@@ -9009,7 +9009,14 @@ export function dashboardPage(
     function repartirDevisOrigine(){
       var id = invQuoteId;
       if (!id) return;
-      if (!window.confirm('Effacer le chiffrage en cours (prix saisis, quantités, articles ajoutés) et repartir du devis d’origine ?')) return;
+      confirmerChiffrage(
+        'Repartir du devis d’origine ?',
+        'Le chiffrage en cours (prix saisis, quantités corrigées, articles ajoutés) sera effacé pour tous les admins. Le devis du client, lui, ne change pas.',
+        'Effacer le chiffrage',
+        function(){ effacerChiffrageEnCours(id); }
+      );
+    }
+    function effacerChiffrageEnCours(id){
       if (invChiffrageTimer) { clearTimeout(invChiffrageTimer); invChiffrageTimer = null; }
       invChiffrageActif = false;
       fetch('/api/admin/quotes/' + encodeURIComponent(id) + '/chiffrage', {
@@ -9030,12 +9037,19 @@ export function dashboardPage(
     function supprimerAjout(i){
       var f = invFamilles[i];
       if (!f || !f.ajout) return;
-      if (!window.confirm('Supprimer « ' + f.nom + ' » de la facture ?')) return;
-      memoriserSaisies();
-      invFamilles.splice(i, 1);
-      construireLignesFamilles();
-      updateInvoiceTotal();
-      majBlocAjout();
+      var libelle = '« ' + f.qty + '× ' + f.nom + (f.options ? ' — ' + f.options : '') + ' »';
+      confirmerChiffrage(
+        'Supprimer cet article ?',
+        libelle + ' sera retiré de la facture. Il n’a pas encore été envoyé au client : vous pourrez l’ajouter à nouveau si besoin.',
+        'Supprimer',
+        function(){
+          memoriserSaisies();
+          invFamilles.splice(i, 1);
+          construireLignesFamilles();
+          updateInvoiceTotal();
+          majBlocAjout();
+        }
+      );
     }
 
     function openInvoice(id,email,nom,produit,qty,flockCount,famillesJson,articlesJson,prixTtc,qte){
@@ -9517,7 +9531,28 @@ export function dashboardPage(
     /* CONFIRMATION avant de retirer — ou de rétablir — un article : un clic
        malheureux ne doit pas faire disparaître un article de la facture. */
     var invConfIndex = -1;
+    /* Action à exécuter sur « OK » de la modale de confirmation (null = retrait
+       ou rétablissement de invConfIndex, le cas historique). */
+    var invConfAction = null;
+
+    /* Même modale de confirmation que « Retirer », pour toute action de la
+       fenêtre de chiffrage : jamais l'alerte du navigateur. */
+    function confirmerChiffrage(titreTxt, texteTxt, libelleOk, action){
+      invConfIndex = -1;
+      invConfAction = action;
+      var titre = document.getElementById('inv-conf-titre');
+      var texte = document.getElementById('inv-conf-texte');
+      var ok = document.getElementById('inv-conf-ok');
+      if (titre) titre.textContent = titreTxt;
+      if (texte) texte.textContent = texteTxt;
+      if (ok) { ok.textContent = libelleOk; ok.className = 'btn danger'; }
+      var m = document.getElementById('inv-conf-modal');
+      if (m) m.classList.add('open');
+      setTimeout(function(){ if (ok) ok.focus(); }, 40);
+    }
+
     function demanderRetrait(i){
+      invConfAction = null;
       var f = invFamilles[i];
       if (!f) return;
       var restants = invFamilles.filter(function(x){ return !x.retire && !x.ajout; }).length;
@@ -9551,8 +9586,11 @@ export function dashboardPage(
     }
     function validerConfRetrait(){
       var i = invConfIndex;
+      var action = invConfAction;
+      invConfAction = null;
       fermerConfRetrait();
-      if (i >= 0) basculerRetrait(i);
+      if (action) action();
+      else if (i >= 0) basculerRetrait(i);
     }
 
     /* Retire (ou rétablit) un article. Ligne barrée, champs désactivés, hors
