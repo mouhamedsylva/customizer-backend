@@ -33,6 +33,7 @@ import { TypoSvgService } from '../shared/typo-svg.service';
 import { TextOutlineService } from '../shared/text-outline.service';
 import { CloudinaryService } from '../shared/cloudinary.service';
 import { svgRegenere, zoneDuSvg } from '../shared/zones-texte';
+import { estUrlFichierStocke } from '../shared/hotes-fichiers';
 
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -45,8 +46,8 @@ const PLACEMENTS: Record<string, string> = { f: 'front', fr: 'chest-right', b: '
 
 async function telecharger(url: string): Promise<string | null> {
   try {
-    const u = new URL(url);
-    if (u.protocol !== 'https:' || u.hostname !== 'res.cloudinary.com') return null;
+    // Cloudinary ou bucket OVH, hôte EXACT (hotes-fichiers.ts).
+    if (!estUrlFichierStocke(url)) return null;
     const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!r.ok) return null;
     const texte = await r.text();

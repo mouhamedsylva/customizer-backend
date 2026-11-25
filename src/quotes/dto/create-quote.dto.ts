@@ -16,6 +16,8 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { ValidateBy } from 'class-validator';
+import { estUrlFichierStocke } from '../../shared/hotes-fichiers';
 
 /**
  * Client demandeur du devis.
@@ -66,8 +68,13 @@ export class QuoteCustomerDto {
   /* Uniquement une URL Cloudinary en https : ce lien est affiché à l'admin
      dans le dashboard. Sans contrôle, le formulaire public pouvait y placer
      un `javascript:` ou une page de phishing. */
-  @Matches(/^https:\/\/res\.cloudinary\.com\//, {
-    message: 'fichierUrl doit être un fichier envoyé via /api/uploads/piece-jointe.',
+  @ValidateBy({
+    name: 'estUrlFichierStocke',
+    validator: {
+      // Cloudinary ou bucket OVH, hôte EXACT (hotes-fichiers.ts).
+      validate: (v: unknown) => estUrlFichierStocke(v),
+      defaultMessage: () => 'fichierUrl doit être un fichier envoyé via /api/uploads/piece-jointe.',
+    },
   })
   fichierUrl?: string;
 

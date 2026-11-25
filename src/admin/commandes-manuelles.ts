@@ -1,3 +1,4 @@
+import { cleOvhDepuisUrl, estUrlFichierStocke } from '../shared/hotes-fichiers';
 /**
  * COMMANDES MANUELLES — saisies par l'admin pour une commande reçue par e-mail,
  * téléphone ou bon de commande, hors boutique. Elles vivent dans le dashboard
@@ -76,7 +77,7 @@ export function designsConserves(brut: unknown): string[] {
   if (!Array.isArray(brut)) return [];
   return brut
     .map((u) => String(u ?? '').trim())
-    .filter((u) => /^https:\/\/res\.cloudinary\.com\/[^\s"'<>]+$/.test(u))
+    .filter((u) => estUrlFichierStocke(u))
     .slice(0, MAX_DESIGNS_PAR_LIGNE);
 }
 
@@ -183,7 +184,7 @@ export function logosConserves(brut: unknown): Array<{ url: string; vue: string 
   if (!Array.isArray(brut)) return [];
   return brut
     .map((l: any) => ({ url: String(l?.url ?? '').trim(), vue: vueValide(l?.vue) ?? '' }))
-    .filter((l) => l.vue && /^https:\/\/res\.cloudinary\.com\/[^\s"'<>]+$/.test(l.url))
+    .filter((l) => l.vue && estUrlFichierStocke(l.url))
     .slice(0, MAX_DESIGNS_PAR_LIGNE);
 }
 
@@ -235,6 +236,12 @@ export function formulaireDepuisCommande(o: {
  * dossier : on n'efface jamais un fichier qui ne lui appartient pas.
  */
 export function ressourceCommande(url: string): { publicId: string; resourceType: 'image' | 'raw' } | null {
+  /* Fichier OVH : publicId « ovh:<clé> », même garde de dossier. */
+  const cleOvh = cleOvhDepuisUrl(url);
+  if (cleOvh) {
+    if (!cleOvh.startsWith('customizer/commandes/')) return null;
+    return { publicId: 'ovh:' + cleOvh, resourceType: /\.(png|jpe?g|webp|gif)$/i.test(cleOvh) ? 'image' : 'raw' };
+  }
   const m = String(url || '').match(/^https:\/\/res\.cloudinary\.com\/[^/]+\/(image|raw)\/upload\/(?:v\d+\/)?(customizer\/commandes\/[^?#]+)$/);
   if (!m) return null;
   let chemin: string;

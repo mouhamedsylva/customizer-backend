@@ -1,3 +1,4 @@
+import { cleOvhDepuisUrl } from './hotes-fichiers';
 /**
  * PIÈCES JOINTES DE FACTURE SUR CLOUDINARY — documents gardés en documents.
  *
@@ -56,6 +57,12 @@ export function ressourceDepuisUrl(
   /* Hôte ET compte vérifiés : l'URL vient d'une requête admin, et le
      nettoyage supprime ce qu'elle désigne. Sans ce contrôle, une URL forgée
      faisait supprimer n'importe quel fichier du compte. */
+  /* Fichier OVH : publicId « ovh:<clé> », même garde de dossier. */
+  const cleOvh = cleOvhDepuisUrl(url);
+  if (cleOvh) {
+    if (!cleOvh.startsWith('customizer/temp-attachments/')) return null;
+    return { publicId: 'ovh:' + cleOvh, resourceType: /\.(png|jpe?g|webp|gif)$/i.test(cleOvh) ? 'image' : 'raw' };
+  }
   let u: URL;
   try {
     u = new URL(String(url || ''));

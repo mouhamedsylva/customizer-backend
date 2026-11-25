@@ -42,6 +42,9 @@ import { v2 as cloudinary } from 'cloudinary';
 import { Order } from '../database/entities/order.entity';
 import { TypoSvgService } from '../shared/typo-svg.service';
 import { zoneDuFichierTexte } from '../shared/zones-texte';
+import { ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
+import { estUrlFichierStocke } from '../shared/hotes-fichiers';
+import { StockageOvh } from '../shared/stockage-ovh';
 
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -52,7 +55,8 @@ try {
 
 const AVANT_MS = 90 * 60 * 1000;
 const APRES_MS = 10 * 60 * 1000;
-const CLOUDINAIRE = /^https:\/\/res\.cloudinary\.com\//;
+/* URL acceptées : nos stockages (Cloudinary, bucket OVH), hôte EXACT. */
+const CLOUDINAIRE = { test: (u: string) => estUrlFichierStocke(u) };
 
 /** Dossiers explorés : [préfixe, type de ressource, nature]. */
 const SOURCES: Array<[string, 'image' | 'raw', string]> = [
@@ -254,6 +258,35 @@ async function main(): Promise<void> {
       }
       curseur = r.next_cursor;
       if (!curseur) break;
+    }
+  }
+
+  /* Bucket OVH : fichiers envoyés depuis la bascule (STOCKAGE_FOURNISSEUR=ovh).
+     Mêmes dossiers ; la nature se lit sur le dossier et l'extension. */
+  if (process.env.OVH_S3_BUCKET && process.env.OVH_S3_ACCESS_KEY && process.env.OVH_S3_SECRET_KEY) {
+    const stockage = new StockageOvh((k) => process.env[k]);
+    const s3 = new S3Client({
+      endpoint: process.env.OVH_S3_ENDPOINT,
+      region: process.env.OVH_S3_REGION || 'gra',
+      credentials: { accessKeyId: process.env.OVH_S3_ACCESS_KEY, secretAccessKey: process.env.OVH_S3_SECRET_KEY },
+    });
+    for (const prefixe of ['customizer/logos/generic/', 'customizer/text/']) {
+      let jeton: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const r = await s3.send(
+          new ListObjectsV2Command({ Bucket: process.env.OVH_S3_BUCKET, Prefix: prefixe, ContinuationToken: jeton }),
+        );
+        for (const obj of r.Contents || []) {
+          const date = obj.LastModified ? new Date(obj.LastModified) : null;
+          if (!obj.Key || !date || date < debut || date > fin) continue;
+          const nature = prefixe.includes('/logos/') ? 'logo' : obj.Key.endsWith('.svg') ? 'texte SVG' : 'texte PNG';
+          if (seulement && !nature.startsWith(seulement)) continue;
+          const zone = nature.startsWith('texte') ? zoneDuFichierTexte(obj.Key) : null;
+          trouves.push({ url: stockage.urlDe(obj.Key), date, nature, detail: zone ? `zone ${zone}` : '' });
+        }
+        jeton = r.IsTruncated ? r.NextContinuationToken : undefined;
+        if (!jeton) break;
+      }
     }
   }
 

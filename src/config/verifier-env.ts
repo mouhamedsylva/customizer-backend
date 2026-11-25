@@ -39,8 +39,28 @@ export function verifierEnv(env: Env): BilanEnv {
   if (!present(env, 'SHOPIFY_WEBHOOK_SECRET')) {
     critiques.push('SHOPIFY_WEBHOOK_SECRET : tous les webhooks seront refusés');
   }
+  /* Stockage des fichiers. Cloudinary reste requis même après la bascule vers
+     OVH : il sert les fichiers d'avant (liens des commandes) et leur suppression. */
+  const fournisseur = String(env.STOCKAGE_FOURNISSEUR || 'cloudinary').trim().toLowerCase();
   for (const k of ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET']) {
-    if (!present(env, k)) critiques.push(`${k} : uploads et aperçus impossibles`);
+    if (!present(env, k)) {
+      (fournisseur === 'ovh' ? avertissements : critiques).push(
+        fournisseur === 'ovh'
+          ? `${k} : anciens fichiers Cloudinary ni supprimables ni retrouvables`
+          : `${k} : uploads et aperçus impossibles`,
+      );
+    }
+  }
+  if (fournisseur !== 'cloudinary' && fournisseur !== 'ovh') {
+    critiques.push(`STOCKAGE_FOURNISSEUR=${env.STOCKAGE_FOURNISSEUR} : valeur inconnue (cloudinary ou ovh)`);
+  }
+  if (fournisseur === 'ovh') {
+    for (const k of ['OVH_S3_ENDPOINT', 'OVH_S3_BUCKET', 'OVH_S3_ACCESS_KEY', 'OVH_S3_SECRET_KEY', 'OVH_S3_URL_PUBLIQUE']) {
+      if (!present(env, k)) critiques.push(`${k} : uploads impossibles (STOCKAGE_FOURNISSEUR=ovh)`);
+    }
+    if (present(env, 'OVH_S3_URL_PUBLIQUE') && !/^https:\/\/[^/\s]+\/?$/.test(String(env.OVH_S3_URL_PUBLIQUE).trim())) {
+      critiques.push('OVH_S3_URL_PUBLIQUE : https://<bucket>.s3.<région>.io.cloud.ovh.net attendu');
+    }
   }
 
   if (!present(env, 'FRONTEND_URL')) {

@@ -21,6 +21,7 @@ import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { Order } from '../database/entities/order.entity';
 import { TypoSvgService, TypoRetrouvee } from '../shared/typo-svg.service';
+import { estUrlFichierStocke } from '../shared/hotes-fichiers';
 
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -36,8 +37,7 @@ const ZONES: Record<string, string> = {
   'texte dos': 'b',
 };
 
-/** Seul l'hébergeur des fichiers de découpe est interrogé. */
-const HOTES = ['res.cloudinary.com'];
+/* Seuls nos hébergeurs de fichiers (Cloudinary, bucket OVH) sont interrogés. */
 
 function zoneDe(nom: string): string | null {
   const m = /^_?(.+?)\s*\(SVG\)$/i.exec(String(nom || '').trim());
@@ -46,8 +46,7 @@ function zoneDe(nom: string): string | null {
 
 async function telecharger(url: string): Promise<string | null> {
   try {
-    const u = new URL(url);
-    if (u.protocol !== 'https:' || !HOTES.includes(u.hostname)) return null;
+    if (!estUrlFichierStocke(url)) return null;
     const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!r.ok) return null;
     const texte = await r.text();

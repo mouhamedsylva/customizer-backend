@@ -8,6 +8,7 @@
  * des pièces de devis ne touche pas.
  */
 import { randomUUID } from 'crypto';
+import { estUrlFichierStocke } from '../shared/hotes-fichiers';
 
 export interface FichierJoint {
   id: string;
@@ -26,7 +27,6 @@ export interface FichierJoint {
 export const MAX_FICHIERS_JOINTS = 20;
 export const TAILLE_MAX_FICHIER_JOINT = 10 * 1024 * 1024;
 
-const CLOUDINAIRE = /^https:\/\/res\.cloudinary\.com\//;
 
 /** Libellé affiché : une ligne, 80 caractères au plus ; repli sur le nom du fichier. */
 export function libelleFichier(libelle: unknown, nomFichier: string): string {
@@ -42,7 +42,7 @@ export function libelleFichier(libelle: unknown, nomFichier: string): string {
 export function fichiersJointsValides(brut: unknown): FichierJoint[] {
   if (!Array.isArray(brut)) return [];
   return brut.filter(
-    (f: any) => f && typeof f.id === 'string' && typeof f.libelle === 'string' && CLOUDINAIRE.test(String(f.url)),
+    (f: any) => f && typeof f.id === 'string' && typeof f.libelle === 'string' && estUrlFichierStocke(String(f.url)),
   ) as FichierJoint[];
 }
 

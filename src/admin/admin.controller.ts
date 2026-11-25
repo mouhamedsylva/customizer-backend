@@ -66,6 +66,7 @@ import {
   groupSheetPage,
   listeFichiersJoints,
 } from './admin.view';
+import { hoteOvh } from '../shared/hotes-fichiers';
 
 // JSZip : construction d'archives en mémoire, API stable et sans streams.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -2633,6 +2634,8 @@ function isAllowedAssetUrl(raw: string): boolean {
     const { protocol, hostname } = new URL(raw);
     if (protocol !== 'https:') return false;
     const h = hostname.toLowerCase();
+    // Bucket OVH (hôte EXACT) : fichiers envoyés depuis la bascule.
+    if (hoteOvh() && h === hoteOvh()) return true;
     return ASSET_HOSTS.some((d) => h === d || h.endsWith('.' + d));
   } catch {
     return false;

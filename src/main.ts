@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 import { verifierEnv } from './config/verifier-env';
+import { hoteOvh } from './shared/hotes-fichiers';
 
 async function bootstrap(): Promise<void> {
   // FILET DE SÉCURITÉ : depuis Node 15, une promesse rejetée sans récepteur
@@ -113,6 +114,8 @@ async function bootstrap(): Promise<void> {
             "'self'",
             'data:',
             'https://res.cloudinary.com',
+            // Bucket OVH des fichiers envoyés depuis la bascule (hotes-fichiers.ts).
+            ...(hoteOvh() ? ['https://' + hoteOvh()] : []),
             'https://cdn.shopify.com',
             'https://massacre-officiel.com',
           ],

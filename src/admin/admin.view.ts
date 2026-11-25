@@ -35,6 +35,7 @@ import {
 } from '../shared/zones-texte';
 import { scriptTva, TVA_TAUX_DEFAUT } from '../shared/tva';
 import { LigneGroupe, anomaliesGroupe, designCommun, lignesDuGroupe } from './groupe-commande';
+import { estUrlFichierStocke, hoteOvh } from '../shared/hotes-fichiers';
 
 /**
  * Échappement HTML.
@@ -96,6 +97,8 @@ function isAllowedImgHost(u: string): boolean {
     const { hostname, protocol } = new URL(u);
     if (protocol !== 'https:') return false;
     const h = hostname.toLowerCase();
+    // Bucket OVH (hôte EXACT) : fichiers envoyés depuis la bascule.
+    if (hoteOvh() && h === hoteOvh()) return true;
     return IMG_HOSTS.some((d) => h === d || h.endsWith('.' + d));
   } catch {
     return false;
@@ -4136,7 +4139,7 @@ function quoteCard(
             /* Lien affiché seulement vers Cloudinary en https (même règle que le
                DTO) : un ancien devis au lien arbitraire (javascript:, phishing)
                n'est pas cliquable. */
-            c.fichierUrl && !/^https:\/\/res\.cloudinary\.com\//.test(String(c.fichierUrl))
+            c.fichierUrl && !estUrlFichierStocke(String(c.fichierUrl))
               ? `<div class="kv" style="grid-column:1/-1"><span class="k">Fichier joint</span><span class="mono">lien non vérifié : ${esc(c.fichierUrl)}</span></div>`
             : c.fichierUrl
               ? (isImg(c.fichierUrl)

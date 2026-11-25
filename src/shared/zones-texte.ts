@@ -1,3 +1,4 @@
+import { estUrlFichierStocke } from './hotes-fichiers';
 /**
  * Propriétés « … (SVG) » d'une ligne de commande : le fichier de découpe d'un
  * texte, par zone. Libellés posés par le thème (`collectTextAssets`,
@@ -27,7 +28,7 @@ export function zoneDuSvg(nom: unknown): string | null {
 export function svgRegenere(parZone: unknown, nomPropriete: unknown): string | null {
   const zone = zoneDuSvg(nomPropriete);
   const url = zone ? (parZone as any)?.[zone]?.svgPropre : null;
-  return typeof url === 'string' && /^https:\/\/res\.cloudinary\.com\//.test(url) ? url : null;
+  return estUrlFichierStocke(url) ? url : null;
 }
 
 /** « _Texte face » (le visuel PNG du texte) → 'f' ; toute autre propriété → null. */
@@ -37,7 +38,7 @@ export function zoneDuPng(nom: unknown): string | null {
 }
 
 const cloudinaire = (u: unknown): u is string =>
-  typeof u === 'string' && /^https:\/\/res\.cloudinary\.com\//.test(u);
+  estUrlFichierStocke(u);
 
 /**
  * Visuel PNG RÉGÉNÉRÉ qui remplace ce visuel de texte, s'il existe.

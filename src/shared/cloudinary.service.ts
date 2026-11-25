@@ -4,6 +4,8 @@ import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import sharp from 'sharp';
 import { optionsPieceJointe, TypeRessource } from './piece-jointe-cloudinary';
 import { lireCorpsBorne } from './lecture-bornee';
+import { StockageOvh, cleDuPublicId, extensionImage, typeDepuisExtension } from './stockage-ovh';
+import { hoteOvh } from './hotes-fichiers';
 
 /* Plafond de pixels des images EXTERNES (uploads, CDN) : le défaut de sharp
    (~268 Mpx, ~1 Go décodé) laissait passer une « bombe » de décompression. */
@@ -20,6 +22,18 @@ export interface UploadResult {
   height: number;
   format?: string;
   bytes?: number;
+}
+
+/**
+ * Base et extension d'un fichier OVH depuis le public_id de `optionsPieceJointe` :
+ * en `raw`, l'extension y figure déjà ; une image n'en a pas, on la déduit du type.
+ */
+function baseEtExtension(publicId: string, resourceType: TypeRessource, mimetype: string): { base: string; ext: string } {
+  if (resourceType === 'raw') {
+    const m = publicId.match(/^(.*)\.([a-zA-Z0-9]{1,5})$/);
+    return m ? { base: m[1], ext: m[2].toLowerCase() } : { base: publicId, ext: 'bin' };
+  }
+  return { base: publicId, ext: extensionImage(mimetype) };
 }
 
 interface UploadOptions {
@@ -57,6 +71,41 @@ export class CloudinaryService implements OnModuleInit {
   ];
 
   constructor(private readonly config: ConfigService) {}
+
+  /**
+   * OVHcloud Object Storage (stockage-ovh.ts). Quand `STOCKAGE_FOURNISSEUR=ovh`,
+   * chaque ENVOI y part ; suppression et téléchargement s'y adressent dès que
+   * le publicId commence par `ovh:`, quel que soit le réglage.
+   */
+  private readonly ovh = new StockageOvh((cle) => this.config.get<string>(cle));
+
+  /** Dimensions d'une image (0 si illisible : PDF, document…). */
+  private async dimensions(buffer: Buffer): Promise<{ width: number; height: number }> {
+    try {
+      const m = await sharp(buffer, ENTREE_SHARP).metadata();
+      return { width: m.width || 0, height: m.height || 0 };
+    } catch {
+      return { width: 0, height: 0 };
+    }
+  }
+
+  /** Envoi vers OVH d'un fichier sous `dossier`, avec un nom unique. */
+  private async envoyerOvh(
+    buffer: Buffer,
+    dossier: string,
+    base: string,
+    ext: string,
+    contentType?: string,
+    dims?: { width: number; height: number },
+  ): Promise<UploadResult> {
+    const cle = this.ovh.cleUnique(dossier, base, ext);
+    const type = contentType || typeDepuisExtension(cle);
+    const taille = dims || (type.startsWith('image/') && type !== 'image/svg+xml'
+      ? await this.dimensions(buffer)
+      : { width: 0, height: 0 });
+    const r = await this.ovh.envoyer(buffer, cle, type);
+    return { url: r.url, publicId: r.publicId, width: taille.width, height: taille.height, format: ext, bytes: r.bytes };
+  }
 
   /** Vrai si le serveur sait dessiner du texte (police présente). */
   private canRenderText = true;
@@ -116,6 +165,16 @@ export class CloudinaryService implements OnModuleInit {
     fileBuffer: Buffer,
     options: UploadOptions = {},
   ): Promise<UploadResult> {
+    if (this.ovh.actif()) {
+      const ext = options.format === 'jpg' ? 'jpg' : 'png';
+      return this.envoyerOvh(
+        fileBuffer,
+        options.folder || 'customizer',
+        options.public_id || 'image',
+        ext,
+        ext === 'jpg' ? 'image/jpeg' : 'image/png',
+      );
+    }
     return new Promise<UploadResult>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -167,6 +226,11 @@ export class CloudinaryService implements OnModuleInit {
       .replace(/\.[^.]+$/, '')
       .replace(/[^a-zA-Z0-9_-]+/g, '-')
       .slice(0, 60) || 'fichier';
+
+    if (this.ovh.actif()) {
+      const ext = (String(nomOriginal).match(/\.([a-zA-Z0-9]{1,5})$/) || [])[1]?.toLowerCase() || 'bin';
+      return this.envoyerOvh(fileBuffer, 'customizer/devis', base, ext);
+    }
 
     return new Promise<UploadResult>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -279,6 +343,17 @@ export class CloudinaryService implements OnModuleInit {
     const mesure = /width="([\d.]+)"\s+height="([\d.]+)"/.exec(svgString);
     const largeur = mesure ? Math.round(parseFloat(mesure[1])) : 0;
     const hauteur = mesure ? Math.round(parseFloat(mesure[2])) : 0;
+
+    if (this.ovh.actif()) {
+      return this.envoyerOvh(
+        Buffer.from(svgString, 'utf8'),
+        `customizer/text/${productType}`,
+        `text_${placement}`,
+        'svg',
+        'image/svg+xml',
+        { width: largeur, height: hauteur },
+      );
+    }
 
     return new Promise<UploadResult>((resolve, reject) => {
       const flux = cloudinary.uploader.upload_stream(
@@ -488,6 +563,11 @@ export class CloudinaryService implements OnModuleInit {
     /* res.cloudinary.com sert TOUS les comptes Cloudinary : n'importe qui peut
        y héberger un fichier piégé. Seul NOTRE compte est accepté (le thème n'y
        référence aucun autre — vérifié le 30/09/2026). */
+    /* Notre bucket OVH (hôte EXACT, hotes-fichiers.ts) : il sert les logos
+       envoyés depuis la bascule, que les aperçus composent. */
+    const ovh = hoteOvh();
+    if (ovh && host === ovh) return true;
+
     const cloud = this.config.get<string>('CLOUDINARY_CLOUD_NAME');
     if (host === 'res.cloudinary.com' && cloud) {
       return url.pathname.split('/')[1] === cloud;
@@ -784,6 +864,11 @@ export class CloudinaryService implements OnModuleInit {
    * Supprime une image de Cloudinary par son public_id.
    */
   async deleteImage(publicId: string): Promise<boolean> {
+    const cleOvh = cleDuPublicId(publicId);
+    if (cleOvh) {
+      await this.ovh.supprimer(cleOvh);
+      return true;
+    }
     try {
       const result = await cloudinary.uploader.destroy(publicId);
       return result.result === 'ok';
@@ -805,6 +890,11 @@ export class CloudinaryService implements OnModuleInit {
     /* Image → `image` ; PDF, DOC, XLS… → `raw` AVEC extension, servi tel quel
        (voir piece-jointe-cloudinary.ts). */
     const { resourceType, publicId } = optionsPieceJointe(nomOriginal, mimetype);
+
+    if (this.ovh.actif()) {
+      const { base, ext } = baseEtExtension(publicId, resourceType, mimetype);
+      return this.envoyerOvh(fileBuffer, 'customizer/temp-attachments', base, ext, mimetype || undefined);
+    }
 
     return new Promise<UploadResult>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -852,6 +942,11 @@ export class CloudinaryService implements OnModuleInit {
   ): Promise<UploadResult & { resourceType: TypeRessource }> {
     const { resourceType, publicId } = optionsPieceJointe(nomOriginal, mimetype);
     const dossier = String(commande || 'sans-numero').replace(/[^\w-]+/g, '').slice(0, 40) || 'sans-numero';
+    if (this.ovh.actif()) {
+      const { base, ext } = baseEtExtension(publicId, resourceType, mimetype);
+      const r = await this.envoyerOvh(fileBuffer, `customizer/commandes/${dossier}`, base, ext, mimetype || undefined);
+      return { ...r, resourceType };
+    }
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -889,6 +984,8 @@ export class CloudinaryService implements OnModuleInit {
    * l'API signée n'y est pas soumise. Sert les fichiers joints aux commandes.
    */
   async telechargerFichier(publicId: string, resourceType: TypeRessource, format = ''): Promise<Buffer> {
+    const cleOvh = cleDuPublicId(publicId);
+    if (cleOvh) return this.ovh.lireFichier(cleOvh);
     // En `raw`, l'extension fait partie du public_id : `format` reste vide.
     const url = cloudinary.utils.private_download_url(publicId, format, {
       resource_type: resourceType,
@@ -905,6 +1002,8 @@ export class CloudinaryService implements OnModuleInit {
    * Utilisé pour le nettoyage des pièces jointes temporaires.
    */
   async deleteResource(publicId: string, resourceType: TypeRessource = 'image'): Promise<void> {
+    const cleOvh = cleDuPublicId(publicId);
+    if (cleOvh) return this.ovh.supprimer(cleOvh);
     return new Promise<void>((resolve, reject) => {
       cloudinary.uploader.destroy(publicId, { resource_type: resourceType }, (error, result) => {
         if (error) {

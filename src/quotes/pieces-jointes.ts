@@ -11,9 +11,8 @@
  */
 
 import { nomFichierUtf8 } from '../uploads/type-fichier';
+import { estUrlFichierStocke } from '../shared/hotes-fichiers';
 
-/** Hôte des fichiers uploadés (cloudinary.service.ts, uploadQuoteAttachment). */
-const HOTE_PIECES_JOINTES = 'res.cloudinary.com';
 const MAX_PIECES = 5;
 const MAX_NOM = 120;
 
@@ -29,8 +28,8 @@ export interface PieceJointe {
 function urlSure(url: unknown): string | null {
   if (typeof url !== 'string') return null;
   try {
-    const u = new URL(url);
-    return u.protocol === 'https:' && u.hostname === HOTE_PIECES_JOINTES ? u.toString() : null;
+    // Cloudinary ou bucket OVH, hôte EXACT (hotes-fichiers.ts).
+    return estUrlFichierStocke(url) ? new URL(url).toString() : null;
   } catch {
     return null;
   }
