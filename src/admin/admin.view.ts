@@ -1838,6 +1838,10 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
    toujours visible ; le délai « grande quantité » se déplie sur demande. */
 /* ── Chiffre d'affaires par mois / par jour ─────────────────────────── */
 .stat-clic{cursor:pointer}
+/* Indice « Détail par mois › » sous le libellé de la carte cliquable. */
+.stat-lien{font-size:11px;font-weight:700;color:var(--t);line-height:1;white-space:nowrap;
+  margin-top:-3px;transition:letter-spacing .16s}
+.stat-clic:hover .stat-lien,.stat-clic:focus-visible .stat-lien{text-decoration:underline;letter-spacing:.01em}
 .stat-clic:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #ca-modal .modal-box{width:min(96vw,860px);max-height:92vh;display:flex;flex-direction:column}
 .ca-tete{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -5122,12 +5126,21 @@ export function dashboardPage(
         const ca = moneyCompact(revenue);
         const bulle = ca.texte === ca.exact ? '' : ca.exact;
         /* Cliquable : ouvre le chiffre d'affaires par mois / par jour. */
-        return statCard(ca.texte, "Chiffre d'affaires estimé", ICO_EURO, 't-green', bulle).replace(
-          '<div class="stat t-green">',
-          '<div class="stat t-green stat-clic" role="button" tabindex="0" onclick="openCa()" ' +
-            'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openCa()}" ' +
-            'aria-label="Voir le chiffre d’affaires par mois et par jour">',
-        );
+        /* Indice VISIBLE en permanence (« Détail par mois › ») : un effet au
+           survol seul passe inaperçu, et n'existe pas sur tablette. Placé en
+           tête du DOM de .stat-body (colonne inversée) : il s'affiche en bas. */
+        return statCard(ca.texte, "Chiffre d'affaires estimé", ICO_EURO, 't-green', bulle)
+          .replace(
+            '<div class="stat t-green">',
+            '<div class="stat t-green stat-clic" role="button" tabindex="0" onclick="openCa()" ' +
+              'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openCa()}" ' +
+              'title="Cliquer pour voir le chiffre d’affaires par mois et par jour" ' +
+              'aria-label="Voir le chiffre d’affaires par mois et par jour">',
+          )
+          .replace(
+            '<div class="stat-body">',
+            '<div class="stat-body"><span class="stat-lien" aria-hidden="true">Détail par mois ›</span>',
+          );
       })()}
       ${statCard(nbOpen, 'Devis à traiter', ICO_QUOTE, 't-violet')}
     </div>
