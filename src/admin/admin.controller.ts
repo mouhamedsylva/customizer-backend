@@ -49,7 +49,8 @@ import { lireChiffrageEnCours } from '../quotes/chiffrage-en-cours';
 import { avecPiecesJointes, documentsDuDevis, piecesValides } from '../quotes/pieces-jointes';
 import { envoiPeutEtrePasse, factureEnvoyeeDepuis } from './envoi-facture';
 import { celluleCsv, periodeFichier } from './csv';
-import { dateBoutique } from './periodes';
+import { dateBoutique, minuitDans } from './periodes';
+import { BilanCa, caParJour, caParMois } from './ca-periodes';
 import { lireCorpsBorne } from '../shared/lecture-bornee';
 import {
   assetsRattaches,
@@ -1884,6 +1885,95 @@ export class AdminController {
 
     res.type('text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send('﻿' + rows.join('\n')); // BOM : Excel lit correctement l'UTF-8
+  }
+
+  /**
+   * CHIFFRE D'AFFAIRES par mois (vue=mois, une année) ou par jour (vue=jour,
+   * un mois) — fenêtre « Chiffre d'affaires » (ca-periodes.ts). La vue par
+   * mois inclut l'année précédente, pour la comparaison.
+   */
+  private async calculerCa(query: Record<string, unknown>): Promise<
+    | { erreur: string }
+    | {
+        vue: 'mois' | 'jour';
+        annee: number;
+        mois: number | null;
+        bilan: BilanCa;
+        precedent: BilanCa['total'] | null;
+        annees: number[];
+      }
+  > {
+    const maintenant = new Date();
+    const anneeCourante = Number(dateBoutique(maintenant).slice(0, 4));
+    const vue = query.vue === 'jour' ? 'jour' : 'mois';
+    const annee = query.annee === undefined ? anneeCourante : Number(query.annee);
+    if (!Number.isInteger(annee) || annee < 2020 || annee > anneeCourante + 1) return { erreur: 'Année invalide.' };
+    const premiere = (await this.data.getPremiereAnneeCa()) ?? anneeCourante;
+    const annees: number[] = [];
+    for (let a = anneeCourante; a >= Math.min(premiere, anneeCourante); a--) annees.push(a);
+
+    if (vue === 'jour') {
+      const mois = query.mois === undefined ? Number(dateBoutique(maintenant).slice(5, 7)) : Number(query.mois);
+      if (!Number.isInteger(mois) || mois < 1 || mois > 12) return { erreur: 'Mois invalide.' };
+      const commandes = await this.data.getCaCommandes(minuitDans(annee, mois - 1, 1), minuitDans(annee, mois, 1));
+      return { vue, annee, mois, bilan: caParJour(commandes, annee, mois, maintenant), precedent: null, annees };
+    }
+    const commandes = await this.data.getCaCommandes(minuitDans(annee - 1, 0, 1), minuitDans(annee + 1, 0, 1));
+    return {
+      vue,
+      annee,
+      mois: null,
+      bilan: caParMois(commandes, annee, maintenant),
+      precedent: caParMois(commandes, annee - 1, maintenant).total,
+      annees,
+    };
+  }
+
+  @Get('ca')
+  async getCa(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.status(401).json({ ok: false, error: 'Non authentifié.' });
+      return;
+    }
+    const r = await this.calculerCa(req.query as Record<string, unknown>);
+    if ('erreur' in r) {
+      res.status(400).json({ ok: false, error: r.erreur });
+      return;
+    }
+    res.json({ ok: true, ...r });
+  }
+
+  @Get('ca.csv')
+  async exportCa(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (!(await this.isAuthed(req))) {
+      res.redirect('/api/admin');
+      return;
+    }
+    const r = await this.calculerCa(req.query as Record<string, unknown>);
+    if ('erreur' in r) {
+      res.status(400).send(r.erreur);
+      return;
+    }
+    const q = celluleCsv;
+    const montant = (n: number) => n.toFixed(2).replace('.', ',');
+    const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const libelle = (n: number) =>
+      r.vue === 'mois'
+        ? `${MOIS[n - 1]} ${r.annee}`
+        : `${String(n).padStart(2, '0')}/${String(r.mois).padStart(2, '0')}/${r.annee}`;
+    const rows = [
+      [r.vue === 'mois' ? 'Mois' : 'Jour', 'Commandes', 'CA TTC (EUR)', 'Panier moyen (EUR)'].map(q).join(';'),
+      ...r.bilan.lignes.map((l) =>
+        [libelle(l.numero), String(l.nbCommandes), montant(l.caTtc), montant(l.panierMoyen)].map(q).join(';'),
+      ),
+      ['Total', String(r.bilan.total.nbCommandes), montant(r.bilan.total.caTtc), montant(r.bilan.total.panierMoyen)]
+        .map(q)
+        .join(';'),
+    ];
+    const nom = r.vue === 'mois' ? `ca-${r.annee}.csv` : `ca-${r.annee}-${String(r.mois).padStart(2, '0')}.csv`;
+    res.type('text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${nom}"`);
     res.send('﻿' + rows.join('\n')); // BOM : Excel lit correctement l'UTF-8
   }
 

@@ -8,6 +8,7 @@ import { Quote } from '../database/entities/quote.entity';
 import { Design } from '../database/entities/design.entity';
 import { evaluerLignes } from '../shared/reconnaissance-configurateur';
 import { plagePeriode } from './periodes';
+import type { CommandeCa } from './ca-periodes';
 
 /** Critères de filtrage / tri des commandes. */
 export interface OrderQuery {
@@ -468,6 +469,38 @@ export class AdminService implements OnModuleInit {
       if (q) return q;
     }
     return this.quotes.findOne({ where: { paidOrderId: String(order.shopifyOrderId) } });
+  }
+
+  /**
+   * Commandes du configurateur entre deux instants (fin exclue), pour la
+   * fenêtre « Chiffre d'affaires » (ca-periodes.ts). Colonnes légères
+   * seulement, SANS la limite de 300 de la liste : un total d'année doit
+   * compter toutes les commandes.
+   */
+  async getCaCommandes(debut: Date, fin: Date): Promise<CommandeCa[]> {
+    const dateExpr = 'COALESCE(o.shopifyCreatedAt, o.receivedAt)';
+    const lignes = await this.orders
+      .createQueryBuilder('o')
+      .select('o.shopifyOrderId', 'shopifyOrderId')
+      .addSelect('o.totalPrice', 'totalPrice')
+      .addSelect('o.financialStatus', 'financialStatus')
+      .addSelect(dateExpr, 'date')
+      .where('o.fromConfigurator = TRUE')
+      .andWhere(`${dateExpr} >= :debut`, { debut })
+      .andWhere(`${dateExpr} < :fin`, { fin })
+      .getRawMany<CommandeCa>();
+    return lignes;
+  }
+
+  /** Première année ayant une commande du configurateur (null : aucune). */
+  async getPremiereAnneeCa(): Promise<number | null> {
+    const r = await this.orders
+      .createQueryBuilder('o')
+      .select('MIN(COALESCE(o.shopifyCreatedAt, o.receivedAt))', 'premiere')
+      .where('o.fromConfigurator = TRUE')
+      .getRawOne<{ premiere: Date | string | null }>();
+    const d = r?.premiere ? new Date(r.premiere) : null;
+    return d && Number.isFinite(d.getTime()) ? d.getFullYear() : null;
   }
 
   async getQuote(id: string): Promise<Quote | null> {

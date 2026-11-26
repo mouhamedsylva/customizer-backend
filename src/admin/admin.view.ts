@@ -1836,6 +1836,50 @@ textarea.mn-input{height:auto;min-height:64px;padding:9px 12px;line-height:1.45;
 /* ── Délais de production ───────────────────────────────────────────
    Une carte par produit, regroupées par famille. Le délai standard est
    toujours visible ; le délai « grande quantité » se déplie sur demande. */
+/* ── Chiffre d'affaires par mois / par jour ─────────────────────────── */
+.stat-clic{cursor:pointer}
+.stat-clic:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#ca-modal .modal-box{width:min(96vw,860px);max-height:92vh;display:flex;flex-direction:column}
+.ca-tete{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ca-tete h3{margin:0}
+.ca-vues{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.ca-vues button{border:none;background:transparent;padding:7px 16px;font:inherit;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+.ca-vues button.on{background:var(--accent);color:#fff}
+.ca-outils{display:flex;align-items:center;gap:10px;margin:14px 0 10px;flex-wrap:wrap}
+.ca-outils select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink)}
+.ca-outils .btn{margin-left:auto;text-decoration:none}
+.ca-retour{border:none;background:none;color:var(--accent);font:inherit;font-size:13px;font-weight:700;cursor:pointer;padding:0}
+.ca-resume{display:flex;gap:22px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:12px}
+.ca-resume b{display:block;color:var(--ink);font-size:19px;font-weight:800}
+.ca-resume .ca-up,.ca-resume .ca-down{font-weight:700}
+.ca-graph{display:flex;align-items:flex-end;gap:3px;height:170px;padding:6px 2px 0;border-bottom:1px solid var(--line)}
+.ca-col{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;justify-content:center}
+.ca-col.clic{cursor:pointer}
+.ca-barre{width:100%;max-width:40px;min-height:2px;border-radius:5px 5px 0 0;background:var(--ok);opacity:.55;transition:opacity .15s}
+.ca-col.courant .ca-barre{background:var(--accent);opacity:1}
+.ca-col.futur .ca-barre{background:var(--line);opacity:1}
+.ca-col.clic:hover .ca-barre{opacity:.9}
+.ca-axe{display:flex;gap:3px;padding:4px 2px 0}
+.ca-axe span{flex:1;min-width:0;text-align:center;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.ca-axe span.courant{color:var(--accent);font-weight:800}
+.ca-scroll{overflow-y:auto;margin-top:14px;min-height:0}
+.ca-table{width:100%;border-collapse:collapse;font-size:13px}
+.ca-table th{position:sticky;top:0;background:var(--surface);text-align:right;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line)}
+.ca-table th:first-child,.ca-table td:first-child{text-align:left}
+.ca-table td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line-soft);font-variant-numeric:tabular-nums}
+.ca-table tr.clic{cursor:pointer}
+.ca-table tr.clic:hover td{background:var(--raise)}
+.ca-table tr.futur td{color:var(--faint)}
+.ca-table tr.courant td:first-child{color:var(--accent);font-weight:800}
+.ca-table tr.total td{font-weight:800;border-top:2px solid var(--line);border-bottom:none}
+.ca-up{color:var(--ok)}
+.ca-down{color:var(--danger)}
+.ca-note{margin:10px 0 0}
+@media (max-width:560px){
+  .ca-graph{height:120px}
+  .ca-table th:nth-child(4),.ca-table td:nth-child(4){display:none}
+  .ca-outils .btn{margin-left:0}
+}
 #delais-modal .modal-box{max-width:600px;max-height:92vh;display:flex;flex-direction:column}
 #delais-modal .dl-scroll{overflow-y:auto;margin:0 -4px;padding:0 4px}
 .dl-group{margin-top:18px}
@@ -5012,6 +5056,12 @@ export function dashboardPage(
             </svg>
             <span><b>Prix</b><small>Tarifs du configurateur</small></span>
           </button>
+          <button class="cog-item" role="menuitem" onclick="fromCog(openCa)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>
+            </svg>
+            <span><b>Chiffre d'affaires</b><small>Par mois ou par jour</small></span>
+          </button>
           <button class="cog-item" role="menuitem" onclick="fromCog(openDelais)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
@@ -5071,7 +5121,13 @@ export function dashboardPage(
         /* Abrégé pour tenir dans la carte, exact au survol. */
         const ca = moneyCompact(revenue);
         const bulle = ca.texte === ca.exact ? '' : ca.exact;
-        return statCard(ca.texte, "Chiffre d'affaires estimé", ICO_EURO, 't-green', bulle);
+        /* Cliquable : ouvre le chiffre d'affaires par mois / par jour. */
+        return statCard(ca.texte, "Chiffre d'affaires estimé", ICO_EURO, 't-green', bulle).replace(
+          '<div class="stat t-green">',
+          '<div class="stat t-green stat-clic" role="button" tabindex="0" onclick="openCa()" ' +
+            'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openCa()}" ' +
+            'aria-label="Voir le chiffre d’affaires par mois et par jour">',
+        );
       })()}
       ${statCard(nbOpen, 'Devis à traiter', ICO_QUOTE, 't-violet')}
     </div>
@@ -5507,6 +5563,30 @@ export function dashboardPage(
         <button class="btn primary" id="price-save" onclick="savePricing()">Enregistrer</button>
       </div>
       <p class="hint" id="price-status" style="margin-top:12px"></p>
+    </div>
+  </div>
+
+  <!-- Modale : chiffre d'affaires par mois ou par jour -->
+  <div class="modal" id="ca-modal" onclick="if(event.target===this)closeCa()">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="ca-titre">
+      <div class="ca-tete">
+        <h3 id="ca-titre">Chiffre d'affaires</h3>
+        <div class="ca-vues" role="group" aria-label="Affichage">
+          <button type="button" id="ca-vue-mois" class="on" onclick="caVue('mois')">Par mois</button>
+          <button type="button" id="ca-vue-jour" onclick="caVue('jour')">Par jour</button>
+        </div>
+      </div>
+      <div class="ca-outils">
+        <button type="button" class="ca-retour" id="ca-retour" style="display:none" onclick="caVue('mois')">← Retour à l'année</button>
+        <select id="ca-periode" aria-label="Période" onchange="caChoix(this.value)"></select>
+        <a class="btn" id="ca-csv" href="#" download>Exporter (CSV)</a>
+      </div>
+      <div class="ca-resume" id="ca-resume"></div>
+      <div class="ca-graph" id="ca-graph"></div>
+      <div class="ca-axe" id="ca-axe"></div>
+      <div class="ca-scroll"><table class="ca-table" id="ca-table"></table></div>
+      <p class="hint ca-note">Montants TTC des commandes du configurateur (commandes manuelles non payées exclues), remboursements non déduits. Dates en heure de Paris.</p>
+      <div class="dl-actions"><button class="btn" onclick="closeCa()">Fermer</button></div>
     </div>
   </div>
 
@@ -7611,6 +7691,161 @@ export function dashboardPage(
     var PRICE_KEYS=[];   // ordre des produits, fourni par le serveur
     var PRICE_TIERS={};  // grilles dégressives chargées, par produit
     var PRICE_QUOTE_ONLY=[]; // produits sur devis : ni champ, ni grille
+
+    /* ═══════════════════ Chiffre d'affaires par mois / par jour ═══════════════════
+       GET /api/admin/ca (ca-periodes.ts). En vue par mois, cliquer un mois
+       ouvre ses jours ; « Retour à l'année » revient. L'état reste tant que la
+       page est ouverte. */
+    var caEtat = { vue: 'mois', annee: null, mois: null };
+    var CA_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    var CA_MOIS_COURT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    function caEuro(n){
+      return Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+    }
+    function caEl(tag, cls, texte){
+      var el = document.createElement(tag);
+      if (cls) el.className = cls;
+      if (texte !== undefined) el.textContent = texte;
+      return el;
+    }
+    function openCa(){
+      document.getElementById('ca-modal').classList.add('open');
+      chargerCa();
+    }
+    function closeCa(){
+      document.getElementById('ca-modal').classList.remove('open');
+    }
+    function caVue(v){
+      caEtat.vue = v;
+      if (v === 'mois') caEtat.mois = null;
+      chargerCa();
+    }
+    function caChoix(val){
+      if (caEtat.vue === 'mois') { caEtat.annee = Number(val); }
+      else { var p = String(val).split('-'); caEtat.annee = Number(p[0]); caEtat.mois = Number(p[1]); }
+      chargerCa();
+    }
+    function caUrl(base){
+      var p = '?vue=' + caEtat.vue;
+      if (caEtat.annee) p += '&annee=' + caEtat.annee;
+      if (caEtat.vue === 'jour' && caEtat.mois) p += '&mois=' + caEtat.mois;
+      return base + p;
+    }
+    function caEvolution(e){
+      if (e === null || e === undefined) return caEl('span', '', '—');
+      return caEl('span', e >= 0 ? 'ca-up' : 'ca-down', (e > 0 ? '+' : '') + String(e).replace('.', ',') + ' %');
+    }
+    function chargerCa(){
+      var graph = document.getElementById('ca-graph');
+      graph.innerHTML = '<p class="hint">Chargement…</p>';
+      fetch(caUrl('/api/admin/ca'), { credentials: 'same-origin' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (!d || !d.ok) { graph.innerHTML = ''; graph.appendChild(caEl('p', 'hint', (d && d.error) || 'Chiffre d’affaires indisponible.')); return; }
+          caEtat.vue = d.vue; caEtat.annee = d.annee; caEtat.mois = d.mois;
+          afficherCa(d);
+        })
+        .catch(function(){ graph.innerHTML = ''; graph.appendChild(caEl('p', 'hint', 'Le serveur n’a pas répondu.')); });
+    }
+    function afficherCa(d){
+      var parMois = d.vue === 'mois';
+      document.getElementById('ca-vue-mois').className = parMois ? 'on' : '';
+      document.getElementById('ca-vue-jour').className = parMois ? '' : 'on';
+      document.getElementById('ca-retour').style.display = parMois ? 'none' : '';
+      document.getElementById('ca-csv').setAttribute('href', caUrl('/api/admin/ca.csv'));
+
+      /* Période : années (par mois) ou mois de ces années (par jour), sans futur. */
+      var sel = document.getElementById('ca-periode');
+      sel.innerHTML = '';
+      var auj = new Date();
+      (d.annees || [d.annee]).forEach(function(a){
+        if (parMois) {
+          var o = caEl('option', '', String(a)); o.value = String(a);
+          if (a === d.annee) o.selected = true;
+          sel.appendChild(o);
+          return;
+        }
+        for (var m = 12; m >= 1; m--) {
+          if (a === auj.getFullYear() && m > auj.getMonth() + 1) continue;
+          var om = caEl('option', '', CA_MOIS[m - 1] + ' ' + a); om.value = a + '-' + m;
+          if (a === d.annee && m === d.mois) om.selected = true;
+          sel.appendChild(om);
+        }
+      });
+
+      /* Résumé. */
+      var res = document.getElementById('ca-resume');
+      res.innerHTML = '';
+      var bloc = function(titre, valeur, extra){
+        var dv = caEl('div', '');
+        dv.appendChild(caEl('b', '', valeur));
+        dv.appendChild(document.createTextNode(titre));
+        if (extra) { dv.appendChild(document.createTextNode(' · ')); dv.appendChild(extra); }
+        res.appendChild(dv);
+      };
+      var t = d.bilan.total;
+      var titrePeriode = parMois ? 'Total ' + d.annee : 'Total ' + CA_MOIS[d.mois - 1] + ' ' + d.annee;
+      var comp = null;
+      if (parMois && d.precedent && d.precedent.caTtc > 0) {
+        var e = Math.round((t.caTtc - d.precedent.caTtc) / d.precedent.caTtc * 1000) / 10;
+        comp = caEvolution(e);
+      }
+      bloc(titrePeriode + ' (TTC)', caEuro(t.caTtc), comp);
+      bloc('Commandes', String(t.nbCommandes));
+      bloc('Panier moyen', caEuro(t.panierMoyen));
+      if (parMois && d.precedent) bloc('Année ' + (d.annee - 1), caEuro(d.precedent.caTtc));
+
+      /* Graphique en barres. */
+      var graph = document.getElementById('ca-graph');
+      var axe = document.getElementById('ca-axe');
+      graph.innerHTML = ''; axe.innerHTML = '';
+      var max = 0;
+      d.bilan.lignes.forEach(function(l){ if (l.caTtc > max) max = l.caTtc; });
+      var libelle = function(l){ return parMois ? CA_MOIS[l.numero - 1] + ' ' + d.annee : l.numero + ' ' + CA_MOIS[d.mois - 1]; };
+      var ouvrirMois = function(l){
+        return function(){ if (!l.futur) { caEtat.vue = 'jour'; caEtat.mois = l.numero; chargerCa(); } };
+      };
+      d.bilan.lignes.forEach(function(l){
+        var col = caEl('div', 'ca-col' + (l.courant ? ' courant' : '') + (l.futur ? ' futur' : '') + (parMois && !l.futur ? ' clic' : ''));
+        col.title = libelle(l) + ' : ' + caEuro(l.caTtc) + ' (' + l.nbCommandes + ' commande' + (l.nbCommandes > 1 ? 's' : '') + ')';
+        var barre = caEl('div', 'ca-barre');
+        barre.style.height = (max > 0 ? Math.max(1, Math.round(l.caTtc / max * 100)) : 1) + '%';
+        col.appendChild(barre);
+        if (parMois) col.addEventListener('click', ouvrirMois(l));
+        graph.appendChild(col);
+        var lab = parMois ? CA_MOIS_COURT[l.numero - 1] : ((l.numero === 1 || l.numero % 5 === 0 || l.courant) ? String(l.numero) : '');
+        axe.appendChild(caEl('span', l.courant ? 'courant' : '', lab));
+      });
+
+      /* Tableau. */
+      var tab = document.getElementById('ca-table');
+      tab.innerHTML = '';
+      var tete = caEl('tr', '');
+      [parMois ? 'Mois' : 'Jour', 'Commandes', 'CA TTC', 'Panier moyen'].concat(parMois ? ['Évolution'] : []).forEach(function(x){ tete.appendChild(caEl('th', '', x)); });
+      var thead = caEl('thead', ''); thead.appendChild(tete); tab.appendChild(thead);
+      var tbody = caEl('tbody', '');
+      d.bilan.lignes.forEach(function(l){
+        var tr = caEl('tr', (l.courant ? 'courant ' : '') + (l.futur ? 'futur ' : '') + (parMois && !l.futur ? 'clic' : ''));
+        tr.appendChild(caEl('td', '', parMois ? CA_MOIS[l.numero - 1].charAt(0).toUpperCase() + CA_MOIS[l.numero - 1].slice(1) : libelle(l)));
+        tr.appendChild(caEl('td', '', l.futur ? '' : String(l.nbCommandes)));
+        tr.appendChild(caEl('td', '', l.futur ? '' : caEuro(l.caTtc)));
+        tr.appendChild(caEl('td', '', l.futur || !l.nbCommandes ? '' : caEuro(l.panierMoyen)));
+        if (parMois) { var te = caEl('td', ''); if (!l.futur) te.appendChild(caEvolution(l.evolution)); tr.appendChild(te); }
+        if (parMois) tr.addEventListener('click', ouvrirMois(l));
+        tbody.appendChild(tr);
+      });
+      var tot = caEl('tr', 'total');
+      tot.appendChild(caEl('td', '', 'Total'));
+      tot.appendChild(caEl('td', '', String(t.nbCommandes)));
+      tot.appendChild(caEl('td', '', caEuro(t.caTtc)));
+      tot.appendChild(caEl('td', '', t.nbCommandes ? caEuro(t.panierMoyen) : ''));
+      if (parMois) tot.appendChild(caEl('td', ''));
+      tbody.appendChild(tot);
+      tab.appendChild(tbody);
+    }
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && document.getElementById('ca-modal').classList.contains('open')) closeCa();
+    });
 
     /* ═══════════════════ Délais de production ═══════════════════ */
     var delaisProduits = [];
